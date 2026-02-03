@@ -568,6 +568,281 @@
             }
         }
 
+        @media (max-height: 900px) {
+            /* Adjustments for 1080p height (1920x1080) and similar */
+            .container {
+                padding: 1rem;
+            }
+
+            h1 {
+                font-size: 3rem;
+                margin-bottom: 1rem;
+            }
+
+            .subtitle {
+                font-size: 1rem;
+            }
+
+            .game-board {
+                gap: 1rem;
+                margin-bottom: 1rem;
+            }
+
+            .stats-panel {
+                padding: 1rem;
+            }
+
+            .stat-item {
+                margin-bottom: 1rem;
+            }
+
+            .stat-label {
+                font-size: 0.8rem;
+                margin-bottom: 0.3rem;
+            }
+
+            .stat-value {
+                font-size: 1.5rem;
+            }
+
+            .weapon-display {
+                padding: 0.75rem;
+                min-height: 80px;
+            }
+
+            .play-area {
+                padding: 1.5rem;
+                min-height: 400px;
+            }
+
+            .room {
+                gap: 1rem;
+                margin-bottom: 1.5rem;
+            }
+
+            .card {
+                aspect-ratio: 2.5/3.8;
+            }
+
+            .card-suit {
+                font-size: 2.5rem;
+                margin-bottom: 0.3rem;
+            }
+
+            .card-value {
+                font-size: 2rem;
+            }
+
+            .card-type {
+                font-size: 0.8rem;
+                margin-top: 0.3rem;
+            }
+
+            button {
+                font-size: 1rem;
+                padding: 0.75rem 1.5rem;
+            }
+
+            .message {
+                padding: 0.75rem;
+                font-size: 1rem;
+                min-height: 50px;
+            }
+
+            .map-container {
+                margin-top: 1rem;
+                padding: 0.75rem;
+            }
+
+            #mapCanvas {
+                max-width: 100%;
+            }
+
+            .instructions {
+                padding: 1rem;
+                margin-bottom: 1.5rem;
+                font-size: 0.95rem;
+                line-height: 1.5;
+            }
+
+            .instructions h3 {
+                font-size: 1.2rem;
+                margin-bottom: 0.75rem;
+            }
+
+            .instructions ul {
+                margin-left: 1.25rem;
+            }
+
+            .instructions li {
+                margin-bottom: 0.4rem;
+            }
+        }
+
+        @media (max-height: 768px) {
+            /* Further adjustments for 720p and smaller heights */
+            .container {
+                padding: 0.5rem;
+            }
+
+            header {
+                margin-bottom: 1.5rem;
+            }
+
+            h1 {
+                font-size: 2.5rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .subtitle {
+                font-size: 0.9rem;
+            }
+
+            .game-board {
+                gap: 0.75rem;
+                margin-bottom: 0.75rem;
+            }
+
+            .stats-panel {
+                padding: 0.75rem;
+            }
+
+            .stat-item {
+                margin-bottom: 0.75rem;
+            }
+
+            .stat-label {
+                font-size: 0.75rem;
+            }
+
+            .stat-value {
+                font-size: 1.25rem;
+            }
+
+            .health-bar {
+                height: 24px;
+                margin-top: 0.3rem;
+            }
+
+            .weapon-display {
+                padding: 0.5rem;
+                min-height: 70px;
+                font-size: 0.85rem;
+            }
+
+            .play-area {
+                padding: 1rem;
+                min-height: 350px;
+            }
+
+            .room {
+                gap: 0.75rem;
+                margin-bottom: 1rem;
+            }
+
+            .card {
+                aspect-ratio: 2.5/3.6;
+            }
+
+            .card-suit {
+                font-size: 2rem;
+                margin-bottom: 0.25rem;
+            }
+
+            .card-value {
+                font-size: 1.75rem;
+            }
+
+            .card-type {
+                font-size: 0.75rem;
+            }
+
+            button {
+                font-size: 0.9rem;
+                padding: 0.6rem 1.25rem;
+            }
+
+            .controls {
+                gap: 0.75rem;
+            }
+
+            .message {
+                padding: 0.6rem;
+                font-size: 0.95rem;
+                min-height: 45px;
+                margin-top: 0.75rem;
+            }
+
+            .map-container {
+                margin-top: 0.75rem;
+                padding: 0.5rem;
+            }
+
+            #mapCanvas {
+                transform: scale(0.9);
+                transform-origin: center;
+            }
+
+            .instructions {
+                padding: 0.75rem;
+                margin-bottom: 1rem;
+                font-size: 0.9rem;
+            }
+
+            .instructions h3 {
+                font-size: 1.1rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .instructions li {
+                margin-bottom: 0.3rem;
+            }
+
+            .game-over-content, .helper-modal-content {
+                padding: 2rem;
+                max-width: 450px;
+            }
+
+            .game-over-content h2 {
+                font-size: 2.5rem;
+                margin-bottom: 1rem;
+            }
+
+            .helper-modal-content h3 {
+                font-size: 1.75rem;
+                margin-bottom: 0.75rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            /* Mobile portrait - for v2.0 but adding basic support */
+            h1 {
+                font-size: 2rem;
+            }
+
+            .game-board {
+                grid-template-columns: 1fr;
+            }
+
+            .room {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 0.5rem;
+            }
+
+            .card-suit {
+                font-size: 1.75rem;
+            }
+
+            .card-value {
+                font-size: 1.5rem;
+            }
+
+            #mapCanvas {
+                width: 100%;
+                height: auto;
+            }
+        }
+
         .instructions {
             background: rgba(42, 24, 16, 0.8);
             border: 2px solid var(--burnt-orange);
@@ -637,6 +912,10 @@
                     <div class="stat-value" id="potionCount">0</div>
                 </div>
                 <div class="stat-item">
+                    <div class="stat-label">Rests Taken</div>
+                    <div class="stat-value" id="restCount">0 / 3</div>
+                </div>
+                <div class="stat-item">
                     <div class="stat-label">Equipped Weapon</div>
                     <div class="weapon-display" id="weaponDisplay">
                         <div style="text-align: center; opacity: 0.5;">No weapon</div>
@@ -697,7 +976,10 @@
             dungeonMap: null,
             currentRoomIndex: 0,
             playerPosition: null,
-            redCardHelpers: [] // Store red face cards for helpers
+            redCardHelpers: [], // Store red face cards for helpers
+            restRoomIndex: null, // Which room is the rest room
+            restsUsed: 0, // How many times player has rested (max 3)
+            justRested: false // True if just rested, prevents consecutive rests
         };
 
         // Card creation
@@ -873,19 +1155,46 @@
                 room.specialType = redCardTypes[idx % redCardTypes.length];
             });
 
+            // Select one rest room (bonfire) - not start, final, or special
+            const availableForRest = rooms.filter(r => !r.isStart && !r.isFinal && !r.isSpecial);
+            if (availableForRest.length > 0) {
+                const restRoom = availableForRest[Math.floor(Math.random() * availableForRest.length)];
+                restRoom.isRestRoom = true;
+                restRoom.restsUsed = 0; // Track uses per room
+            }
+
             return rooms;
         }
 
         // Map Rendering
         const mapCanvas = document.getElementById('mapCanvas');
         const mapCtx = mapCanvas.getContext('2d');
-        mapCanvas.width = 440;
-        mapCanvas.height = 280;
+        
+        // Make canvas responsive
+        function resizeMapCanvas() {
+            const container = mapCanvas.parentElement;
+            const rect = container.getBoundingClientRect();
+            const maxWidth = Math.min(440, rect.width - 32); // 32px for padding
+            const maxHeight = Math.min(280, window.innerHeight * 0.25); // Max 25% of viewport height
+            
+            mapCanvas.width = maxWidth;
+            mapCanvas.height = maxHeight;
+            
+            drawDungeonMap();
+        }
+        
+        resizeMapCanvas();
+        window.addEventListener('resize', resizeMapCanvas);
 
         function drawDungeonMap() {
             if (!gameState.dungeonMap) return;
 
             mapCtx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+
+            // Calculate scale based on canvas size
+            const scaleX = mapCanvas.width / 440;
+            const scaleY = mapCanvas.height / 280;
+            const scale = Math.min(scaleX, scaleY);
 
             const currentRoom = gameState.dungeonMap[gameState.currentRoomIndex];
             const visibleRooms = new Set([gameState.currentRoomIndex]);
@@ -908,10 +1217,10 @@
                         if (visible) {
                             mapCtx.strokeStyle = (room.cleared && connRoom.cleared) ? 
                                 'rgba(100, 100, 100, 0.6)' : 'rgba(212, 98, 31, 0.4)';
-                            mapCtx.lineWidth = 3;
+                            mapCtx.lineWidth = 3 * scale;
                             mapCtx.beginPath();
-                            mapCtx.moveTo(room.x, room.y);
-                            mapCtx.lineTo(connRoom.x, connRoom.y);
+                            mapCtx.moveTo(room.x * scale, room.y * scale);
+                            mapCtx.lineTo(connRoom.x * scale, connRoom.y * scale);
                             mapCtx.stroke();
                         }
                     }
@@ -928,6 +1237,7 @@
 
                 // Determine room color/state
                 let fillColor, strokeColor, glowColor;
+                const isConnected = currentRoom.connections.includes(idx);
                 
                 if (idx === gameState.currentRoomIndex) {
                     // Current room - gold glow
@@ -937,21 +1247,26 @@
                     
                     // Pulsing glow effect
                     const pulse = Math.sin(Date.now() / 300) * 0.3 + 0.7;
-                    mapCtx.shadowBlur = 20 * pulse;
+                    mapCtx.shadowBlur = 20 * pulse * scale;
                     mapCtx.shadowColor = glowColor;
                 } else if (room.cleared) {
-                    // Cleared room - gray
-                    fillColor = 'rgba(80, 80, 80, 0.5)';
-                    strokeColor = 'rgba(150, 150, 150, 0.8)';
+                    // Cleared room - different color if connected (can backtrack)
+                    if (isConnected) {
+                        fillColor = 'rgba(100, 100, 100, 0.6)';
+                        strokeColor = 'rgba(180, 180, 180, 0.9)'; // Brighter outline for clickable cleared rooms
+                    } else {
+                        fillColor = 'rgba(80, 80, 80, 0.5)';
+                        strokeColor = 'rgba(150, 150, 150, 0.8)';
+                    }
                 } else if (room.isFinal && gameState.deck.length < 12) {
                     // Final room revealed when close
                     fillColor = 'rgba(139, 0, 0, 0.3)';
                     strokeColor = '#8b0000';
                     glowColor = '#ff0000';
-                    mapCtx.shadowBlur = 15;
+                    mapCtx.shadowBlur = 15 * scale;
                     mapCtx.shadowColor = glowColor;
-                } else if (visibleRooms.has(idx)) {
-                    // Adjacent visible room - clickable
+                } else if (isConnected) {
+                    // Adjacent uncleared room - clickable
                     fillColor = 'rgba(42, 24, 16, 0.7)';
                     strokeColor = '#d4af37';
                 } else {
@@ -963,33 +1278,35 @@
                 // Draw room
                 mapCtx.fillStyle = fillColor;
                 mapCtx.strokeStyle = strokeColor;
-                mapCtx.lineWidth = 2;
+                mapCtx.lineWidth = 2 * scale;
                 mapCtx.beginPath();
-                mapCtx.arc(room.x, room.y, 12, 0, Math.PI * 2);
+                mapCtx.arc(room.x * scale, room.y * scale, 12 * scale, 0, Math.PI * 2);
                 mapCtx.fill();
                 mapCtx.stroke();
 
                 mapCtx.shadowBlur = 0;
 
                 // Draw special markers
-                if (room.isSpecial && (visible || room.cleared)) {
+                const fontSize = Math.max(12, 16 * scale);
+                mapCtx.font = `bold ${fontSize}px Arial`;
+                mapCtx.textAlign = 'center';
+                mapCtx.textBaseline = 'middle';
+                
+                if (room.isSpecial && (visible || room.cleared) && !room.cleared) {
                     mapCtx.fillStyle = '#d4af37';
-                    mapCtx.font = 'bold 16px Arial';
-                    mapCtx.textAlign = 'center';
-                    mapCtx.textBaseline = 'middle';
-                    mapCtx.fillText('★', room.x, room.y);
+                    mapCtx.fillText('★', room.x * scale, room.y * scale);
+                } else if (room.isRestRoom && room.cleared) {
+                    // Show bonfire icon only after room is cleared
+                    mapCtx.fillStyle = '#ff6600';
+                    mapCtx.fillText('🔥', room.x * scale, room.y * scale);
                 } else if (room.isStart) {
                     mapCtx.fillStyle = '#00ff00';
-                    mapCtx.font = 'bold 12px Arial';
-                    mapCtx.textAlign = 'center';
-                    mapCtx.textBaseline = 'middle';
-                    mapCtx.fillText('S', room.x, room.y);
+                    mapCtx.font = `bold ${Math.max(10, 12 * scale)}px Arial`;
+                    mapCtx.fillText('S', room.x * scale, room.y * scale);
                 } else if (room.isFinal && (visible || gameState.deck.length < 12)) {
                     mapCtx.fillStyle = '#ff0000';
-                    mapCtx.font = 'bold 12px Arial';
-                    mapCtx.textAlign = 'center';
-                    mapCtx.textBaseline = 'middle';
-                    mapCtx.fillText('B', room.x, room.y);
+                    mapCtx.font = `bold ${Math.max(10, 12 * scale)}px Arial`;
+                    mapCtx.fillText('B', room.x * scale, room.y * scale);
                 }
 
                 mapCtx.restore();
@@ -999,9 +1316,9 @@
             const playerRoom = gameState.dungeonMap[gameState.currentRoomIndex];
             mapCtx.fillStyle = '#ffffff';
             mapCtx.strokeStyle = '#000000';
-            mapCtx.lineWidth = 2;
+            mapCtx.lineWidth = 2 * scale;
             mapCtx.beginPath();
-            mapCtx.arc(playerRoom.x, playerRoom.y, 6, 0, Math.PI * 2);
+            mapCtx.arc(playerRoom.x * scale, playerRoom.y * scale, 6 * scale, 0, Math.PI * 2);
             mapCtx.fill();
             mapCtx.stroke();
         }
@@ -1017,20 +1334,31 @@
 
         // Map click handler
         mapCanvas.addEventListener('click', (e) => {
-            if (gameState.gameOver || gameState.cardsChosen < 3) return;
+            if (gameState.gameOver) return;
+            
+            // Allow clicking if: (1) room is cleared (3 cards chosen) OR (2) room was avoided
+            const canMove = gameState.cardsChosen >= 3 || gameState.room.length === 0;
+            if (!canMove) return;
 
             const rect = mapCanvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
 
-            const currentRoom = gameState.dungeonMap[gameState.currentRoomIndex];
-            const visibleRooms = new Set(currentRoom.connections);
+            // Account for canvas scaling
+            const scaleX = mapCanvas.width / 440;
+            const scaleY = mapCanvas.height / 280;
+            const scale = Math.min(scaleX, scaleY);
 
-            // Check if clicked on an adjacent room
+            const currentRoom = gameState.dungeonMap[gameState.currentRoomIndex];
+            const connectedRooms = new Set(currentRoom.connections);
+
+            // Check if clicked on any connected room (cleared or not)
             gameState.dungeonMap.forEach((room, idx) => {
-                if (visibleRooms.has(idx) && !room.cleared) {
-                    const distance = Math.sqrt((x - room.x) ** 2 + (y - room.y) ** 2);
-                    if (distance < 15) {
+                if (connectedRooms.has(idx)) {
+                    const roomX = room.x * scale;
+                    const roomY = room.y * scale;
+                    const distance = Math.sqrt((x - roomX) ** 2 + (y - roomY) ** 2);
+                    if (distance < 15 * scale) {
                         moveToRoom(idx);
                     }
                 }
@@ -1038,13 +1366,41 @@
         });
 
         function moveToRoom(roomIndex) {
+            const oldRoomIndex = gameState.currentRoomIndex;
+            const oldRoom = gameState.dungeonMap[oldRoomIndex];
+            
+            // If leaving an avoided room (no cards dealt yet), mark it as uncleared
+            if (gameState.room.length === 0 && gameState.cardsChosen === 0 && !oldRoom.isStart) {
+                oldRoom.cleared = false;
+            }
+            
             gameState.currentRoomIndex = roomIndex;
             const room = gameState.dungeonMap[roomIndex];
+            
+            // Reset avoid flag when moving to new room
+            gameState.lastRoomAvoided = false;
+            
+            // Check if this is a cleared rest room (bonfire)
+            if (room.isRestRoom && room.cleared && !gameState.justRested && gameState.restsUsed < 3) {
+                setTimeout(() => showRestModal(room), 500);
+                drawDungeonMap();
+                return;
+            }
+            
+            // If room is already cleared, just move there and let player choose next room
+            if (room.cleared) {
+                showMessage(`Passing through cleared chamber... Choose your next path.`);
+                drawDungeonMap();
+                return;
+            }
+            
+            // Entering a new room means player is no longer "just rested"
+            gameState.justRested = false;
             
             showMessage(`Entering new chamber...`);
             
             // Check if special room
-            if (room.isSpecial && !room.cleared) {
+            if (room.isSpecial) {
                 setTimeout(() => showHelperEncounter(room), 500);
             } else {
                 setTimeout(dealRoom, 800);
@@ -1212,6 +1568,55 @@
             setTimeout(dealRoom, 500);
         };
 
+        function showRestModal(room) {
+            const restsRemaining = 3 - gameState.restsUsed;
+            
+            const modal = document.createElement('div');
+            modal.className = 'helper-modal';
+            
+            modal.innerHTML = `
+                <div class="helper-modal-content">
+                    <h3>🔥 Bonfire Chamber 🔥</h3>
+                    <p style="margin-bottom: 1rem; font-style: italic;">
+                        "A warm fire crackles in the hearth. You may rest here to recover your strength."
+                    </p>
+                    <div style="margin: 1.5rem 0; font-size: 1.2rem;">
+                        <div>Restore: <span style="color: #00ff00; font-weight: bold;">+5 HP</span></div>
+                        <div style="margin-top: 0.5rem; font-size: 0.9rem; opacity: 0.8;">
+                            Rests remaining: ${restsRemaining}
+                        </div>
+                    </div>
+                    <div class="helper-buttons">
+                        <button onclick="acceptRest()">Rest at Bonfire</button>
+                        <button onclick="declineRest()">Continue On</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+        }
+
+        window.acceptRest = function() {
+            const oldHealth = gameState.health;
+            gameState.health = Math.min(gameState.maxHealth, gameState.health + 5);
+            const healAmount = gameState.health - oldHealth;
+            gameState.restsUsed++;
+            gameState.justRested = true; // Prevent consecutive rests
+            
+            showMessage(`Rested at the bonfire! Restored ${healAmount} HP. Choose your next path.`);
+            createParticles(window.innerWidth / 2, window.innerHeight / 2, 40, '#ff6600', 'heal');
+            
+            document.querySelector('.helper-modal').remove();
+            updateUI();
+            drawDungeonMap();
+        };
+
+        window.declineRest = function() {
+            showMessage('You press onward without resting. Choose your next path.');
+            document.querySelector('.helper-modal').remove();
+            drawDungeonMap();
+        };
+
         // UI Updates
         function updateUI() {
             document.getElementById('health').textContent = gameState.health;
@@ -1229,6 +1634,7 @@
             document.getElementById('roomsCleared').textContent = gameState.roomsCleared;
             document.getElementById('roomsAvoided').textContent = gameState.roomsAvoided;
             document.getElementById('potionCount').textContent = gameState.potionsUsed;
+            document.getElementById('restCount').textContent = `${gameState.restsUsed} / 3`;
 
             // Update weapon display
             const weaponDisplay = document.getElementById('weaponDisplay');
@@ -1327,7 +1733,9 @@
                 potionsUsed: 0,
                 gameOver: false,
                 dungeonMap: generateDungeonMap(),
-                currentRoomIndex: 0
+                currentRoomIndex: 0,
+                restsUsed: 0,
+                justRested: false
             };
 
             document.getElementById('instructions').style.display = 'none';
@@ -1338,6 +1746,12 @@
         }
 
         function dealRoom() {
+            // Don't deal if we already have a full room
+            if (gameState.room.length >= 4) {
+                console.log('Room already has cards, skipping deal');
+                return;
+            }
+            
             // Keep the 4th card from previous room if exists
             const carryOver = gameState.room.length === 1 ? gameState.room[0] : null;
             gameState.room = carryOver ? [carryOver] : [];
@@ -1382,6 +1796,18 @@
                     break;
                 case 'monster':
                     handleMonster(card, rect.left + rect.width / 2, rect.top);
+                    
+                    // CRITICAL: Check for death immediately after monster damage
+                    if (gameState.health <= 0) {
+                        gameState.gameOver = true;
+                        // Remove card from room before ending
+                        gameState.room.splice(index, 1);
+                        renderRoom();
+                        updateUI();
+                        // Small delay so player sees the damage
+                        setTimeout(() => endGame(), 1000);
+                        return;
+                    }
                     break;
             }
 
@@ -1400,6 +1826,10 @@
                         
                         // Mark current room as cleared
                         gameState.dungeonMap[gameState.currentRoomIndex].cleared = true;
+                        
+                        // Entering and clearing a new room means no longer "just rested"
+                        gameState.justRested = false;
+                        
                         drawDungeonMap();
                         
                         // Check if there are adjacent uncleared rooms
@@ -1408,12 +1838,11 @@
                             !gameState.dungeonMap[connId].cleared
                         );
                         
-                        if (hasAdjacentRooms) {
+                        if (hasAdjacentRooms || currentRoom.connections.length > 0) {
                             showMessage('Room cleared! Click an adjacent room on the map to continue.');
                         } else {
-                            // Auto-move if only one path (backtracking)
-                            showMessage('Room cleared! Drawing new cards...');
-                            setTimeout(dealRoom, 1000);
+                            // No adjacent rooms available
+                            showMessage('Room cleared! No more paths available.');
                         }
                     }
                 }, 500);
@@ -1435,13 +1864,18 @@
                 return;
             }
 
-            const healAmount = Math.min(card.value, gameState.maxHealth - gameState.health);
+            const oldHealth = gameState.health;
             gameState.health = Math.min(gameState.maxHealth, gameState.health + card.value);
+            const healAmount = gameState.health - oldHealth;
             gameState.potionUsedThisTurn = true;
             gameState.potionsUsed++;
             
-            showDamageIndicator(healAmount, x, y, true);
-            showMessage(`Drank ${card.name}! Restored ${healAmount} health.`);
+            if (healAmount > 0) {
+                showDamageIndicator(healAmount, x, y, true);
+                showMessage(`Drank ${card.name}! Restored ${healAmount} health.`);
+            } else {
+                showMessage(`Drank ${card.name}! Already at full health.`);
+            }
         }
 
         function handleMonster(card, x, y) {
@@ -1482,9 +1916,12 @@
             gameState.room = [];
             gameState.lastRoomAvoided = true;
             gameState.roomsAvoided++;
+            
+            // Mark current room as "cleared" so player can backtrack
+            gameState.dungeonMap[gameState.currentRoomIndex].cleared = true;
 
-            showMessage('Room avoided! Cards sent to bottom of dungeon.');
-            setTimeout(dealRoom, 1000);
+            showMessage('Room avoided! Click an adjacent room on the map to backtrack.');
+            drawDungeonMap();
         }
 
         function endGame() {
@@ -1527,6 +1964,7 @@
                         <div>Monsters Slain: ${gameState.monstersSlain}</div>
                         <div>Rooms Cleared: ${gameState.roomsCleared}</div>
                         <div>Potions Used: ${gameState.potionsUsed}</div>
+                        <div>Rests Taken: ${gameState.restsUsed}</div>
                     </div>
                     <button id="playAgainBtn">Play Again</button>
                 </div>
