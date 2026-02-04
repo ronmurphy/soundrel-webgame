@@ -1,10 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scoundrel - A Rogue-like Card Game</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap"
+        rel="stylesheet">
     <style>
         :root {
             --parchment: #f4e8d0;
@@ -49,9 +52,9 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-image: 
-                repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,.03) 2px, rgba(0,0,0,.03) 4px),
-                repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,.03) 2px, rgba(0,0,0,.03) 4px);
+            background-image:
+                repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 0, 0, .03) 2px, rgba(0, 0, 0, .03) 4px),
+                repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0, 0, 0, .03) 2px, rgba(0, 0, 0, .03) 4px);
             pointer-events: none;
             opacity: 0.3;
         }
@@ -75,7 +78,7 @@
             font-size: 4rem;
             font-weight: 700;
             color: var(--gold);
-            text-shadow: 
+            text-shadow:
                 2px 2px 0 var(--blood-red),
                 4px 4px 8px var(--shadow);
             letter-spacing: 0.1em;
@@ -163,7 +166,7 @@
             border-radius: 16px;
             padding: 2rem;
             min-height: 500px;
-            box-shadow: 
+            box-shadow:
                 0 8px 32px var(--shadow),
                 inset 0 0 60px rgba(0, 0, 0, 0.3);
         }
@@ -189,7 +192,7 @@
 
         .card:hover:not(.disabled) {
             transform: translateY(-12px) scale(1.05);
-            box-shadow: 
+            box-shadow:
                 0 12px 24px var(--shadow),
                 0 0 30px rgba(212, 175, 55, 0.4);
             border-color: var(--parchment);
@@ -203,28 +206,30 @@
             0% {
                 transform: rotateY(0deg) scale(1);
             }
+
             50% {
                 transform: rotateY(90deg) scale(1.1);
             }
+
             100% {
                 transform: rotateY(0deg) scale(1);
             }
         }
 
         .card.monster:hover:not(.disabled) {
-            box-shadow: 
+            box-shadow:
                 0 12px 24px var(--shadow),
                 0 0 40px rgba(139, 0, 0, 0.6);
         }
 
         .card.weapon:hover:not(.disabled) {
-            box-shadow: 
+            box-shadow:
                 0 12px 24px var(--shadow),
                 0 0 40px rgba(212, 175, 55, 0.6);
         }
 
         .card.potion:hover:not(.disabled) {
-            box-shadow: 
+            box-shadow:
                 0 12px 24px var(--shadow),
                 0 0 40px rgba(0, 170, 0, 0.6);
         }
@@ -405,6 +410,7 @@
                 opacity: 0;
                 transform: translateY(20px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -416,6 +422,7 @@
                 opacity: 0;
                 transform: translateY(-30px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -427,6 +434,7 @@
                 opacity: 0;
                 transform: translateX(-20px);
             }
+
             to {
                 opacity: 1;
                 transform: translateX(0);
@@ -438,6 +446,7 @@
                 opacity: 1;
                 transform: translateY(0) scale(1);
             }
+
             100% {
                 opacity: 0;
                 transform: translateY(-80px) scale(1.5);
@@ -445,9 +454,26 @@
         }
 
         @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
-            20%, 40%, 60%, 80% { transform: translateX(5px); }
+
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+
+            10%,
+            30%,
+            50%,
+            70%,
+            90% {
+                transform: translateX(-5px);
+            }
+
+            20%,
+            40%,
+            60%,
+            80% {
+                transform: translateX(5px);
+            }
         }
 
         .shake {
@@ -455,8 +481,15 @@
         }
 
         @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.05);
+            }
         }
 
         .pulse {
@@ -569,6 +602,7 @@
         }
 
         @media (max-height: 900px) {
+
             /* Adjustments for 1080p height (1920x1080) and similar */
             .container {
                 padding: 1rem;
@@ -680,6 +714,7 @@
         }
 
         @media (max-height: 768px) {
+
             /* Further adjustments for 720p and smaller heights */
             .container {
                 padding: 0.5rem;
@@ -798,7 +833,8 @@
                 margin-bottom: 0.3rem;
             }
 
-            .game-over-content, .helper-modal-content {
+            .game-over-content,
+            .helper-modal-content {
                 padding: 2rem;
                 max-width: 450px;
             }
@@ -815,6 +851,7 @@
         }
 
         @media (max-width: 768px) {
+
             /* Mobile portrait - for v2.0 but adding basic support */
             h1 {
                 font-size: 2rem;
@@ -873,6 +910,7 @@
         }
     </style>
 </head>
+
 <body>
     <canvas id="particleCanvas"></canvas>
     <div class="container">
@@ -1087,102 +1125,136 @@
             return arr;
         }
 
-        // Dungeon Map Generation
+        // Advanced Dungeon Map Generation
         function generateDungeonMap() {
             const rooms = [];
-            const numRooms = 16;
-            
-            // Create rooms in a grid pattern with branching
-            const grid = [
-                [0, 1, 2, 3, 4],
-                [5, 6, 7, 8, 9],
-                [10, 11, 12, 13, 14],
-                [-1, -1, 15, -1, -1]
-            ];
+            const numRooms = 14; // Balanced for 44 card deck
+            const cols = 5;
+            const rows = 4;
+            const cellWidth = 80;
+            const cellHeight = 60;
+            const paddingX = 40;
+            const paddingY = 40;
 
-            // Define main path and branches
-            const connections = [
-                [0, 1], [1, 2], [2, 3], [3, 4],  // Top row
-                [1, 6], [2, 7], [3, 8],           // Vertical connections
-                [5, 6], [6, 7], [7, 8], [8, 9],  // Middle row
-                [6, 11], [7, 12], [8, 13],        // More verticals
-                [10, 11], [11, 12], [12, 13], [13, 14], // Third row
-                [12, 15]                          // Final room
-            ];
-
-            // Create room objects
-            for (let i = 0; i < numRooms; i++) {
-                // Find position in grid
-                let row = 0, col = 0;
-                for (let r = 0; r < grid.length; r++) {
-                    const c = grid[r].indexOf(i);
-                    if (c !== -1) {
-                        row = r;
-                        col = c;
-                        break;
-                    }
+            // Generate potential grid positions
+            const grid = [];
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    grid.push({ r, c });
                 }
+            }
 
+            // Simple randomized spanning tree for guaranteed connectivity
+            const shuffledGrid = shuffle(grid);
+            const selectedPositions = shuffledGrid.slice(0, numRooms);
+
+            // Ensure start and end are at reasonable positions
+            // Start at top-left-ish, Boss at bottom-right-ish
+            selectedPositions[0] = { r: 0, c: 0 };
+            selectedPositions[numRooms - 1] = { r: rows - 1, c: cols - 1 };
+
+            for (let i = 0; i < numRooms; i++) {
+                const pos = selectedPositions[i];
                 rooms.push({
                     id: i,
-                    x: col * 80 + 40,
-                    y: row * 60 + 40,
-                    cleared: i === 0, // Start room is cleared
+                    x: pos.c * cellWidth + paddingX + (Math.random() - 0.5) * 20,
+                    y: pos.r * cellHeight + paddingY + (Math.random() - 0.5) * 20,
+                    cleared: i === 0,
                     isStart: i === 0,
-                    isFinal: i === 15,
+                    isFinal: i === numRooms - 1,
                     isSpecial: false,
                     specialType: null,
-                    connections: []
+                    connections: [],
+                    corridors: {} // Store corridor types: { targetId: 'long'|'short' }
                 });
             }
 
-            // Add connections
-            connections.forEach(([a, b]) => {
-                if (rooms[a] && rooms[b]) {
-                    rooms[a].connections.push(b);
-                    rooms[b].connections.push(a);
+            // Connect nearby rooms to form a graph
+            for (let i = 0; i < numRooms; i++) {
+                for (let j = i + 1; j < numRooms; j++) {
+                    const dx = rooms[i].x - rooms[j].x;
+                    const dy = rooms[i].y - rooms[j].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    // Connect if close enough
+                    if (dist < 120 && rooms[i].connections.length < 3 && rooms[j].connections.length < 3) {
+                        rooms[i].connections.push(j);
+                        rooms[j].connections.push(i);
+                        const type = dist > 90 ? 'long' : 'short';
+                        rooms[i].corridors[j] = type;
+                        rooms[j].corridors[i] = type;
+                    }
+                }
+            }
+
+            // Ensure every room has at least one connection
+            rooms.forEach((room, i) => {
+                if (room.connections.length === 0) {
+                    const nearest = rooms.reduce((prev, curr, idx) => {
+                        if (idx === i) return prev;
+                        const dist = Math.sqrt((room.x - curr.x) ** 2 + (room.y - curr.y) ** 2);
+                        const prevDist = Math.sqrt((room.x - rooms[prev].x) ** 2 + (room.y - rooms[prev].y) ** 2);
+                        return dist < prevDist ? idx : prev;
+                    }, i === 0 ? 1 : 0);
+                    room.connections.push(nearest);
+                    rooms[nearest].connections.push(i);
+                    room.corridors[nearest] = 'long';
+                    rooms[nearest].corridors[i] = 'long';
                 }
             });
 
-            // Randomly select 1-3 special helper rooms (not start or final)
-            const numSpecialRooms = Math.floor(Math.random() * 3) + 1;
+            // Select one final boss room (last room generated)
+            rooms[numRooms - 1].isFinal = true;
+
+            // Select special helper rooms
+            const numSpecialRooms = Math.floor(Math.random() * 3) + 2;
             const availableForSpecial = rooms.filter(r => !r.isStart && !r.isFinal);
             const specialRooms = shuffle(availableForSpecial).slice(0, numSpecialRooms);
-            
             const redCardTypes = ['jack', 'queen', 'king', 'ace'];
             specialRooms.forEach((room, idx) => {
                 room.isSpecial = true;
                 room.specialType = redCardTypes[idx % redCardTypes.length];
             });
 
-            // Select one rest room (bonfire) - not start, final, or special
+            // Select 1-2 rest rooms
             const availableForRest = rooms.filter(r => !r.isStart && !r.isFinal && !r.isSpecial);
-            if (availableForRest.length > 0) {
-                const restRoom = availableForRest[Math.floor(Math.random() * availableForRest.length)];
-                restRoom.isRestRoom = true;
-                restRoom.restsUsed = 0; // Track uses per room
-            }
+            const numRestRooms = Math.floor(Math.random() * 2) + 1;
+            const restRooms = shuffle(availableForRest).slice(0, numRestRooms);
+            restRooms.forEach(room => {
+                room.isRestRoom = true;
+                room.restsUsed = 0;
+            });
 
             return rooms;
         }
 
+        // --- NEW: Map State for Animations ---
+        let mapAnimation = {
+            playerX: 0,
+            playerY: 0,
+            targetX: 0,
+            targetY: 0,
+            isMoving: false,
+            torchRadius: 80
+        };
+
         // Map Rendering
         const mapCanvas = document.getElementById('mapCanvas');
         const mapCtx = mapCanvas.getContext('2d');
-        
+
         // Make canvas responsive
         function resizeMapCanvas() {
             const container = mapCanvas.parentElement;
             const rect = container.getBoundingClientRect();
             const maxWidth = Math.min(440, rect.width - 32); // 32px for padding
             const maxHeight = Math.min(280, window.innerHeight * 0.25); // Max 25% of viewport height
-            
+
             mapCanvas.width = maxWidth;
             mapCanvas.height = maxHeight;
-            
+
             drawDungeonMap();
         }
-        
+
         resizeMapCanvas();
         window.addEventListener('resize', resizeMapCanvas);
 
@@ -1191,37 +1263,73 @@
 
             mapCtx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
 
-            // Calculate scale based on canvas size
             const scaleX = mapCanvas.width / 440;
             const scaleY = mapCanvas.height / 280;
             const scale = Math.min(scaleX, scaleY);
 
+            // Update player animated position
+            if (mapAnimation.isMoving) {
+                const dx = mapAnimation.targetX - mapAnimation.playerX;
+                const dy = mapAnimation.targetY - mapAnimation.playerY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 1) {
+                    mapAnimation.playerX = mapAnimation.targetX;
+                    mapAnimation.playerY = mapAnimation.targetY;
+                    mapAnimation.isMoving = false;
+                } else {
+                    mapAnimation.playerX += dx * 0.1;
+                    mapAnimation.playerY += dy * 0.1;
+                }
+            } else {
+                const currentRoom = gameState.dungeonMap[gameState.currentRoomIndex];
+                mapAnimation.playerX = currentRoom.x;
+                mapAnimation.playerY = currentRoom.y;
+            }
+
             const currentRoom = gameState.dungeonMap[gameState.currentRoomIndex];
             const visibleRooms = new Set([gameState.currentRoomIndex]);
-            
-            // Add connected rooms to visible set (fog of war reveal)
-            currentRoom.connections.forEach(connId => {
-                visibleRooms.add(connId);
-            });
+            currentRoom.connections.forEach(connId => visibleRooms.add(connId));
 
-            // Draw connections (corridors)
+            // Background Parchment Texture (Simulated)
+            mapCtx.fillStyle = '#2a1810';
+            mapCtx.fillRect(0, 0, mapCanvas.width, mapCanvas.height);
+
+            // Draw grid lines for aesthetic
+            mapCtx.strokeStyle = 'rgba(212, 175, 55, 0.05)';
+            mapCtx.lineWidth = 1;
+            for (let x = 0; x < mapCanvas.width; x += 40 * scale) {
+                mapCtx.beginPath(); mapCtx.moveTo(x, 0); mapCtx.lineTo(x, mapCanvas.height); mapCtx.stroke();
+            }
+            for (let y = 0; y < mapCanvas.height; y += 40 * scale) {
+                mapCtx.beginPath(); mapCtx.moveTo(0, y); mapCtx.lineTo(mapCanvas.width, y); mapCtx.stroke();
+            }
+
+            // Draw corridors
             gameState.dungeonMap.forEach(room => {
                 room.connections.forEach(connId => {
-                    if (connId > room.id) { // Draw each connection once
+                    if (connId > room.id) {
                         const connRoom = gameState.dungeonMap[connId];
-                        
-                        // Only draw if at least one room is visible or cleared
                         const visible = visibleRooms.has(room.id) || visibleRooms.has(connId) ||
-                                      room.cleared || connRoom.cleared;
-                        
+                            room.cleared || connRoom.cleared;
+
                         if (visible) {
-                            mapCtx.strokeStyle = (room.cleared && connRoom.cleared) ? 
-                                'rgba(100, 100, 100, 0.6)' : 'rgba(212, 98, 31, 0.4)';
-                            mapCtx.lineWidth = 3 * scale;
+                            const type = room.corridors[connId] || 'short';
+                            mapCtx.save();
+                            mapCtx.setLineDash(type === 'long' ? [10, 5] : []);
+                            mapCtx.strokeStyle = (room.cleared && connRoom.cleared) ?
+                                'rgba(100, 100, 100, 0.4)' : 'rgba(212, 98, 31, 0.6)';
+                            mapCtx.lineWidth = (type === 'long' ? 4 : 6) * scale;
+
+                            // "Hand-drawn" effect - double line
                             mapCtx.beginPath();
                             mapCtx.moveTo(room.x * scale, room.y * scale);
                             mapCtx.lineTo(connRoom.x * scale, connRoom.y * scale);
                             mapCtx.stroke();
+
+                            mapCtx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+                            mapCtx.lineWidth = 2 * scale;
+                            mapCtx.stroke();
+                            mapCtx.restore();
                         }
                     }
                 });
@@ -1230,112 +1338,103 @@
             // Draw rooms
             gameState.dungeonMap.forEach((room, idx) => {
                 const visible = visibleRooms.has(idx) || room.cleared;
-                
-                if (!visible && !room.cleared) return; // Don't draw if not visible
+                if (!visible && !room.cleared) return;
+
+                const isCurrent = idx === gameState.currentRoomIndex;
+                const isAdjacent = currentRoom.connections.includes(idx);
 
                 mapCtx.save();
 
-                // Determine room color/state
-                let fillColor, strokeColor, glowColor;
-                const isConnected = currentRoom.connections.includes(idx);
-                
-                if (idx === gameState.currentRoomIndex) {
-                    // Current room - gold glow
-                    fillColor = 'rgba(212, 175, 55, 0.3)';
-                    strokeColor = '#d4af37';
-                    glowColor = '#d4af37';
-                    
-                    // Pulsing glow effect
-                    const pulse = Math.sin(Date.now() / 300) * 0.3 + 0.7;
-                    mapCtx.shadowBlur = 20 * pulse * scale;
-                    mapCtx.shadowColor = glowColor;
-                } else if (room.cleared) {
-                    // Cleared room - different color if connected (can backtrack)
-                    if (isConnected) {
-                        fillColor = 'rgba(100, 100, 100, 0.6)';
-                        strokeColor = 'rgba(180, 180, 180, 0.9)'; // Brighter outline for clickable cleared rooms
-                    } else {
-                        fillColor = 'rgba(80, 80, 80, 0.5)';
-                        strokeColor = 'rgba(150, 150, 150, 0.8)';
-                    }
-                } else if (room.isFinal && gameState.deck.length < 12) {
-                    // Final room revealed when close
-                    fillColor = 'rgba(139, 0, 0, 0.3)';
-                    strokeColor = '#8b0000';
-                    glowColor = '#ff0000';
+                // Room shape (Rectangle for rooms)
+                const size = 20 * scale;
+                mapCtx.translate(room.x * scale, room.y * scale);
+
+                let roomColor = '#1a0e08';
+                let borderColor = '#d4621f';
+
+                if (isCurrent) {
+                    borderColor = '#d4af37';
                     mapCtx.shadowBlur = 15 * scale;
-                    mapCtx.shadowColor = glowColor;
-                } else if (isConnected) {
-                    // Adjacent uncleared room - clickable
-                    fillColor = 'rgba(42, 24, 16, 0.7)';
-                    strokeColor = '#d4af37';
-                } else {
-                    // Fog of war
-                    fillColor = 'rgba(20, 20, 20, 0.5)';
-                    strokeColor = 'rgba(100, 100, 100, 0.5)';
+                    mapCtx.shadowColor = '#d4af37';
+                } else if (room.cleared) {
+                    borderColor = '#555';
+                    roomColor = '#222';
+                } else if (isAdjacent) {
+                    borderColor = '#d4af37';
                 }
 
-                // Draw room
-                mapCtx.fillStyle = fillColor;
-                mapCtx.strokeStyle = strokeColor;
-                mapCtx.lineWidth = 2 * scale;
+                mapCtx.fillStyle = roomColor;
+                mapCtx.strokeStyle = borderColor;
+                mapCtx.lineWidth = 3 * scale;
+                mapCtx.lineJoin = 'round';
+
                 mapCtx.beginPath();
-                mapCtx.arc(room.x * scale, room.y * scale, 12 * scale, 0, Math.PI * 2);
+                mapCtx.rect(-size / 2, -size / 2, size, size);
                 mapCtx.fill();
                 mapCtx.stroke();
 
+                // Room Icons
                 mapCtx.shadowBlur = 0;
-
-                // Draw special markers
-                const fontSize = Math.max(12, 16 * scale);
-                mapCtx.font = `bold ${fontSize}px Arial`;
+                mapCtx.fillStyle = borderColor;
+                mapCtx.font = `${12 * scale}px Arial`;
                 mapCtx.textAlign = 'center';
                 mapCtx.textBaseline = 'middle';
-                
-                if (room.isSpecial && (visible || room.cleared) && !room.cleared) {
-                    mapCtx.fillStyle = '#d4af37';
-                    mapCtx.fillText('★', room.x * scale, room.y * scale);
-                } else if (room.isRestRoom && room.cleared) {
-                    // Show bonfire icon only after room is cleared
-                    mapCtx.fillStyle = '#ff6600';
-                    mapCtx.fillText('🔥', room.x * scale, room.y * scale);
-                } else if (room.isStart) {
-                    mapCtx.fillStyle = '#00ff00';
-                    mapCtx.font = `bold ${Math.max(10, 12 * scale)}px Arial`;
-                    mapCtx.fillText('S', room.x * scale, room.y * scale);
-                } else if (room.isFinal && (visible || gameState.deck.length < 12)) {
-                    mapCtx.fillStyle = '#ff0000';
-                    mapCtx.font = `bold ${Math.max(10, 12 * scale)}px Arial`;
-                    mapCtx.fillText('B', room.x * scale, room.y * scale);
-                }
+
+                if (room.isStart) mapCtx.fillText('S', 0, 0);
+                else if (room.isFinal) mapCtx.fillText('☠', 0, 0);
+                else if (room.isRestRoom && room.cleared) mapCtx.fillText('🔥', 0, 0);
+                else if (room.isSpecial && (visible || room.cleared) && !room.cleared) mapCtx.fillText('?', 0, 0);
 
                 mapCtx.restore();
             });
 
-            // Draw player token
-            const playerRoom = gameState.dungeonMap[gameState.currentRoomIndex];
-            mapCtx.fillStyle = '#ffffff';
-            mapCtx.strokeStyle = '#000000';
-            mapCtx.lineWidth = 2 * scale;
+            // Torchlight Effect (Radial Gradient with Wobble)
+            const torchX = mapAnimation.playerX * scale;
+            const torchY = mapAnimation.playerY * scale;
+
+            // Subtle flickering wobble
+            const wobble = Math.sin(Date.now() / 150) * 2 * scale;
+            const radiusWobble = Math.sin(Date.now() / 100) * 5 * scale;
+            const torchRadius = (150 + radiusWobble) * scale;
+
+            mapCtx.save();
+            const grad = mapCtx.createRadialGradient(
+                torchX + wobble, torchY + wobble,
+                20 * scale,
+                torchX + wobble, torchY + wobble,
+                torchRadius
+            );
+            grad.addColorStop(0, 'rgba(0,0,0,0)');
+            grad.addColorStop(0.6, 'rgba(0,0,0,0.3)');
+            grad.addColorStop(1, 'rgba(0,0,0,0.85)');
+
+            mapCtx.fillStyle = grad;
+            mapCtx.globalCompositeOperation = 'source-over';
+            mapCtx.fillRect(0, 0, mapCanvas.width, mapCanvas.height);
+            mapCtx.restore();
+
+            // Player Token
+            mapCtx.save();
+            mapCtx.fillStyle = '#fff';
+            mapCtx.shadowBlur = 10 * scale;
+            mapCtx.shadowColor = '#fff';
             mapCtx.beginPath();
-            mapCtx.arc(playerRoom.x * scale, playerRoom.y * scale, 6 * scale, 0, Math.PI * 2);
+            mapCtx.arc(mapAnimation.playerX * scale, mapAnimation.playerY * scale, 6 * scale, 0, Math.PI * 2);
             mapCtx.fill();
-            mapCtx.stroke();
+            mapCtx.restore();
         }
 
         // Animate map updates
-        function animateMapUpdate() {
-            requestAnimationFrame(() => {
-                drawDungeonMap();
-            });
+        function animateMap() {
+            drawDungeonMap();
+            requestAnimationFrame(animateMap);
         }
-
-        setInterval(animateMapUpdate, 50); // Update map for animations
+        animateMap();
 
         // Map click handler
         mapCanvas.addEventListener('click', (e) => {
             if (gameState.gameOver) return;
-            
+
             // Allow clicking if: (1) room is cleared (3 cards chosen) OR (2) room was avoided
             const canMove = gameState.cardsChosen >= 3 || gameState.room.length === 0;
             if (!canMove) return;
@@ -1368,50 +1467,54 @@
         function moveToRoom(roomIndex) {
             const oldRoomIndex = gameState.currentRoomIndex;
             const oldRoom = gameState.dungeonMap[oldRoomIndex];
-            
+
             // If leaving an avoided room (no cards dealt yet), mark it as uncleared
             if (gameState.room.length === 0 && gameState.cardsChosen === 0 && !oldRoom.isStart) {
                 oldRoom.cleared = false;
             }
-            
+
             gameState.currentRoomIndex = roomIndex;
             const room = gameState.dungeonMap[roomIndex];
-            
+
+            // Start movement animation
+            mapAnimation.targetX = room.x;
+            mapAnimation.targetY = room.y;
+            mapAnimation.isMoving = true;
+
             // Reset avoid flag when moving to new room
             gameState.lastRoomAvoided = false;
-            
+
             // Check if this is a cleared rest room (bonfire)
             if (room.isRestRoom && room.cleared && !gameState.justRested && gameState.restsUsed < 3) {
-                setTimeout(() => showRestModal(room), 500);
-                drawDungeonMap();
+                setTimeout(() => showRestModal(room), 600);
                 return;
             }
-            
+
             // If room is already cleared, just move there and let player choose next room
             if (room.cleared) {
                 showMessage(`Passing through cleared chamber... Choose your next path.`);
                 drawDungeonMap();
                 return;
             }
-            
+
             // Entering a new room means player is no longer "just rested"
             gameState.justRested = false;
-            
+
             showMessage(`Entering new chamber...`);
-            
+
             // Check if special room
             if (room.isSpecial) {
                 setTimeout(() => showHelperEncounter(room), 500);
             } else {
                 setTimeout(dealRoom, 800);
             }
-            
+
             drawDungeonMap();
         }
 
         function showHelperEncounter(room) {
             const helpers = {
-                jack: { 
+                jack: {
                     title: 'The Mysterious Squire',
                     offers: () => {
                         const weapon = {
@@ -1506,7 +1609,7 @@
 
             const modal = document.createElement('div');
             modal.className = 'helper-modal';
-            
+
             let cardsHTML = '';
             offerings.forEach((item, idx) => {
                 cardsHTML += `
@@ -1534,16 +1637,16 @@
                     </div>
                 </div>
             `;
-            
+
             document.body.appendChild(modal);
-            
+
             // Store offerings in a temporary variable for access
             window.currentOfferings = offerings;
         }
 
-        window.acceptHelper = function(index) {
+        window.acceptHelper = function (index) {
             const item = window.currentOfferings[index];
-            
+
             if (item.type === 'weapon') {
                 gameState.weapon = item;
                 gameState.weaponLastMonster = Infinity;
@@ -1556,13 +1659,13 @@
                 showMessage(`Used ${item.name}! Restored ${healAmount} health.`);
                 createParticles(window.innerWidth / 2, window.innerHeight / 2, 30, '#00ff00', 'heal');
             }
-            
+
             document.querySelector('.helper-modal').remove();
             updateUI();
             setTimeout(dealRoom, 500);
         };
 
-        window.declineHelper = function() {
+        window.declineHelper = function () {
             showMessage('Declined the offer. Proceeding into the room...');
             document.querySelector('.helper-modal').remove();
             setTimeout(dealRoom, 500);
@@ -1570,10 +1673,10 @@
 
         function showRestModal(room) {
             const restsRemaining = 3 - gameState.restsUsed;
-            
+
             const modal = document.createElement('div');
             modal.className = 'helper-modal';
-            
+
             modal.innerHTML = `
                 <div class="helper-modal-content">
                     <h3>🔥 Bonfire Chamber 🔥</h3>
@@ -1592,26 +1695,26 @@
                     </div>
                 </div>
             `;
-            
+
             document.body.appendChild(modal);
         }
 
-        window.acceptRest = function() {
+        window.acceptRest = function () {
             const oldHealth = gameState.health;
             gameState.health = Math.min(gameState.maxHealth, gameState.health + 5);
             const healAmount = gameState.health - oldHealth;
             gameState.restsUsed++;
             gameState.justRested = true; // Prevent consecutive rests
-            
+
             showMessage(`Rested at the bonfire! Restored ${healAmount} HP. Choose your next path.`);
             createParticles(window.innerWidth / 2, window.innerHeight / 2, 40, '#ff6600', 'heal');
-            
+
             document.querySelector('.helper-modal').remove();
             updateUI();
             drawDungeonMap();
         };
 
-        window.declineRest = function() {
+        window.declineRest = function () {
             showMessage('You press onward without resting. Choose your next path.');
             document.querySelector('.helper-modal').remove();
             drawDungeonMap();
@@ -1621,13 +1724,13 @@
         function updateUI() {
             document.getElementById('health').textContent = gameState.health;
             const healthBar = document.getElementById('healthBar');
-            healthBar.style.width = 
+            healthBar.style.width =
                 `${Math.max(0, (gameState.health / gameState.maxHealth) * 100)}%`;
-            
+
             // Pulse effect on health change
             healthBar.classList.add('pulse');
             setTimeout(() => healthBar.classList.remove('pulse'), 300);
-            
+
             document.getElementById('deckCount').textContent = gameState.deck.length;
             document.getElementById('cardsChosen').textContent = `${gameState.cardsChosen} / 3`;
             document.getElementById('monstersSlain').textContent = gameState.monstersSlain;
@@ -1645,8 +1748,8 @@
                         <div class="card-value">${gameState.weapon.display}</div>
                         <div class="card-type">Weapon</div>
                         <div style="font-size: 0.85rem; margin-top: 0.3rem; opacity: 0.8;">(${gameState.weapon.name})</div>
-                        ${gameState.weaponLastMonster < Infinity ? 
-                            `<div style="font-size: 0.8rem; margin-top: 0.5rem; opacity: 0.7;">
+                        ${gameState.weaponLastMonster < Infinity ?
+                        `<div style="font-size: 0.8rem; margin-top: 0.5rem; opacity: 0.7;">
                                 Max monster: ${gameState.weaponLastMonster}
                             </div>` : ''}
                     </div>
@@ -1656,7 +1759,7 @@
             }
 
             // Update avoid button
-            document.getElementById('avoidBtn').disabled = 
+            document.getElementById('avoidBtn').disabled =
                 gameState.lastRoomAvoided || gameState.cardsChosen > 0 || gameState.room.length === 0;
         }
 
@@ -1667,7 +1770,7 @@
             gameState.room.forEach((card, index) => {
                 const cardElement = document.createElement('div');
                 cardElement.className = `card ${card.type}`;
-                
+
                 if (gameState.cardsChosen >= 3) {
                     cardElement.classList.add('disabled');
                 }
@@ -1738,6 +1841,14 @@
                 justRested: false
             };
 
+            // Initialize player animated position
+            const startRoom = gameState.dungeonMap[0];
+            mapAnimation.playerX = startRoom.x;
+            mapAnimation.playerY = startRoom.y;
+            mapAnimation.targetX = startRoom.x;
+            mapAnimation.targetY = startRoom.y;
+            mapAnimation.isMoving = false;
+
             document.getElementById('instructions').style.display = 'none';
             updateUI();
             drawDungeonMap();
@@ -1751,7 +1862,7 @@
                 console.log('Room already has cards, skipping deal');
                 return;
             }
-            
+
             // Keep the 4th card from previous room if exists
             const carryOver = gameState.room.length === 1 ? gameState.room[0] : null;
             gameState.room = carryOver ? [carryOver] : [];
@@ -1796,7 +1907,7 @@
                     break;
                 case 'monster':
                     handleMonster(card, rect.left + rect.width / 2, rect.top);
-                    
+
                     // CRITICAL: Check for death immediately after monster damage
                     if (gameState.health <= 0) {
                         gameState.gameOver = true;
@@ -1823,21 +1934,21 @@
                     } else if (gameState.room.length === 1) {
                         gameState.roomsCleared++;
                         gameState.lastRoomAvoided = false;
-                        
+
                         // Mark current room as cleared
                         gameState.dungeonMap[gameState.currentRoomIndex].cleared = true;
-                        
+
                         // Entering and clearing a new room means no longer "just rested"
                         gameState.justRested = false;
-                        
+
                         drawDungeonMap();
-                        
+
                         // Check if there are adjacent uncleared rooms
                         const currentRoom = gameState.dungeonMap[gameState.currentRoomIndex];
-                        const hasAdjacentRooms = currentRoom.connections.some(connId => 
+                        const hasAdjacentRooms = currentRoom.connections.some(connId =>
                             !gameState.dungeonMap[connId].cleared
                         );
-                        
+
                         if (hasAdjacentRooms || currentRoom.connections.length > 0) {
                             showMessage('Room cleared! Click an adjacent room on the map to continue.');
                         } else {
@@ -1869,7 +1980,7 @@
             const healAmount = gameState.health - oldHealth;
             gameState.potionUsedThisTurn = true;
             gameState.potionsUsed++;
-            
+
             if (healAmount > 0) {
                 showDamageIndicator(healAmount, x, y, true);
                 showMessage(`Drank ${card.name}! Restored ${healAmount} health.`);
@@ -1887,7 +1998,7 @@
                 damage = Math.max(0, card.value - gameState.weapon.value);
                 gameState.weaponLastMonster = card.value;
                 message = `Fought ${card.name} (${card.value}) with ${gameState.weapon.name}. `;
-                
+
                 if (damage > 0) {
                     message += `Took ${damage} damage!`;
                 } else {
@@ -1916,7 +2027,7 @@
             gameState.room = [];
             gameState.lastRoomAvoided = true;
             gameState.roomsAvoided++;
-            
+
             // Mark current room as "cleared" so player can backtrack
             gameState.dungeonMap[gameState.currentRoomIndex].cleared = true;
 
@@ -1926,7 +2037,7 @@
 
         function endGame() {
             gameState.gameOver = true;
-            
+
             let score;
             let title;
             let message;
@@ -1945,7 +2056,7 @@
                 // Victory!
                 score = gameState.health;
                 // Bonus for potion on last card
-                if (gameState.room.length > 0 && gameState.room[0].type === 'potion' && 
+                if (gameState.room.length > 0 && gameState.room[0].type === 'potion' &&
                     gameState.health === gameState.maxHealth) {
                     score += gameState.room[0].value;
                 }
@@ -1970,7 +2081,7 @@
                 </div>
             `;
             document.body.appendChild(gameOverEl);
-            
+
             // Add event listener to play again button
             document.getElementById('playAgainBtn').addEventListener('click', () => {
                 location.reload();
@@ -1980,7 +2091,7 @@
         // Particle System
         const canvas = document.getElementById('particleCanvas');
         const ctx = canvas.getContext('2d');
-        
+
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
@@ -2014,14 +2125,14 @@
             draw() {
                 ctx.save();
                 ctx.globalAlpha = this.life;
-                
+
                 if (this.type === 'heal') {
                     // Sparkle effect for healing
                     ctx.fillStyle = this.color;
                     ctx.beginPath();
                     ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
                     ctx.fill();
-                    
+
                     ctx.strokeStyle = '#ffffff';
                     ctx.lineWidth = 1;
                     ctx.beginPath();
@@ -2038,7 +2149,7 @@
                     ctx.fillStyle = this.color;
                     ctx.fillRect(this.x, this.y, this.size, this.size);
                 }
-                
+
                 ctx.restore();
             }
         }
@@ -2053,14 +2164,14 @@
 
         function animateParticles() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
+
             particles = particles.filter(p => p.life > 0);
-            
+
             particles.forEach(particle => {
                 particle.update();
                 particle.draw();
             });
-            
+
             requestAnimationFrame(animateParticles);
         }
 
@@ -2113,20 +2224,20 @@
         // Modify the animate loop to include ambient particles
         function animate() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
+
             // Draw ambient particles
             ambientParticles.forEach(p => {
                 p.update();
                 p.draw();
             });
-            
+
             // Draw effect particles
             particles = particles.filter(p => p.life > 0);
             particles.forEach(particle => {
                 particle.update();
                 particle.draw();
             });
-            
+
             requestAnimationFrame(animate);
         }
 
@@ -2140,4 +2251,5 @@
         document.getElementById('avoidBtn').addEventListener('click', avoidRoom);
     </script>
 </body>
+
 </html>
