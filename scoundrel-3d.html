@@ -4,10 +4,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scoundrel V2 - The Grid Descent</title>
+    <title>Scoundrel: Gilded Depths</title>
     <link
         href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Crimson+Text:ital,wght@0,400;0,700;1,400&family=Special+Elite&display=swap"
         rel="stylesheet">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
     <style>
         :root {
             --parchment: #f4e8d0;
@@ -139,7 +147,7 @@
             overflow: hidden;
         }
 
-        canvas#dungeonCanvas {
+        #dungeonCanvas {
             width: 100%;
             height: 100%;
             display: block;
@@ -194,8 +202,9 @@
         .card {
             width: 160px;
             aspect-ratio: 2.5/3.5;
-            background: var(--parchment);
-            color: var(--ink);
+            background: rgba(244, 232, 208, 0.1);
+            /* Very faint parchment tint */
+            color: var(--parchment);
             border-radius: 8px;
             border: 6px solid #222;
             padding: 12px;
@@ -205,6 +214,8 @@
             transition: transform 0.2s, box-shadow 0.2s;
             position: relative;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+            /* Keep art inside */
         }
 
         .card:hover {
@@ -213,33 +224,33 @@
         }
 
         .card.monster {
-            background-color: #fdd;
-            color: #800;
-            border-color: #800;
+            background-color: rgba(139, 0, 0, 0.2);
+            color: var(--parchment);
+            border-color: #8b0000;
         }
 
         .card.weapon {
-            background-color: #ddd;
-            color: #222;
+            background-color: rgba(68, 68, 68, 0.4);
+            color: var(--parchment);
             border-color: #444;
         }
 
         .card.potion {
-            background-color: #dfd;
-            color: #060;
-            border-color: #060;
+            background-color: rgba(0, 102, 0, 0.2);
+            color: var(--parchment);
+            border-color: #006600;
         }
 
         .card.gift {
-            background-color: #fff9e6;
-            color: #856404;
-            border-color: #d4af37;
-            box-shadow: 0 0 15px #d4af37;
+            background-color: rgba(212, 175, 55, 0.2);
+            color: var(--gold);
+            border-color: var(--gold);
+            box-shadow: 0 0 15px var(--gold);
         }
 
         .card.bonfire {
-            background-color: #fff0eb;
-            color: #853314;
+            background-color: rgba(255, 102, 0, 0.2);
+            color: #ff6600;
             border-color: #ff6600;
             box-shadow: 0 0 15px #ff6600;
         }
@@ -261,9 +272,30 @@
             font-family: 'Special Elite', cursive;
             font-size: 0.85rem;
             margin-top: auto;
-            border-top: 1px solid rgba(0, 0, 0, 0.2);
-            padding-top: 5px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 5px;
             text-transform: uppercase;
+            border-top: 1px solid var(--gold);
+        }
+
+        .card-art-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: 900% 100%;
+            z-index: 0;
+            filter: brightness(0.7);
+        }
+
+        .card .suit,
+        .card .val,
+        .card .name {
+            position: relative;
+            z-index: 1;
+            text-shadow: 2px 2px 4px #000;
         }
 
         /* Trophy Styles */
@@ -392,7 +424,7 @@
 <body>
     <div class="sidebar">
         <div class="title-area">
-            <h1>SCOUNDREL V2</h1>
+            <h1>SCOUNDREL:<br>GILDED DEPTHS</h1>
         </div>
 
         <div class="stat-block" id="sidebarStats" style="display: block;">
@@ -407,14 +439,18 @@
             Welcome to the dungeon, traveler. Watch your step on the tiles.
         </div>
 
-        <div style="margin-top: 15px;">
+        <div style="margin-top: 15px; display: flex; flex-direction: column; gap:10px;">
             <button class="v2-btn" id="newGameBtn" style="width: 100%">NEW DIVE</button>
+            <button class="v2-btn" id="viewToggleBtn" style="width: 100%; background:#444; color:#fff;">VIEW:
+                3D</button>
         </div>
     </div>
 
-    <div class="map-viewport">
-        <canvas id="dungeonCanvas"></canvas>
+    <div class="map-viewport" id="v3-container">
+        <!-- Three.js renderer will be injected here -->
     </div>
+    <canvas id="fxCanvas"
+        style="position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:5000;"></canvas>
 
     <!-- Encounter Modal -->
     <div class="modal-overlay" id="combatModal">
@@ -453,13 +489,18 @@
                     <div class="btn-group">
                         <button class="v2-btn" id="modalAvoidBtn" disabled>TACTICAL RETREAT</button>
                         <button class="v2-btn" id="exitCombatBtn" style="display:none">CONTINUE ON</button>
+                        <button class="v2-btn" id="bonfireNotNowBtn"
+                            style="display:none; background:#555; color:#fff;">NOT NOW</button>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
         // --- CORE GAME STATE ---
         const game = {
             hp: 20, maxHp: 20,
@@ -520,7 +561,8 @@
                             isSpecial: Math.random() < 0.15,
                             isBonfire: Math.random() < 0.1,
                             restRemaining: 3, // New property for Bonfire rooms
-                            isWaypoint: false
+                            isWaypoint: false,
+                            depth: 1.5 + Math.random() * 3 // 1.5x to 4.5x depth
                         };
 
                         // Link with waypoints
@@ -565,34 +607,44 @@
             allRooms.push(wp1, wp2);
         }
 
-        // --- RENDERING (Canvas Graph Paper) ---
-        const canvas = document.getElementById('dungeonCanvas');
-        const ctx = canvas.getContext('2d');
-        let viewOffset = { x: 0, y: 0 };
+        // --- 3D RENDERING (Three.js Tableau) ---
+        let scene, camera, renderer, controls, raycaster, mouse;
+        let torchLight;
+        let roomMeshes = new Map();
+        let terrainMeshes = new Map();
+        let waypointMeshes = new Map();
+        let corridorMeshes = new Map();
+        let doorMeshes = new Map();
+        let is3DView = true;
+        const textureLoader = new THREE.TextureLoader();
+
+        // FX State
+        const fxCanvas = document.getElementById('fxCanvas');
+        const fxCtx = fxCanvas.getContext('2d');
+        let particles = [];
         let screenShake = { intensity: 0, duration: 0 };
 
         class Particle {
             constructor(x, y, color) {
                 this.x = x; this.y = y;
-                this.color = color;
                 this.vx = (Math.random() - 0.5) * 10;
                 this.vy = (Math.random() - 0.5) * 10;
                 this.life = 1.0;
-                this.size = Math.random() * 5 + 2;
+                this.decay = 0.02 + Math.random() * 0.02;
+                this.color = color;
+                this.size = 2 + Math.random() * 4;
             }
             update() {
                 this.x += this.vx; this.y += this.vy;
                 this.vy += 0.2; // Gravity
-                this.life -= 0.02;
+                this.life -= this.decay;
             }
             draw(ctx) {
                 ctx.globalAlpha = this.life;
                 ctx.fillStyle = this.color;
                 ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
-                ctx.globalAlpha = 1.0;
             }
         }
-        let particles = [];
 
         function spawnParticles(x, y, color, count = 20) {
             for (let i = 0; i < count; i++) particles.push(new Particle(x, y, color));
@@ -603,57 +655,100 @@
             screenShake.duration = duration;
         }
 
-        function drawMap() {
-            ctx.save();
+        function updateFX() {
+            fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+
             if (screenShake.duration > 0) {
-                ctx.translate((Math.random() - 0.5) * screenShake.intensity, (Math.random() - 0.5) * screenShake.intensity);
+                const sx = (Math.random() - 0.5) * screenShake.intensity;
+                const sy = (Math.random() - 0.5) * screenShake.intensity;
+                // Since this covers the whole screen, we can't easily shake the body without glitches,
+                // but we can shake the containers. Let's shake the 3D container and Modal.
+                const containers = [document.getElementById('v3-container'), document.getElementById('combatModal')];
+                containers.forEach(c => {
+                    if (c) c.style.transform = `translate(${sx}px, ${sy}px)`;
+                });
                 screenShake.duration--;
-            }
-
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            const scale = 50; // pixels per grid unit
-            const cx = canvas.width / 2;
-            const cy = canvas.height / 2;
-
-            // Update view offset to center on current room
-            if (game.rooms.length > 0) {
-                const current = game.rooms.find(r => r.id === game.currentRoomIdx);
-                if (current) {
-                    viewOffset.x += (current.gx - viewOffset.x) * 0.1;
-                    viewOffset.y += (current.gy - viewOffset.y) * 0.1;
+                if (screenShake.duration <= 0) {
+                    containers.forEach(c => { if (c) c.style.transform = ''; });
                 }
             }
 
-            const offsetX = cx - viewOffset.x * scale;
-            const offsetY = cy - viewOffset.y * scale;
-
-            // Draw Background Grid
-            ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-            ctx.lineWidth = 1;
-            for (let x = offsetX % scale; x < canvas.width; x += scale) {
-                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
-            }
-            for (let y = offsetY % scale; y < canvas.height; y += scale) {
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-            }
-
-            // Draw Corridors
-            ctx.strokeStyle = 'rgba(212, 175, 55, 0.3)';
-            ctx.lineWidth = 4;
-            game.rooms.forEach(r => {
-                r.connections.forEach(cid => {
-                    const target = game.rooms.find(room => room.id === cid);
-                    if (!target) return;
-                    ctx.beginPath();
-                    ctx.moveTo(offsetX + r.gx * scale, offsetY + r.gy * scale);
-                    ctx.lineTo(offsetX + target.gx * scale, offsetY + target.gy * scale);
-                    ctx.stroke();
-                });
+            particles = particles.filter(p => p.life > 0);
+            particles.forEach(p => {
+                p.update();
+                p.draw(fxCtx);
             });
+        }
 
-            // Draw Rooms & Waypoints
-            game.rooms.forEach((r) => {
+        function resizeFXCanvas() {
+            fxCanvas.width = window.innerWidth;
+            fxCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeFXCanvas);
+        resizeFXCanvas();
+
+        function init3D() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a0a);
+            scene.fog = new THREE.FogExp2(0x0a0a0a, 0.04);
+
+            const container = document.getElementById('v3-container');
+            const aspect = container.clientWidth / container.clientHeight;
+            const d = 10;
+            camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
+            camera.position.set(20, 20, 20);
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enablePan = false;
+            controls.maxZoom = 2;
+            controls.minZoom = 0.5;
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // Lights
+            scene.add(new THREE.AmbientLight(0xffffff, 0.15));
+            // Initial Torch (Intensity 300 for clearer depths)
+            torchLight = new THREE.PointLight(0xffaa44, 300, 40);
+            torchLight.castShadow = true;
+            scene.add(torchLight);
+
+            animate3D();
+            window.addEventListener('click', on3DClick);
+        }
+
+        function on3DClick(event) {
+            const container = document.getElementById('v3-container');
+            const rect = container.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
+
+            if (mouse.x < -1 || mouse.x > 1 || mouse.y < -1 || mouse.y > 1) return;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(scene.children, true);
+
+            if (intersects.length > 0) {
+                const obj = intersects[0].object;
+                if (obj.userData && obj.userData.roomId !== undefined) {
+                    const current = game.rooms.find(r => r.id === game.currentRoomIdx);
+                    if (current && current.connections.includes(obj.userData.roomId)) {
+                        enterRoom(obj.userData.roomId);
+                    }
+                }
+            }
+        }
+
+        function update3DScene() {
+            if (!scene) return;
+
+            game.rooms.forEach(r => {
                 const isCurrent = r.id === game.currentRoomIdx;
                 const currentRoom = game.rooms.find(room => room.id === game.currentRoomIdx);
                 const isAdjacent = currentRoom ? currentRoom.connections.includes(r.id) : false;
@@ -661,69 +756,172 @@
 
                 if (!isVisible) return;
 
-                ctx.save();
-                ctx.translate(offsetX + r.gx * scale, offsetY + r.gy * scale);
-
                 if (r.isWaypoint) {
-                    // Small subtle dot for waypoints
-                    ctx.fillStyle = isAdjacent ? 'rgba(212, 175, 55, 0.9)' : 'rgba(255, 255, 255, 0.4)';
-                    ctx.beginPath();
-                    ctx.arc(0, 0, 5, 0, Math.PI * 2); // Smaller dot
-                    ctx.fill();
-                    if (isAdjacent) {
-                        ctx.strokeStyle = '#fff';
-                        ctx.lineWidth = 1;
-                        ctx.stroke();
+                    if (!waypointMeshes.has(r.id)) {
+                        const geo = new THREE.SphereGeometry(0.2, 16, 16);
+                        const mat = new THREE.MeshStandardMaterial({ color: 0x555555, emissive: 0x222222 });
+                        const mesh = new THREE.Mesh(geo, mat);
+                        mesh.position.set(r.gx / 1, 0.1, r.gy / 1);
+                        mesh.userData = { roomId: r.id };
+                        scene.add(mesh);
+                        waypointMeshes.set(r.id, mesh);
+                        // Apply waypoints texture if available, else standard color
+                        // applyTextureToMesh(mesh, 'block', 0); 
                     }
+                    const mesh = waypointMeshes.get(r.id);
+                    mesh.material.emissive.setHex(isAdjacent ? 0xd4af37 : 0x222222);
+                    mesh.material.emissiveIntensity = isAdjacent ? 2 : 0.5;
                 } else {
-                    // Styles
+                    if (!roomMeshes.has(r.id)) {
+                        const rw = r.w * 1;
+                        const rh = r.h * 1;
+                        const rDepth = 3.0 + Math.random() * 3.0;
+                        r.rDepth = rDepth; // Store for door logic
+                        const geo = new THREE.BoxGeometry(rw, rDepth, rh);
+                        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff }); // Neutral color for textures
+                        const mesh = new THREE.Mesh(geo, mat);
+                        mesh.position.set(r.gx / 1, rDepth / 2, r.gy / 1); // Ground at y=0, top extends up
+                        mesh.receiveShadow = true;
+                        mesh.castShadow = true;
+                        mesh.userData = { roomId: r.id };
+
+                        // Pick a texture based on room type
+                        if (r.isFinal) applyTextureToMesh(mesh, 'block', 7); // Skull/Ornate
+                        else if (r.isSpecial) applyTextureToMesh(mesh, 'block', 1); // Clean Stone
+                        else applyTextureToMesh(mesh, 'block', 0); // Standard Brick
+
+                        scene.add(mesh);
+                        roomMeshes.set(r.id, mesh);
+
+                        // Add Doors facing corridors
+                        addDoorsToRoom(r, mesh);
+                    }
+                    const mesh = roomMeshes.get(r.id);
                     if (isCurrent) {
-                        ctx.shadowBlur = 15; ctx.shadowColor = 'var(--gold)';
+                        // Raise torch to 3 to clear the 2-unit doors
+                        torchLight.position.set(mesh.position.x, 3, mesh.position.z);
                     }
-
-                    ctx.fillStyle = r.state === 'cleared' ? 'rgba(50,50,50,0.8)' : (r.state === 'avoided' ? '#411' : '#f4e8d0');
-                    ctx.strokeStyle = isAdjacent ? 'var(--gold)' : '#333';
-                    ctx.lineWidth = 3;
-
-                    const rw = r.w * scale * 0.8;
-                    const rh = r.h * scale * 0.8;
-                    ctx.fillRect(-rw / 2, -rh / 2, rw, rh);
-                    ctx.strokeRect(-rw / 2, -rh / 2, rw, rh);
-
-                    // Room Type Markers
-                    // Find actual boss id
-                    if (r.isFinal) {
-                        ctx.fillStyle = '#800';
-                        ctx.font = 'bold 20px Cinzel';
-                        ctx.textAlign = 'center';
-                        ctx.fillText('BOSS', 0, 8);
-                    } else if (r.isSpecial) {
-                        ctx.fillStyle = 'var(--gold)';
-                        ctx.font = 'bold 18px Cinzel';
-                        ctx.fillText('★', 0, 8);
-                    } else if (r.isBonfire) {
-                        ctx.fillStyle = '#f60';
-                        ctx.font = 'bold 18px Cinzel';
-                        ctx.fillText('🔥', 0, 8);
-                    }
+                    mesh.material.emissive.setHex(r.state === 'uncleared' ? 0x000000 : 0x111111);
                 }
-                ctx.restore();
+
+                // Draw Corridors to children
+                r.connections.forEach(cid => {
+                    const target = game.rooms.find(room => room.id === cid);
+                    if (!target) return;
+                    const corridorId = `cor_${r.id}_${cid}`;
+                    const corridorIdRev = `cor_${cid}_${r.id}`;
+
+                    if (!corridorMeshes.has(corridorId) && !corridorMeshes.has(corridorIdRev)) {
+                        const v1 = new THREE.Vector3(r.gx, 0, r.gy);
+                        const v2 = new THREE.Vector3(target.gx, 0, target.gy);
+                        const distance = v1.distanceTo(v2);
+                        const geo = new THREE.BoxGeometry(0.5, 0.05, distance);
+                        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+                        const mesh = new THREE.Mesh(geo, mat);
+
+                        // Center and rotate
+                        const center = v1.clone().add(v2).multiplyScalar(0.5);
+                        mesh.position.set(center.x, 0, center.z);
+                        mesh.lookAt(v2);
+
+                        applyTextureToMesh(mesh, 'block', 0); // Path texture
+                        scene.add(mesh);
+                        corridorMeshes.set(corridorId, mesh);
+                    }
+                });
             });
 
-            // Torchlight Gradient Overlay
-            const grad = ctx.createRadialGradient(cx, cy, 50, cx, cy, 300);
-            grad.addColorStop(0, 'rgba(0,0,0,0)');
-            grad.addColorStop(1, 'rgba(0,0,0,0.9)');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Render Particles
-            particles = particles.filter(p => p.life > 0);
-            particles.forEach(p => { p.update(); p.draw(ctx); });
-
-            ctx.restore();
-            requestAnimationFrame(drawMap);
+            // Camera Smoothing
+            const current = game.rooms.find(r => r.id === game.currentRoomIdx);
+            if (current) {
+                const targetPos = new THREE.Vector3(current.gx / 1, 0, current.gy / 1);
+                controls.target.lerp(targetPos, 0.05);
+            }
         }
+
+        function animate3D() {
+            requestAnimationFrame(animate3D);
+            update3DScene();
+            updateFX();
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            const container = document.getElementById('v3-container');
+            if (!renderer || !container) return;
+            const aspect = container.clientWidth / container.clientHeight;
+            const d = 10;
+            camera.left = -d * aspect;
+            camera.right = d * aspect;
+            camera.top = d;
+            camera.bottom = -d;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+        function addDoorsToRoom(room, roomMesh) {
+            const doorTex = textureLoader.load('assets/images/door.png');
+            // search allRooms to catch corridor waypoints!
+            room.connections.forEach(cid => {
+                const target = game.rooms.find(rm => rm.id === cid);
+                if (!target) return;
+
+                // Determine direction
+                const dx = target.gx - room.gx;
+                const dy = target.gy - room.gy;
+
+                // Door Plane (1x2)
+                const doorGeo = new THREE.PlaneGeometry(1, 2);
+                const doorMat = new THREE.MeshStandardMaterial({
+                    map: doorTex,
+                    transparent: true,
+                    side: THREE.FrontSide
+                });
+                const door = new THREE.Mesh(doorGeo, doorMat);
+                door.userData = { roomId: room.id, isDoor: true };
+
+                // Offset slightly from wall to prevent Z-fighting
+                const rw = room.w / 2;
+                const rh = room.h / 2;
+                const margin = 0.05;
+
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    // X direction
+                    door.position.set(dx > 0 ? rw + margin : -rw - margin, -(room.rDepth / 2) + 1, 0);
+                    door.rotation.y = dx > 0 ? Math.PI / 2 : -Math.PI / 2;
+                } else {
+                    // Z direction
+                    door.position.set(0, -(room.rDepth / 2) + 1, dy > 0 ? rh + margin : -rh - margin);
+                    door.rotation.y = dy > 0 ? 0 : Math.PI;
+                }
+
+                roomMesh.add(door);
+            });
+        }
+
+        function toggleView() {
+            is3DView = !is3DView;
+            const btn = document.getElementById('viewToggleBtn');
+            btn.innerText = `VIEW: ${is3DView ? '3D' : '2D'}`;
+
+            if (is3DView) {
+                // Restore Isometric
+                camera.position.set(20, 20, 20);
+                controls.enableRotate = true;
+                torchLight.intensity = 300;
+                torchLight.distance = 40;
+            } else {
+                // Classic Top Down - Higher intensity to see corridors
+                camera.position.set(0, 50, 0);
+                controls.enableRotate = false;
+                torchLight.intensity = 800;
+                torchLight.distance = 60;
+            }
+            camera.lookAt(controls.target);
+            camera.updateProjectionMatrix();
+        }
+        document.getElementById('viewToggleBtn').onclick = toggleView;
 
         // --- GAME LOGIC ---
         function shuffle(arr) {
@@ -748,10 +946,28 @@
         }
 
         function getMonsterName(v) {
-            const low = ['Shadow Creeper', 'Graveling', 'Rat-Bat', 'Spined Horror', 'Grue'];
-            const high = { 11: 'Jack of Spite', 12: 'Queen of Sorrow', 13: 'King of Ruin', 14: 'Primeval Ace' };
-            if (high[v]) return high[v];
-            return low[Math.floor(Math.random() * low.length)] + ` (${v})`;
+            /* 
+            // EXPANDED TABLE (Restore when 1x14 art is ready)
+            const names = {
+                2: 'Shadow Creeper', 3: 'Graveling', 4: 'Rat-Bat', 5: 'Spined Horror',
+                6: 'Grue', 7: 'Grave Knight', 8: 'Skeleton King', 9: 'Lich Acolyte',
+                10: 'Shadow Fiend', 11: 'Jack of Spite', 12: 'Queen of Sorrow', 
+                13: 'King of Ruin', 14: 'Primeval Ace'
+            };
+            */
+
+            // WEIGHTED TABLE (Mapping 13 values to 9 art slots)
+            if (v <= 3) return 'Shadow Creeper';  // 2,3 -> Slot 0
+            if (v <= 5) return 'Graveling';       // 4,5 -> Slot 1
+            if (v <= 7) return 'Rat-Bat';         // 6,7 -> Slot 2
+            if (v <= 9) return 'Spined Horror';   // 8,9 -> Slot 3
+            if (v === 10) return 'Grue';          // 10 -> Slot 4
+            if (v === 11) return 'Jack of Spite'; // 11 -> Slot 5
+            if (v === 12) return 'Queen of Sorrow'; // 12 -> Slot 6
+            if (v === 13) return 'King of Ruin';  // 13 -> Slot 7
+            if (v === 14) return 'Primeval Ace';  // 14 -> Slot 8
+
+            return `Monster (${v})`;
         }
 
         function startDive() {
@@ -764,6 +980,7 @@
 
             updateUI();
             logMsg("The descent begins. Room 0 explored.");
+            init3D();
             enterRoom(0);
         }
 
@@ -841,9 +1058,14 @@
                 const card = document.createElement('div');
                 card.className = `card ${c.type} dealing`;
                 card.style.animationDelay = `${idx * 0.1}s`;
+
+                const asset = getAssetData(c.type, c.val, c.suit, c.type === 'gift' ? c.actualGift : null);
+                const bgSize = asset.isStrip ? '900% 100%' : 'cover';
+
                 card.innerHTML = `
-                    <div class="suit">${c.suit}</div>
-                    <div class="val">${getDisplayVal(c.val)}</div>
+                    <div class="card-art-container" style="background-image: url('assets/images/${asset.file}'); background-size: ${bgSize}; background-position: ${asset.uv.u * 112.5}% 0%"></div>
+                    <div class="suit" style="background: rgba(0,0,0,0.5); border-radius: 50%; width: 40px; text-align: center;">${c.suit}</div>
+                    <div class="val" style="color: #fff; text-shadow: 2px 2px 0 #000;">${getDisplayVal(c.val)}</div>
                     <div class="name">${c.name}</div>
                 `;
                 card.onclick = (e) => pickCard(idx, e);
@@ -861,6 +1083,9 @@
                 document.getElementById('exitCombatBtn').style.display = 'none';
                 document.getElementById('modalAvoidBtn').style.display = 'inline-block';
             }
+
+            // Bonfire specific
+            document.getElementById('bonfireNotNowBtn').style.display = (game.activeRoom && game.activeRoom.isBonfire && game.activeRoom.state !== 'cleared') ? 'inline-block' : 'none';
 
             updateUI();
         }
@@ -982,14 +1207,20 @@
 
         function finishRoom() {
             game.activeRoom.state = 'cleared';
-            game.carryCard = game.combatCards[0] || null; // Transfer last card to global state
+            game.carryCard = game.combatCards[0] || null;
+            game.combatCards = []; // Clear current area
             game.activeRoom.cards = [];
             game.lastAvoided = false;
+
+            const enemyArea = document.getElementById('enemyArea');
+            enemyArea.innerHTML = game.carryCard
+                ? `<div class="combat-message" style="width:100%; text-align:center;">LOOT SECURED: ${game.carryCard.name} (Carried to next room)</div>`
+                : `<div class="combat-message" style="width:100%; text-align:center;">ROOM PURGED</div>`;
 
             document.getElementById('exitCombatBtn').style.display = 'block';
             document.getElementById('modalAvoidBtn').style.display = 'none';
             document.getElementById('combatMessage').innerText = "Victory! Path is clear.";
-            showCombat();
+            updateUI();
         }
 
         function avoidRoom() {
@@ -1055,6 +1286,63 @@
             }
         }
 
+        // --- ASSET HELPERS ---
+        function getUVForCell(cellIdx) {
+            // cellIdx is 0-8 for 1x9 horizontal strip
+            return { u: cellIdx / 9, v: 0 };
+        }
+
+        function getAssetData(type, value, suit, extra) {
+            let file = 'block.png';
+            let v = value;
+            let s = suit;
+
+            if (type === 'monster') file = (suit === '♣' ? 'club.png' : 'spade.png');
+            else if (type === 'weapon') file = 'diamond.png';
+            else if (type === 'potion') file = 'heart.png';
+            else if (type === 'block') file = 'block.png';
+            else if (type === 'bonfire') file = 'rest_m.png';
+            else if (type === 'gift' && extra) {
+                file = extra.type === 'weapon' ? 'diamond.png' : 'heart.png';
+                v = extra.val; s = extra.suit;
+            }
+
+            let cellIdx = 0;
+            if (type === 'block') {
+                cellIdx = value % 9;
+            } else if (type === 'bonfire') {
+                cellIdx = 0; // rest_m.png
+            } else {
+                // WEIGHTED MAPPING (Must match getMonsterName)
+                if (v <= 3) cellIdx = 0;
+                else if (v <= 5) cellIdx = 1;
+                else if (v <= 7) cellIdx = 2;
+                else if (v <= 9) cellIdx = 3;
+                else if (v === 10) cellIdx = 4;
+                else if (v === 11) cellIdx = 5;
+                else if (v === 12) cellIdx = 6;
+                else if (v === 13) cellIdx = 7;
+                else if (v === 14) cellIdx = 8;
+                else cellIdx = 0;
+            }
+            const isStrip = !file.includes('rest');
+            return { file, uv: getUVForCell(cellIdx), isStrip };
+        }
+
+        function applyTextureToMesh(mesh, type, value, suit) {
+            const asset = getAssetData(type, value, suit);
+            const tex = textureLoader.load(`assets/images/${asset.file}`);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+
+            const isStrip = !asset.file.includes('rest');
+            tex.repeat.set(isStrip ? 1 / 9 : 1, 1);
+            tex.offset.set(asset.uv.u, 0);
+
+            mesh.material.map = tex;
+            mesh.material.needsUpdate = true;
+        }
+
         function logMsg(m) {
             const log = document.getElementById('gameLog');
             const entry = document.createElement('div');
@@ -1062,52 +1350,10 @@
             log.prepend(entry);
         }
 
-        // --- CONTROLS ---
-        function handleInput(clientX, clientY) {
-            if (document.getElementById('combatModal').style.display === 'flex') return;
-
-            const rect = canvas.getBoundingClientRect();
-            const x = clientX - rect.left;
-            const y = clientY - rect.top;
-
-            const cx = canvas.width / 2;
-            const cy = canvas.height / 2;
-            const scale = 50;
-
-            const offsetX = cx - viewOffset.x * scale;
-            const offsetY = cy - viewOffset.y * scale;
-
-            game.rooms.forEach((r) => {
-                const rx = offsetX + r.gx * scale;
-                const ry = offsetY + r.gy * scale;
-                const dist = Math.sqrt((rx - x) ** 2 + (ry - y) ** 2);
-
-                if (dist < 40) {
-                    const current = game.rooms.find(room => room.id === game.currentRoomIdx);
-                    if (current && current.connections.includes(r.id)) {
-                        enterRoom(r.id);
-                    }
-                }
-            });
-        }
-
-        canvas.addEventListener('click', (e) => handleInput(e.clientX, e.clientY));
-        canvas.addEventListener('touchstart', (e) => {
-            const touch = e.touches[0];
-            handleInput(touch.clientX, touch.clientY);
-        });
-
         document.getElementById('newGameBtn').onclick = startDive;
         document.getElementById('modalAvoidBtn').onclick = avoidRoom;
         document.getElementById('exitCombatBtn').onclick = closeCombat;
-
-        function resizeCanvas() {
-            canvas.width = canvas.parentElement.clientWidth;
-            canvas.height = canvas.parentElement.clientHeight;
-        }
-        window.onresize = resizeCanvas;
-        resizeCanvas();
-        drawMap();
+        document.getElementById('bonfireNotNowBtn').onclick = closeCombat;
     </script>
 </body>
 
