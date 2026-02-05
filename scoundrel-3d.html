@@ -939,7 +939,7 @@
                 for (let v = 2; v <= 14; v++) deck.push({ suit, val: v, type: 'monster', name: getMonsterName(v) });
             });
             // Weapons (2-10 D)
-            for (let v = 2; v <= 10; v++) deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: `Blade lv.${v}` });
+            for (let v = 2; v <= 10; v++) deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: `Weapon lv.${v}` });
             // Potions (2-10 H)
             for (let v = 2; v <= 10; v++) deck.push({ suit: SUITS.HEARTS, val: v, type: 'potion', name: `HP Incense ${v}` });
             return shuffle(deck);
@@ -1261,7 +1261,7 @@
 
             if (game.weapon) {
                 weaponLabel.innerText = `${game.weapon.name} (${game.weapon.val})`;
-                weaponDetail.innerText = game.weaponDurability === Infinity ? "Clean Blade" : `Bloody (Max Monster: ${game.weaponDurability})`;
+                weaponDetail.innerText = game.weaponDurability === Infinity ? "Clean Weapon" : `Bloody (Max Monster: ${game.weaponDurability})`;
                 weaponLabel.style.color = 'var(--gold)';
             } else {
                 weaponLabel.innerText = "BARE HANDS";
