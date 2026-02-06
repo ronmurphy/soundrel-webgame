@@ -561,7 +561,7 @@
 
     <!-- Encounter Modal -->
     <div class="modal-overlay" id="combatModal">
-        <div class="combat-container">
+        <div class="combat-container" id="combatContainer">
             <div class="enemy-area" id="enemyArea">
                 <!-- Cards inject here -->
             </div>
@@ -602,6 +602,30 @@
                             style="display:none; background:#555; color:#fff;">NOT NOW</button>
                     </div>
                 </div>
+            </div>
+        </div>
+        <!-- Bonfire UI -->
+        <div id="bonfireUI"
+            style="display:none; flex-direction:column; align-items:center; justify-content:center; width:calc(100% - 320px); height:100%; text-align:center;">
+            <h2
+                style="font-family:'Cinzel'; font-size:3rem; color:#ff6600; text-shadow:0 0 20px #ff4400; margin-bottom:20px;">
+                BONFIRE LIT</h2>
+
+            <!-- Avatar Rest Image -->
+            <div id="bonfireImage"
+                style="width:200px; height:300px; background-size:cover; background-position:center; border:4px solid #444; margin-bottom:20px; box-shadow:0 0 30px #ff4400;">
+            </div>
+
+            <div style="font-style:italic; margin-bottom:40px; color:#aaa;" id="bonfireStatus">Respite available.</div>
+            <div style="display:flex; flex-direction:column; gap:20px; width:300px; margin:0 auto;">
+                <button class="v2-btn" onclick="handleBonfire(1)" id="btnRest1">Light Rest (+5 HP) <span
+                        style="font-size:0.8em; opacity:0.7;">(1 cost)</span></button>
+                <button class="v2-btn" onclick="handleBonfire(2)" id="btnRest2">Deep Rest (+10 HP) <span
+                        style="font-size:0.8em; opacity:0.7;">(2 costs)</span></button>
+                <button class="v2-btn" onclick="handleBonfire(3)" id="btnRest3">Full Sleep (+15 HP) <span
+                        style="font-size:0.8em; opacity:0.7;">(3 costs)</span></button>
+                <button class="v2-btn" onclick="closeCombat()"
+                    style="background:#555; color:#fff; margin-top:20px;">Leave</button>
             </div>
         </div>
     </div>
@@ -668,9 +692,9 @@
                             state: 'uncleared',
                             cards: [],
                             connections: [],
-                            isSpecial: Math.random() < 0.15,
-                            isBonfire: Math.random() < 0.1,
-                            restRemaining: 3, // New property for Bonfire rooms
+                            isSpecial: false, // Assigned later
+                            isBonfire: false, // Assigned later
+                            restRemaining: 3,
                             isWaypoint: false,
                             depth: 1.5 + Math.random() * 3, // 1.5x to 4.5x depth
                             isRevealed: false
@@ -689,13 +713,40 @@
                 if (!found) frontier.splice(frontier.indexOf(parent), 1);
             }
 
-            // Set Boss in the "furthest" room (non-waypoint)
+            // 3. Assign Specials (1 Bonfire, 1-3 Merchants)
+
+            // FIRST: Set Boss in the "furthest" room (non-waypoint) to ensure it exists
             const realRooms = rooms.filter(r => !r.isWaypoint);
             const dists = realRooms.map(r => Math.abs(r.gx) + Math.abs(r.gy));
             const maxDistIdx = dists.indexOf(Math.max(...dists));
-            realRooms[maxDistIdx].isFinal = true;
-            realRooms[maxDistIdx].isSpecial = false;
-            realRooms[maxDistIdx].isBonfire = false;
+            if (maxDistIdx !== -1) {
+                realRooms[maxDistIdx].isFinal = true;
+                realRooms[maxDistIdx].isSpecial = false;
+                realRooms[maxDistIdx].isBonfire = false;
+            }
+
+            // Filter out start room (id 0) and final room from potential special rooms
+            const potentialSpecials = rooms.filter(r => r.id !== 0 && !r.isFinal && !r.isWaypoint);
+            shuffle(potentialSpecials); // Randomize list
+
+            // Assign 1 Bonfire
+            if (potentialSpecials.length > 0) {
+                const b = potentialSpecials.pop();
+                b.isBonfire = true;
+                b.restRemaining = 3;
+            }
+
+            // Assign 1-3 Merchants
+            const merchantCount = 1 + Math.floor(Math.random() * 3); // 1, 2, or 3
+            for (let i = 0; i < merchantCount; i++) {
+                if (potentialSpecials.length > 0) {
+                    const m = potentialSpecials.pop();
+                    m.isSpecial = true;
+                    m.generatedContent = null; // Will store the fixed items
+                }
+            }
+
+            // Remaining are monsters (default)
 
             return rooms;
         }
@@ -733,6 +784,14 @@
             f: { up: null, down: null }
         };
         const textureLoader = new THREE.TextureLoader();
+        const textureCache = new Map();
+
+        function loadTexture(path) {
+            if (!textureCache.has(path)) {
+                textureCache.set(path, textureLoader.load(path));
+            }
+            return textureCache.get(path);
+        }
 
         // FX State
         const fxCanvas = document.getElementById('fxCanvas');
@@ -845,10 +904,10 @@
             // Fog of War
             scene.fog = new THREE.FogExp2(0x000000, 0.05);
             // Load Walking Textures
-            walkAnims.m.up = textureLoader.load('assets/images/animations/m_walk_up.png');
-            walkAnims.m.down = textureLoader.load('assets/images/animations/m_walk_down.png');
-            walkAnims.f.up = textureLoader.load('assets/images/animations/f_walk_up.png');
-            walkAnims.f.down = textureLoader.load('assets/images/animations/f_walk_down.png');
+            walkAnims.m.up = loadTexture('assets/images/animations/m_walk_up.png');
+            walkAnims.m.down = loadTexture('assets/images/animations/m_walk_down.png');
+            walkAnims.f.up = loadTexture('assets/images/animations/f_walk_up.png');
+            walkAnims.f.down = loadTexture('assets/images/animations/f_walk_down.png');
 
             // Player Billboard
             const spriteMat = new THREE.SpriteMaterial({ map: walkAnims.m.up, transparent: true });
@@ -1033,7 +1092,7 @@
         }
 
         function addDoorsToRoom(room, mesh) {
-            const tex = textureLoader.load('assets/images/door.png');
+            const tex = loadTexture('assets/images/door.png');
             room.connections.forEach(cid => {
                 const target = game.rooms.find(rm => rm.id === cid);
                 if (!target) return;
@@ -1052,7 +1111,7 @@
         }
 
         function addLocalFog(x, z) {
-            const smoke = textureLoader.load('assets/images/textures/smoke_01.png');
+            const smoke = loadTexture('assets/images/textures/smoke_01.png');
             for (let i = 0; i < 3; i++) {
                 const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smoke, transparent: true, opacity: 0.2, color: 0x444444 }));
                 s.raycast = () => { };
@@ -1165,32 +1224,37 @@
 
             if (room.isSpecial && room.state !== 'cleared') {
                 game.activeRoom = room;
-                const gifts = [];
-                // Add 2 random card gifts
-                const redFaces = [];
-                [SUITS.HEARTS, SUITS.DIAMONDS].forEach(s => { for (let v = 11; v <= 14; v++) redFaces.push({ suit: s, val: v }); });
 
-                for (let i = 0; i < 2; i++) {
-                    const base = redFaces[Math.floor(Math.random() * redFaces.length)];
-                    const giftType = Math.random() > 0.5 ? 'weapon' : 'potion';
-                    gifts.push({
-                        suit: base.suit, val: base.val, type: 'gift',
-                        name: giftType === 'weapon' ? `Divine Weapon` : `Elixir of Life`,
-                        actualGift: { suit: base.suit, val: base.val, type: giftType, name: giftType === 'weapon' ? `Divine Weapon` : `Elixir of Life` }
-                    });
+                // Persistence Check
+                if (!room.generatedContent) {
+                    const gifts = [];
+                    // Add 2 random card gifts
+                    const redFaces = [];
+                    [SUITS.HEARTS, SUITS.DIAMONDS].forEach(s => { for (let v = 11; v <= 14; v++) redFaces.push({ suit: s, val: v }); });
+
+                    for (let i = 0; i < 2; i++) {
+                        const base = redFaces[Math.floor(Math.random() * redFaces.length)];
+                        const giftType = Math.random() > 0.5 ? 'weapon' : 'potion';
+                        gifts.push({
+                            suit: base.suit, val: base.val, type: 'gift',
+                            name: giftType === 'weapon' ? `Divine Weapon` : `Elixir of Life`,
+                            actualGift: { suit: base.suit, val: base.val, type: giftType, name: giftType === 'weapon' ? `Divine Weapon` : `Elixir of Life` }
+                        });
+                    }
+
+                    // Add Repair option if we have a weapon
+                    if (game.weapon) {
+                        const boost = Math.floor(Math.random() * 6) + 1;
+                        gifts.push({
+                            suit: '🛠️', val: boost, type: 'gift',
+                            name: `Repair Artifact (+${boost})`,
+                            actualGift: { type: 'repair', val: boost, name: `Repaired ${game.weapon.name}` }
+                        });
+                    }
+                    room.generatedContent = gifts;
                 }
 
-                // Add Repair option if we have a weapon
-                if (game.weapon) {
-                    const boost = Math.floor(Math.random() * 6) + 1;
-                    gifts.push({
-                        suit: '🛠️', val: boost, type: 'gift',
-                        name: `Repair Artifact (+${boost})`,
-                        actualGift: { type: 'repair', val: boost, name: `Repaired ${game.weapon.name}` }
-                    });
-                }
-
-                game.combatCards = gifts;
+                game.combatCards = room.generatedContent; // Load persistent gifts
                 game.chosenCount = 0; game.potionsUsedThisTurn = false;
                 logMsg(`Merchant encountered! Pick your blessing.`);
                 showCombat();
@@ -1198,9 +1262,16 @@
             }
             if (room.isBonfire && room.state !== 'cleared') {
                 game.activeRoom = room;
-                game.combatCards = [{ type: 'bonfire', name: `REST (${room.restRemaining} left)`, val: 5, suit: '🔥' }];
+                // Check if generatedContent exists (it should via map gen), 
+                // but for bonfires we use room.restRemaining directly. 
+                // We don't use combatCards for persistent bonfire UI.
+
+                // Persistence Check (ensure restRemaining is set if valid room)
+                if (room.restRemaining === undefined) room.restRemaining = 3;
+
                 game.chosenCount = 0; game.potionsUsedThisTurn = false;
-                showCombat(); return;
+                showBonfireUI();
+                return;
             }
             if (room.cards.length === 0 && id !== 0) {
                 room.cards = game.carryCard ? [game.carryCard] : [];
@@ -1441,7 +1512,15 @@
             // Proactive Purge Check
             const allCleared = game.rooms.every(r => r.isWaypoint || r.state === 'cleared');
             if (allCleared) {
-                logMsg("Floor Purged! Return to the Guardian's lair to descend.");
+                if (game.activeRoom.isFinal) {
+                    // Update message and show descend button immediately
+                    document.getElementById('combatMessage').innerText = "Floor Purged! Stairs revealed.";
+                    document.getElementById('descendBtn').style.display = 'block';
+                    document.getElementById('exitCombatBtn').style.display = 'none';
+                    logMsg("Floor Purged! Stairs revealed.");
+                } else {
+                    logMsg("Floor Purged! Return to the Guardian's lair to descend.");
+                }
             }
 
             updateUI();
@@ -1462,6 +1541,62 @@
 
         function closeCombat() {
             document.getElementById('combatModal').style.display = 'none';
+            document.getElementById('combatContainer').style.display = 'flex';
+            document.getElementById('bonfireUI').style.display = 'none';
+        }
+        window.closeCombat = closeCombat; // Expose for onClick events
+
+        function showBonfireUI() {
+            const overlay = document.getElementById('combatModal');
+            overlay.style.display = 'flex';
+            document.getElementById('combatContainer').style.display = 'none';
+            document.getElementById('bonfireUI').style.display = 'flex';
+            updateBonfireUI();
+        }
+
+        window.handleBonfire = function (cost) {
+            const room = game.activeRoom;
+            if (room.restRemaining < cost) return;
+
+            room.restRemaining -= cost;
+            const heal = Math.min(5 * cost, game.maxHp - game.hp);
+            game.hp += heal;
+
+            spawnParticles(window.innerWidth / 2, window.innerHeight / 2, '#ff6600', 40);
+            logMsg(`Bonfire Rest: +${heal} Vitality.`);
+
+            if (room.restRemaining <= 0) {
+                room.state = 'cleared';
+                logMsg("The fire fades.");
+                closeCombat();
+            } else {
+                updateBonfireUI();
+                updateUI();
+            }
+        };
+
+        function updateBonfireUI() {
+            const room = game.activeRoom;
+            document.getElementById('bonfireStatus').innerText = `${room.restRemaining} kindle remaining.`;
+
+            // Set Avatar Image
+            const bgUrl = `assets/images/rest_${game.sex}.png`;
+            document.getElementById('bonfireImage').style.backgroundImage = `url('${bgUrl}')`;
+
+            // Dim/Disable Buttons
+            ['btnRest1', 'btnRest2', 'btnRest3'].forEach((id, idx) => {
+                const cost = idx + 1;
+                const btn = document.getElementById(id);
+                if (room.restRemaining < cost) {
+                    btn.disabled = true;
+                    btn.style.opacity = '0.3';
+                    btn.style.cursor = 'not-allowed';
+                } else {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    btn.style.cursor = 'pointer';
+                }
+            });
         }
 
         function gameOver() {
@@ -1486,6 +1621,10 @@
             // Update Sidebar
             document.getElementById('hpValueSidebar').innerText = game.hp;
             document.getElementById('hpBarSidebar').style.width = `${(game.hp / game.maxHp) * 100}%`;
+
+            // Visual Progression: Change sidebar background block based on floor
+            const blockNum = Math.min(9, game.floor).toString().padStart(3, '0');
+            document.querySelector('.sidebar').style.backgroundImage = `url('assets/images/individuals/block_${blockNum}.png')`;
 
             // Update Modal
             document.getElementById('hpValueModal').innerText = game.hp;
@@ -1595,7 +1734,7 @@
 
         function applyTextureToMesh(mesh, type, value, suit) {
             const asset = getAssetData(type, value, suit);
-            const tex = textureLoader.load(`assets/images/${asset.file}`);
+            const tex = loadTexture(`assets/images/${asset.file}`);
             tex.wrapS = THREE.RepeatWrapping;
             tex.wrapT = THREE.RepeatWrapping;
 
