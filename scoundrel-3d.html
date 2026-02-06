@@ -1174,10 +1174,143 @@
                 scene.add(s);
             }
         }
+        const THEMES = [
+            { id: 1, name: 'Dirt', tile: 1, color: 0x3d2817 },    // Brown
+            { id: 2, name: 'Stone', tile: 2, color: 0x222222 },   // Grey
+            { id: 3, name: 'Moss', tile: 3, color: 0x173d1a },    // Green
+            { id: 4, name: 'Ancient', tile: 4, color: 0x3d173d }, // Purple
+            { id: 5, name: 'Magma', tile: 5, color: 0x3d1717 },   // Red
+            { id: 6, name: 'Ice', tile: 6, color: 0x173d3d },     // Cyan/Teal
+            { id: 7, name: 'Abyss', tile: 7, color: 0x050505 },   // Near Black
+            { id: 8, name: 'Bone', tile: 8, color: 0x3d3517 },    // Yellow/Bone
+            { id: 9, name: 'Ruins', tile: 9, color: 0x282222 },   // Dusty
+        ];
+
+        function getThemeForFloor(floor) {
+            // map floor 1 -> index 0 (theme 1)
+            // wrap around 1-9
+            const idx = (floor - 1) % 9;
+            return THEMES[idx];
+        }
+
+        function updateAtmosphere(floor) {
+            const theme = getThemeForFloor(floor);
+            const dimColor = new THREE.Color(theme.color).multiplyScalar(0.5); // Dim by 50%
+            scene.background = dimColor;
+            scene.fog = new THREE.FogExp2(dimColor, 0.05);
+
+            // Update lights to match mood?
+            // Maybe tint the ambient light slightly
+            const amb = scene.children.find(c => c.isAmbientLight);
+            if (amb) amb.color.setHex(theme.color).lerp(new THREE.Color(0xffffff), 0.3);
+        }
+
+        function generateFloorCA() {
+            const theme = getThemeForFloor(game.floor);
+            const bounds = 8; // -8 to 8
+            const size = bounds * 2 + 1;
+            let grid = {};
+
+            // Init with noise, but ensure room positions are alive
+            for (let x = -bounds; x <= bounds; x++) {
+                grid[x] = {};
+                for (let z = -bounds; z <= bounds; z++) {
+                    let alive = Math.random() < 0.45;
+
+                    // Check rooms: if (x,z) is inside/near a room, force alive
+                    const nearRoom = game.rooms.some(r => {
+                        return x >= r.gx - r.w / 2 - 1 && x <= r.gx + r.w / 2 + 1 &&
+                            z >= r.gy - r.h / 2 - 1 && z <= r.gy + r.h / 2 + 1;
+                    });
+
+                    // Check corridors roughly
+                    const nearCorr = Array.from(corridorMeshes.values()).some(m => {
+                        const p = m.position;
+                        // Simple distance check since corridors are rotated lines
+                        return Math.abs(x - p.x) < 2 && Math.abs(z - p.z) < 2;
+                    });
+
+                    if (nearRoom || nearCorr) alive = true;
+                    grid[x][z] = alive;
+                }
+            }
+
+            // CA Steps
+            for (let step = 0; step < 3; step++) {
+                let nextGrid = JSON.parse(JSON.stringify(grid));
+                for (let x = -bounds; x <= bounds; x++) {
+                    for (let z = -bounds; z <= bounds; z++) {
+                        let n = countNeighbors(grid, x, z, bounds);
+                        if (grid[x] && grid[x][z]) {
+                            if (n < 3) nextGrid[x][z] = false; // Starve
+                            else nextGrid[x][z] = true;
+                        } else {
+                            if (n > 4) {
+                                if (!nextGrid[x]) nextGrid[x] = {};
+                                nextGrid[x][z] = true; // Born
+                            }
+                        }
+
+                        // Keep rooms protected
+                        const protectedCell = game.rooms.some(r =>
+                            x >= r.gx - r.w / 2 - 1 && x <= r.gx + r.w / 2 + 1 &&
+                            z >= r.gy - r.h / 2 - 1 && z <= r.gy + r.h / 2 + 1
+                        );
+                        if (protectedCell) {
+                            if (!nextGrid[x]) nextGrid[x] = {};
+                            nextGrid[x][z] = true;
+                        }
+                    }
+                }
+                grid = nextGrid;
+            }
+
+            // Mesh Generation
+            const floorGeo = new THREE.BoxGeometry(1, 1, 1);
+            // We'll create individual meshes for simplicity as we need texture mapping
+            // Ideally we'd use InstancedMesh but we want to use the existing block texture func
+
+            // To optimize, let's create a single geometry merging? 
+            // Actually, for just ~100-200 tiles, individual meshes are ok for now.
+
+            for (let x = -bounds; x <= bounds; x++) {
+                for (let z = -bounds; z <= bounds; z++) {
+                    if (grid[x][z]) {
+                        const m = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ color: 0xffffff }));
+                        m.position.set(x, -0.6, z); // Slightly below rooms (rooms are at y=0, floor needs to be ground level)
+                        // Wait, rooms are generated at y = rDepth/2.
+                        // Corridors are at h=0.05.
+                        // Rooms floor is effectively ~0.
+                        // Let's put this floor at y = -0.5
+
+                        applyTextureToMesh(m, 'block', theme.tile - 1); // 0-indexed
+                        scene.add(m);
+                    }
+                }
+            }
+        }
+
+        function countNeighbors(grid, x, z, b) {
+            let count = 0;
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
+                    if (i === 0 && j === 0) continue;
+                    const nx = x + i; const nz = z + j;
+                    if (nx < -b || nx > b || nz < -b || nz > b) continue;
+                    if (grid[nx][nz]) count++;
+                }
+            }
+            return count;
+        }
+
         function clear3DScene() {
             if (!scene) return;
             while (scene.children.length > 0) scene.remove(scene.children[0]);
-            scene.add(new THREE.AmbientLight(0xffffff, 0.15));
+
+            // New Ambient Light handling in updateAtmosphere, but need base
+            const amb = new THREE.AmbientLight(0xffffff, 0.15);
+            scene.add(amb);
+
             roomMeshes.clear(); waypointMeshes.clear(); corridorMeshes.clear(); doorMeshes.clear();
             playerSprite = null; torchLight = null;
         }
@@ -1191,6 +1324,8 @@
             camera.updateProjectionMatrix();
         }
         document.getElementById('viewToggleBtn').onclick = toggleView;
+
+
 
         function shuffle(arr) {
             for (let i = arr.length - 1; i > 0; i--) {
@@ -1247,6 +1382,9 @@
             game.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
             game.rooms = generateDungeon(); game.currentRoomIdx = 0; game.lastAvoided = false;
             clear3DScene(); init3D();
+            generateFloorCA(); // Generate Atmosphere and Floor
+            updateAtmosphere(game.floor);
+
             if (playerSprite) playerSprite.position.set(0, 0.75, 0);
             updateUI();
             logMsg("The descent begins. Room 0 explored.");
@@ -1259,6 +1397,9 @@
             game.deck = createDeck(); game.rooms = generateDungeon();
             game.currentRoomIdx = 0; game.lastAvoided = false;
             clear3DScene(); init3D();
+            generateFloorCA();
+            updateAtmosphere(game.floor);
+
             if (playerSprite) playerSprite.position.set(0, 0.75, 0);
             updateUI();
             logMsg(`Descending deeper... Floor ${game.floor}`);
