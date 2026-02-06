@@ -16,6 +16,7 @@
             }
         }
     </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/23.1.2/tween.umd.js"></script>
     <style>
         :root {
             --parchment: #f4e8d0;
@@ -46,14 +47,13 @@
         /* --- Sidebar Stats (Always Visible) --- */
         .sidebar {
             width: 320px;
-            background: linear-gradient(to bottom, #2a1b14, #1a100a);
-            border-right: 4px solid var(--ink);
+            background: url('assets/images/individuals/block_007.png') repeat;
+            border-right: 4px solid #000;
             display: flex;
             flex-direction: column;
             padding: 20px;
             z-index: 2000;
-            /* Above Modal */
-            box-shadow: 5px 0 15px rgba(0, 0, 0, 0.5);
+            box-shadow: 5px 0 15px rgba(0, 0, 0, 0.8);
             transition: transform 0.3s ease;
         }
 
@@ -72,11 +72,12 @@
         }
 
         .stat-block {
-            background: rgba(0, 0, 0, 0.3);
+            background: rgba(0, 0, 0, 0.7);
             border: 1px solid var(--gold);
             padding: 15px;
             margin-bottom: 20px;
             position: relative;
+            box-shadow: inset 0 0 10px #000;
         }
 
         .stat-label {
@@ -418,6 +419,70 @@
                 width: 100%;
             }
         }
+
+        /* Avatar Selection */
+        .avatar-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 6000;
+        }
+
+        .avatar-options {
+            display: flex;
+            gap: 40px;
+            max-width: 900px;
+        }
+
+        .avatar-card {
+            width: 300px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 4px solid transparent;
+            text-align: center;
+        }
+
+        .avatar-card:hover {
+            transform: scale(1.05);
+            border-color: var(--gold);
+            box-shadow: 0 0 30px var(--gold);
+        }
+
+        .avatar-img {
+            width: 100%;
+            aspect-ratio: 2/3;
+            background-size: cover;
+            background-position: center;
+            margin-bottom: 20px;
+        }
+
+        .avatar-card span {
+            font-family: 'Cinzel', serif;
+            font-size: 1.5rem;
+            color: var(--gold);
+            display: block;
+        }
+
+        /* Animated Card */
+        @keyframes anime-card-art {
+            0% {
+                background-position: 0% 0%;
+            }
+
+            100% {
+                background-position: 100% 0%;
+            }
+        }
+
+        .animated-card-art {
+            animation: anime-card-art 2s steps(24) infinite !important;
+        }
     </style>
 </head>
 
@@ -428,10 +493,35 @@
         </div>
 
         <div class="stat-block" id="sidebarStats" style="display: block;">
-            <div class="stat-label">Protagonist Vitality</div>
-            <div class="stat-value" id="hpValueSidebar">20</div>
-            <div class="health-bar">
+            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                <div style="flex-grow: 1;">
+                    <div class="stat-label">Protagonist Vitality</div>
+                    <div class="stat-value" id="hpValueSidebar">20</div>
+                </div>
+                <div style="text-align: right;">
+                    <div class="stat-label">Floor</div>
+                    <div class="stat-value" id="floorValue">1</div>
+                </div>
+            </div>
+            <div class="health-bar" style="margin-top: 5px;">
                 <div class="health-fill" id="hpBarSidebar" style="width: 100%"></div>
+            </div>
+            <div
+                style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.8rem; opacity: 0.8;">
+                <div>Cleared: <span id="progressValue" style="color: var(--gold);">0 / 12</span></div>
+                <div>Deck: <span id="deckValue" style="color: var(--gold);">44</span></div>
+            </div>
+        </div>
+
+        <div class="stat-block" id="equippedWeaponSlot">
+            <div class="stat-label">Main Armament</div>
+            <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+                <div id="weaponArtSidebar"
+                    style="width: 64px; height: 64px; background-size: cover; border: 1px solid var(--gold);"></div>
+                <div>
+                    <div id="weaponNameSidebar" style="font-weight: 700; color: var(--gold);">UNARMED</div>
+                    <div id="weaponDurSidebar" style="font-size: 0.8rem; opacity: 0.7;">No limit</div>
+                </div>
             </div>
         </div>
 
@@ -451,6 +541,23 @@
     </div>
     <canvas id="fxCanvas"
         style="position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:5000;"></canvas>
+
+    <!-- Avatar Selection Modal -->
+    <div class="avatar-modal" id="avatarModal" style="display: none;">
+        <div style="text-align: center;">
+            <h2
+                style="font-family: 'Cinzel', serif; color: var(--gold); font-size: 3rem; margin-bottom: 40px; text-shadow: 0 0 20px #000;">
+                Choose Your Avatar</h2>
+            <div class="avatar-options">
+                <div class="avatar-card" onclick="selectAvatar('m')">
+                    <div class="avatar-img" style="background-image: url('assets/images/rest_m.png')"></div>
+                </div>
+                <div class="avatar-card" onclick="selectAvatar('f')">
+                    <div class="avatar-img" style="background-image: url('assets/images/rest_f.png')"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Encounter Modal -->
     <div class="modal-overlay" id="combatModal">
@@ -489,6 +596,8 @@
                     <div class="btn-group">
                         <button class="v2-btn" id="modalAvoidBtn" disabled>TACTICAL RETREAT</button>
                         <button class="v2-btn" id="exitCombatBtn" style="display:none">CONTINUE ON</button>
+                        <button class="v2-btn" id="descendBtn"
+                            style="display:none; background: var(--gold); color: #000;">DESCEND TO NEXT FLOOR</button>
                         <button class="v2-btn" id="bonfireNotNowBtn"
                             style="display:none; background:#555; color:#fff;">NOT NOW</button>
                     </div>
@@ -504,6 +613,7 @@
         // --- CORE GAME STATE ---
         const game = {
             hp: 20, maxHp: 20,
+            floor: 1, // Track current depth
             deck: [],
             weapon: null,
             weaponDurability: Infinity,
@@ -534,7 +644,7 @@
             rooms.push({
                 id: 0, gx: 0, gy: 0, w: 1, h: 1,
                 state: 'cleared', cards: [], connections: [],
-                isWaypoint: false
+                isWaypoint: false, isRevealed: true
             });
 
             const frontier = [rooms[0]];
@@ -562,7 +672,8 @@
                             isBonfire: Math.random() < 0.1,
                             restRemaining: 3, // New property for Bonfire rooms
                             isWaypoint: false,
-                            depth: 1.5 + Math.random() * 3 // 1.5x to 4.5x depth
+                            depth: 1.5 + Math.random() * 3, // 1.5x to 4.5x depth
+                            isRevealed: false
                         };
 
                         // Link with waypoints
@@ -616,6 +727,11 @@
         let corridorMeshes = new Map();
         let doorMeshes = new Map();
         let is3DView = true;
+        let playerSprite;
+        let walkAnims = {
+            m: { up: null, down: null },
+            f: { up: null, down: null }
+        };
         const textureLoader = new THREE.TextureLoader();
 
         // FX State
@@ -688,21 +804,28 @@
         resizeFXCanvas();
 
         function init3D() {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0a0a0a);
-            scene.fog = new THREE.FogExp2(0x0a0a0a, 0.04);
-
             const container = document.getElementById('v3-container');
+            if (renderer) {
+                // Already initialized, just need new scene/camera
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x0a0a0a);
+                scene.fog = new THREE.FogExp2(0x0a0a0a, 0.04);
+            } else {
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x0a0a0a);
+                scene.fog = new THREE.FogExp2(0x0a0a0a, 0.04);
+
+                renderer = new THREE.WebGLRenderer({ antialias: true });
+                renderer.setSize(container.clientWidth, container.clientHeight);
+                renderer.shadowMap.enabled = true;
+                container.appendChild(renderer.domElement);
+            }
+
             const aspect = container.clientWidth / container.clientHeight;
             const d = 10;
             camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
             camera.position.set(20, 20, 20);
             camera.lookAt(0, 0, 0);
-
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(container.clientWidth, container.clientHeight);
-            renderer.shadowMap.enabled = true;
-            container.appendChild(renderer.domElement);
 
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enablePan = false;
@@ -714,10 +837,25 @@
 
             // Lights
             scene.add(new THREE.AmbientLight(0xffffff, 0.15));
-            // Initial Torch (Intensity 300 for clearer depths)
+            // Initial Torch
             torchLight = new THREE.PointLight(0xffaa44, 300, 40);
             torchLight.castShadow = true;
             scene.add(torchLight);
+
+            // Fog of War
+            scene.fog = new THREE.FogExp2(0x000000, 0.05);
+            // Load Walking Textures
+            walkAnims.m.up = textureLoader.load('assets/images/animations/m_walk_up.png');
+            walkAnims.m.down = textureLoader.load('assets/images/animations/m_walk_down.png');
+            walkAnims.f.up = textureLoader.load('assets/images/animations/f_walk_up.png');
+            walkAnims.f.down = textureLoader.load('assets/images/animations/f_walk_down.png');
+
+            // Player Billboard
+            const spriteMat = new THREE.SpriteMaterial({ map: walkAnims.m.up, transparent: true });
+            playerSprite = new THREE.Sprite(spriteMat);
+            playerSprite.scale.set(1.5, 1.5, 1.5);
+            playerSprite.position.set(0, 0.75, 0);
+            scene.add(playerSprite);
 
             animate3D();
             window.addEventListener('click', on3DClick);
@@ -734,12 +872,16 @@
             raycaster.setFromCamera(mouse, camera);
             const intersects = raycaster.intersectObjects(scene.children, true);
 
-            if (intersects.length > 0) {
-                const obj = intersects[0].object;
+            // Iterate to find first CLICKABLE object (skipping particles)
+            for (let i = 0; i < intersects.length; i++) {
+                const obj = intersects[i].object;
                 if (obj.userData && obj.userData.roomId !== undefined) {
+                    const roomIdx = obj.userData.roomId;
                     const current = game.rooms.find(r => r.id === game.currentRoomIdx);
-                    if (current && current.connections.includes(obj.userData.roomId)) {
-                        enterRoom(obj.userData.roomId);
+
+                    if (current && current.connections.includes(roomIdx)) {
+                        enterRoom(roomIdx);
+                        break;
                     }
                 }
             }
@@ -747,95 +889,112 @@
 
         function update3DScene() {
             if (!scene) return;
+            const currentRoom = game.rooms.find(room => room.id === game.currentRoomIdx);
 
-            game.rooms.forEach(r => {
-                const isCurrent = r.id === game.currentRoomIdx;
-                const currentRoom = game.rooms.find(room => room.id === game.currentRoomIdx);
-                const isAdjacent = currentRoom ? currentRoom.connections.includes(r.id) : false;
-                const isVisible = r.state !== 'uncleared' || isAdjacent || isCurrent;
-
-                if (!isVisible) return;
-
-                if (r.isWaypoint) {
-                    if (!waypointMeshes.has(r.id)) {
-                        const geo = new THREE.SphereGeometry(0.2, 16, 16);
-                        const mat = new THREE.MeshStandardMaterial({ color: 0x555555, emissive: 0x222222 });
-                        const mesh = new THREE.Mesh(geo, mat);
-                        mesh.position.set(r.gx / 1, 0.1, r.gy / 1);
-                        mesh.userData = { roomId: r.id };
-                        scene.add(mesh);
-                        waypointMeshes.set(r.id, mesh);
-                        // Apply waypoints texture if available, else standard color
-                        // applyTextureToMesh(mesh, 'block', 0); 
+            if (playerSprite && torchLight) {
+                let vRad = 2.5;
+                if (game.weapon) {
+                    if (game.weapon.val >= 8) {
+                        torchLight.color.setHex(0x00ccff); torchLight.intensity = (is3DView ? 800 : 2000);
+                        torchLight.distance = 60; vRad = 8.0;
+                    } else if (game.weapon.val >= 6) {
+                        torchLight.color.setHex(0xd4af37); torchLight.intensity = (is3DView ? 600 : 1500);
+                        torchLight.distance = 45; vRad = 5.0;
+                    } else {
+                        torchLight.color.setHex(0xffaa44); torchLight.intensity = (is3DView ? 400 : 1200);
+                        torchLight.distance = 35; vRad = 3.5;
                     }
-                    const mesh = waypointMeshes.get(r.id);
-                    mesh.material.emissive.setHex(isAdjacent ? 0xd4af37 : 0x222222);
-                    mesh.material.emissiveIntensity = isAdjacent ? 2 : 0.5;
                 } else {
-                    if (!roomMeshes.has(r.id)) {
-                        const rw = r.w * 1;
-                        const rh = r.h * 1;
-                        const rDepth = 3.0 + Math.random() * 3.0;
-                        r.rDepth = rDepth; // Store for door logic
-                        const geo = new THREE.BoxGeometry(rw, rDepth, rh);
-                        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff }); // Neutral color for textures
-                        const mesh = new THREE.Mesh(geo, mat);
-                        mesh.position.set(r.gx / 1, rDepth / 2, r.gy / 1); // Ground at y=0, top extends up
-                        mesh.receiveShadow = true;
-                        mesh.castShadow = true;
-                        mesh.userData = { roomId: r.id };
-
-                        // Pick a texture based on room type
-                        if (r.isFinal) applyTextureToMesh(mesh, 'block', 7); // Skull/Ornate
-                        else if (r.isSpecial) applyTextureToMesh(mesh, 'block', 1); // Clean Stone
-                        else applyTextureToMesh(mesh, 'block', 0); // Standard Brick
-
-                        scene.add(mesh);
-                        roomMeshes.set(r.id, mesh);
-
-                        // Add Doors facing corridors
-                        addDoorsToRoom(r, mesh);
-                    }
-                    const mesh = roomMeshes.get(r.id);
-                    if (isCurrent) {
-                        // Raise torch to 3 to clear the 2-unit doors
-                        torchLight.position.set(mesh.position.x, 3, mesh.position.z);
-                    }
-                    mesh.material.emissive.setHex(r.state === 'uncleared' ? 0x000000 : 0x111111);
+                    torchLight.color.setHex(0xffaa44); torchLight.intensity = (is3DView ? 300 : 1000);
+                    torchLight.distance = 25; vRad = 2.5;
                 }
+                torchLight.position.set(playerSprite.position.x, 2.5, playerSprite.position.z);
 
-                // Draw Corridors to children
-                r.connections.forEach(cid => {
-                    const target = game.rooms.find(room => room.id === cid);
-                    if (!target) return;
-                    const corridorId = `cor_${r.id}_${cid}`;
-                    const corridorIdRev = `cor_${cid}_${r.id}`;
+                game.rooms.forEach(r => {
+                    const dist = Math.sqrt(Math.pow(r.gx - playerSprite.position.x, 2) + Math.pow(r.gy - playerSprite.position.z, 2));
+                    const isVisible = dist < vRad;
+                    if (isVisible) r.isRevealed = true;
 
-                    if (!corridorMeshes.has(corridorId) && !corridorMeshes.has(corridorIdRev)) {
-                        const v1 = new THREE.Vector3(r.gx, 0, r.gy);
-                        const v2 = new THREE.Vector3(target.gx, 0, target.gy);
-                        const distance = v1.distanceTo(v2);
-                        const geo = new THREE.BoxGeometry(0.5, 0.05, distance);
-                        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-                        const mesh = new THREE.Mesh(geo, mat);
-
-                        // Center and rotate
-                        const center = v1.clone().add(v2).multiplyScalar(0.5);
-                        mesh.position.set(center.x, 0, center.z);
-                        mesh.lookAt(v2);
-
-                        applyTextureToMesh(mesh, 'block', 0); // Path texture
-                        scene.add(mesh);
-                        corridorMeshes.set(corridorId, mesh);
+                    if (r.isRevealed) {
+                        if (r.isWaypoint) {
+                            if (!waypointMeshes.has(r.id)) {
+                                const geo = new THREE.SphereGeometry(0.2, 16, 16);
+                                const mat = new THREE.MeshStandardMaterial({ color: 0x555555, emissive: 0x222222 });
+                                const mesh = new THREE.Mesh(geo, mat);
+                                mesh.position.set(r.gx, 0.1, r.gy);
+                                mesh.userData = { roomId: r.id };
+                                scene.add(mesh);
+                                waypointMeshes.set(r.id, mesh);
+                            }
+                            const mesh = waypointMeshes.get(r.id);
+                            mesh.visible = true;
+                            const isAdj = currentRoom && (currentRoom.id === r.id || currentRoom.connections.includes(r.id));
+                            mesh.material.emissive.setHex(isAdj ? 0xd4af37 : 0x222222);
+                        } else {
+                            if (!roomMeshes.has(r.id)) {
+                                const rw = r.w; const rh = r.h;
+                                const rDepth = 3.0 + Math.random() * 3.0;
+                                r.rDepth = rDepth;
+                                const geo = new THREE.BoxGeometry(rw, rDepth, rh);
+                                const mat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+                                const mesh = new THREE.Mesh(geo, mat);
+                                mesh.position.set(r.gx, rDepth / 2, r.gy);
+                                mesh.receiveShadow = true;
+                                mesh.userData = { roomId: r.id };
+                                if (r.isFinal) applyTextureToMesh(mesh, 'block', 7);
+                                else if (r.isSpecial) applyTextureToMesh(mesh, 'block', 1);
+                                else applyTextureToMesh(mesh, 'block', 0);
+                                scene.add(mesh);
+                                roomMeshes.set(r.id, mesh);
+                                addDoorsToRoom(r, mesh);
+                                addLocalFog(mesh.position.x, mesh.position.z);
+                            }
+                            const mesh = roomMeshes.get(r.id);
+                            mesh.visible = true;
+                            let eCol = (r.state === 'cleared' ? 0x111111 : 0x000000);
+                            let eInt = (isVisible ? 1.0 : 0.2);
+                            if (r.isFinal) { eCol = 0xff0000; eInt = (isVisible ? 2.5 : 0.5); }
+                            else if (r.isBonfire) { eCol = 0xff8800; eInt = (isVisible ? 2.5 : 0.5); }
+                            else if (r.isSpecial) { eCol = 0x8800ff; eInt = (isVisible ? 1.5 : 0.3); }
+                            mesh.material.emissive.setHex(eCol);
+                            mesh.material.emissiveIntensity = eInt;
+                        }
                     }
-                });
-            });
 
-            // Camera Smoothing
-            const current = game.rooms.find(r => r.id === game.currentRoomIdx);
-            if (current) {
-                const targetPos = new THREE.Vector3(current.gx / 1, 0, current.gy / 1);
-                controls.target.lerp(targetPos, 0.05);
+                    r.connections.forEach(cid => {
+                        const target = game.rooms.find(rm => rm.id === cid);
+                        if (!target) return;
+                        const corridorId = `cor_${r.id}_${cid}`;
+                        const mesh = corridorMeshes.get(corridorId) || corridorMeshes.get(`cor_${cid}_${r.id}`);
+                        if (!mesh) {
+                            const h = 0.05;
+                            const v1 = new THREE.Vector3(r.gx, h, r.gy);
+                            const v2 = new THREE.Vector3(target.gx, h, target.gy);
+                            const dist = v1.distanceTo(v2);
+                            const geo = new THREE.BoxGeometry(0.5, 0.04, dist);
+                            const mat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.9, emissive: 0x222222 });
+                            const m = new THREE.Mesh(geo, mat);
+                            const mid = v1.clone().add(v2).multiplyScalar(0.5);
+                            m.position.set(mid.x, h, mid.z);
+                            m.lookAt(v2);
+                            scene.add(m);
+                            corridorMeshes.set(corridorId, m);
+                        } else {
+                            const midX = (r.gx + target.gx) / 2;
+                            const midZ = (r.gy + target.gy) / 2;
+                            const distToMid = Math.sqrt(Math.pow(midX - playerSprite.position.x, 2) + Math.pow(midZ - playerSprite.position.z, 2));
+                            const isDir = distToMid < vRad;
+                            if (isDir) { r.correveals = r.correveals || {}; r.correveals[corridorId] = true; }
+                            mesh.visible = (r.correveals && r.correveals[corridorId]);
+                            if (mesh.visible) mesh.material.emissiveIntensity = (isDir ? 0.3 : 0.05);
+                        }
+                    });
+                });
+
+                if (currentRoom) {
+                    const targetPos = new THREE.Vector3(currentRoom.gx, 0, currentRoom.gy);
+                    controls.target.lerp(targetPos, 0.05);
+                }
             }
         }
 
@@ -845,85 +1004,82 @@
             updateFX();
             controls.update();
             renderer.render(scene, camera);
+            if (window.TWEEN) TWEEN.update();
+            animatePlayerSprite();
         }
 
-        window.addEventListener('resize', () => {
-            const container = document.getElementById('v3-container');
-            if (!renderer || !container) return;
-            const aspect = container.clientWidth / container.clientHeight;
-            const d = 10;
-            camera.left = -d * aspect;
-            camera.right = d * aspect;
-            camera.top = d;
-            camera.bottom = -d;
-            camera.updateProjectionMatrix();
-            renderer.setSize(container.clientWidth, container.clientHeight);
-        });
+        function animatePlayerSprite() {
+            if (!playerSprite) return;
+            const time = Date.now() * 0.001;
+            const frame = Math.floor((time * 12) % 25);
+            playerSprite.material.map.repeat.set(1 / 25, 1);
+            playerSprite.material.map.offset.set(frame / 25, 0);
+            if (!is3DView) {
+                playerSprite.rotation.x = Math.PI / 2; playerSprite.position.y = 0.8;
+                playerSprite.material.map = walkAnims[game.sex].up;
+            } else {
+                playerSprite.rotation.x = 0; playerSprite.position.y = 0.75;
+                const isFace = camera.position.z > playerSprite.position.z;
+                playerSprite.material.map = isFace ? walkAnims[game.sex].down : walkAnims[game.sex].up;
+            }
+        }
 
-        function addDoorsToRoom(room, roomMesh) {
-            const doorTex = textureLoader.load('assets/images/door.png');
-            // search allRooms to catch corridor waypoints!
+        function movePlayerSprite(oldId, newId) {
+            const r1 = game.rooms.find(r => r.id === oldId);
+            const r2 = game.rooms.find(r => r.id === newId);
+            if (!r1 || !r2) return;
+            playerSprite.material.map = (r2.gy > r1.gy) ? walkAnims[game.sex].up : walkAnims[game.sex].down;
+            new TWEEN.Tween(playerSprite.position).to({ x: r2.gx, z: r2.gy }, 600).easing(TWEEN.Easing.Quadratic.Out).start();
+        }
+
+        function addDoorsToRoom(room, mesh) {
+            const tex = textureLoader.load('assets/images/door.png');
             room.connections.forEach(cid => {
                 const target = game.rooms.find(rm => rm.id === cid);
                 if (!target) return;
-
-                // Determine direction
-                const dx = target.gx - room.gx;
-                const dy = target.gy - room.gy;
-
-                // Door Plane (1x2)
-                const doorGeo = new THREE.PlaneGeometry(1, 2);
-                const doorMat = new THREE.MeshStandardMaterial({
-                    map: doorTex,
-                    transparent: true,
-                    side: THREE.FrontSide
-                });
-                const door = new THREE.Mesh(doorGeo, doorMat);
-                door.userData = { roomId: room.id, isDoor: true };
-
-                // Offset slightly from wall to prevent Z-fighting
-                const rw = room.w / 2;
-                const rh = room.h / 2;
-                const margin = 0.05;
-
+                const dx = target.gx - room.gx; const dy = target.gy - room.gy;
+                const door = new THREE.Mesh(new THREE.PlaneGeometry(1, 2), new THREE.MeshStandardMaterial({ map: tex, transparent: true, side: THREE.FrontSide }));
+                const rw = room.w / 2; const rh = room.h / 2; const margin = 0.05;
                 if (Math.abs(dx) > Math.abs(dy)) {
-                    // X direction
                     door.position.set(dx > 0 ? rw + margin : -rw - margin, -(room.rDepth / 2) + 1, 0);
                     door.rotation.y = dx > 0 ? Math.PI / 2 : -Math.PI / 2;
                 } else {
-                    // Z direction
                     door.position.set(0, -(room.rDepth / 2) + 1, dy > 0 ? rh + margin : -rh - margin);
                     door.rotation.y = dy > 0 ? 0 : Math.PI;
                 }
-
-                roomMesh.add(door);
+                mesh.add(door);
             });
+        }
+
+        function addLocalFog(x, z) {
+            const smoke = textureLoader.load('assets/images/textures/smoke_01.png');
+            for (let i = 0; i < 3; i++) {
+                const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smoke, transparent: true, opacity: 0.2, color: 0x444444 }));
+                s.raycast = () => { };
+                const sz = 4 + Math.random() * 4;
+                s.scale.set(sz, sz, 1);
+                s.position.set(x + (Math.random() - 0.5) * 4, 1 + Math.random() * 2, z + (Math.random() - 0.5) * 4);
+                scene.add(s);
+            }
+        }
+        function clear3DScene() {
+            if (!scene) return;
+            while (scene.children.length > 0) scene.remove(scene.children[0]);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.15));
+            roomMeshes.clear(); waypointMeshes.clear(); corridorMeshes.clear(); doorMeshes.clear();
+            playerSprite = null; torchLight = null;
         }
 
         function toggleView() {
             is3DView = !is3DView;
             const btn = document.getElementById('viewToggleBtn');
             btn.innerText = `VIEW: ${is3DView ? '3D' : '2D'}`;
-
-            if (is3DView) {
-                // Restore Isometric
-                camera.position.set(20, 20, 20);
-                controls.enableRotate = true;
-                torchLight.intensity = 300;
-                torchLight.distance = 40;
-            } else {
-                // Classic Top Down - Higher intensity to see corridors
-                camera.position.set(0, 50, 0);
-                controls.enableRotate = false;
-                torchLight.intensity = 800;
-                torchLight.distance = 60;
-            }
-            camera.lookAt(controls.target);
+            if (is3DView) { camera.position.set(20, 20, 20); controls.enableRotate = true; torchLight.intensity = 300; torchLight.distance = 40; }
+            else { camera.position.set(0, 40, 0); camera.lookAt(0, 0, 0); controls.enableRotate = false; torchLight.intensity = 1500; torchLight.distance = 60; }
             camera.updateProjectionMatrix();
         }
         document.getElementById('viewToggleBtn').onclick = toggleView;
 
-        // --- GAME LOGIC ---
         function shuffle(arr) {
             for (let i = arr.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
@@ -934,117 +1090,125 @@
 
         function createDeck() {
             const deck = [];
-            // Monsters (2-14 C/S)
+            // Monsters: 2-14 Clubs/Spades (2 * 13 = 26)
             [SUITS.CLUBS, SUITS.SPADES].forEach(suit => {
-                for (let v = 2; v <= 14; v++) deck.push({ suit, val: v, type: 'monster', name: getMonsterName(v) });
+                for (let v = 2; v <= 14; v++) {
+                    deck.push({ suit, val: v, type: 'monster', name: getMonsterName(v) });
+                }
             });
-            // Weapons (2-10 D)
-            for (let v = 2; v <= 10; v++) deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: `Weapon lv.${v}` });
-            // Potions (2-10 H)
-            for (let v = 2; v <= 10; v++) deck.push({ suit: SUITS.HEARTS, val: v, type: 'potion', name: `HP Incense ${v}` });
+            // Weapons: 2-10 Diamonds (9)
+            for (let v = 2; v <= 10; v++) {
+                deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: `Weapon lv.${v}` });
+            }
+            // Potions: 2-10 Hearts (9)
+            for (let v = 2; v <= 10; v++) {
+                deck.push({ suit: SUITS.HEARTS, val: v, type: 'potion', name: `HP Incense ${v}` });
+            }
+            // Total: 44 cards
             return shuffle(deck);
         }
 
         function getMonsterName(v) {
-            /* 
-            // EXPANDED TABLE (Restore when 1x14 art is ready)
-            const names = {
-                2: 'Shadow Creeper', 3: 'Graveling', 4: 'Rat-Bat', 5: 'Spined Horror',
-                6: 'Grue', 7: 'Grave Knight', 8: 'Skeleton King', 9: 'Lich Acolyte',
-                10: 'Shadow Fiend', 11: 'Jack of Spite', 12: 'Queen of Sorrow', 
-                13: 'King of Ruin', 14: 'Primeval Ace'
-            };
-            */
-
-            // WEIGHTED TABLE (Mapping 13 values to 9 art slots)
-            if (v <= 3) return 'Shadow Creeper';  // 2,3 -> Slot 0
-            if (v <= 5) return 'Graveling';       // 4,5 -> Slot 1
-            if (v <= 7) return 'Rat-Bat';         // 6,7 -> Slot 2
-            if (v <= 9) return 'Spined Horror';   // 8,9 -> Slot 3
-            if (v === 10) return 'Grue';          // 10 -> Slot 4
-            if (v === 11) return 'Jack of Spite'; // 11 -> Slot 5
-            if (v === 12) return 'Queen of Sorrow'; // 12 -> Slot 6
-            if (v === 13) return 'King of Ruin';  // 13 -> Slot 7
-            if (v === 14) return 'Primeval Ace';  // 14 -> Slot 8
-
+            if (v <= 3) return 'Shadow Creeper';
+            if (v <= 5) return 'Graveling';
+            if (v <= 7) return 'Rat-Bat';
+            if (v <= 9) return 'Spined Horror';
+            if (v === 10) return 'Grue';
+            if (v === 11) return 'Jack of Spite';
+            if (v === 12) return 'Queen of Sorrow';
+            if (v === 13) return 'King of Ruin';
+            if (v === 14) return 'Primeval Ace';
             return `Monster (${v})`;
         }
 
         function startDive() {
-            game.hp = 20; game.deck = createDeck();
-            game.weapon = null; game.weaponDurability = Infinity;
-            game.slainStack = [];
-            game.rooms = generateDungeon();
-            game.currentRoomIdx = 0;
-            game.lastAvoided = false;
+            document.getElementById('avatarModal').style.display = 'flex';
+        }
+        window.selectAvatar = (sex) => {
+            game.sex = sex;
+            document.getElementById('avatarModal').style.display = 'none';
+            finalizeStartDive();
+        };
 
+        function finalizeStartDive() {
+            game.hp = 20; game.floor = 1; game.deck = createDeck();
+            game.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
+            game.rooms = generateDungeon(); game.currentRoomIdx = 0; game.lastAvoided = false;
+            clear3DScene(); init3D();
+            if (playerSprite) playerSprite.position.set(0, 0.75, 0);
             updateUI();
             logMsg("The descent begins. Room 0 explored.");
-            init3D();
+            playerSprite.material.map = walkAnims[game.sex].up;
+            enterRoom(0);
+        }
+
+        function descendToNextFloor() {
+            game.floor++; closeCombat();
+            game.deck = createDeck(); game.rooms = generateDungeon();
+            game.currentRoomIdx = 0; game.lastAvoided = false;
+            clear3DScene(); init3D();
+            if (playerSprite) playerSprite.position.set(0, 0.75, 0);
+            updateUI();
+            logMsg(`Descending deeper... Floor ${game.floor}`);
+            playerSprite.material.map = walkAnims[game.sex].up;
             enterRoom(0);
         }
 
         function enterRoom(id) {
-            game.currentRoomIdx = id;
+            const oldId = game.currentRoomIdx; game.currentRoomIdx = id;
             const room = game.rooms.find(r => r.id === id);
+            movePlayerSprite(oldId, id);
+            if (room.isWaypoint) { logMsg("Traversing corridors..."); return; }
 
-            if (room.isWaypoint) {
-                logMsg("Traversing the dark corridors...");
-                return;
-            }
+            if (room.state === 'cleared' && !room.isFinal) { logMsg("Safe passage."); return; }
+            if (room.state === 'cleared' && room.isFinal) { game.activeRoom = room; showCombat(); return; }
 
-            if (room.state === 'cleared') {
-                logMsg("Safe passage through a cleared chamber.");
-                return;
-            }
-
-            // --- Specialized Encounter Check ---
             if (room.isSpecial && room.state !== 'cleared') {
                 game.activeRoom = room;
-                // Merchant only gives Weapons or Potions
-                const giftPool = createDeck().filter(c => c.type !== 'monster');
-                const gift = giftPool[Math.floor(Math.random() * giftPool.length)];
+                const gifts = [];
+                // Add 2 random card gifts
+                const redFaces = [];
+                [SUITS.HEARTS, SUITS.DIAMONDS].forEach(s => { for (let v = 11; v <= 14; v++) redFaces.push({ suit: s, val: v }); });
 
-                game.combatCards = [{
-                    type: 'gift',
-                    name: `GIFT: ${gift.name}`,
-                    val: gift.val,
-                    suit: gift.suit,
-                    actualGift: gift
-                }];
-                game.chosenCount = 0;
-                game.potionsUsedThisTurn = false;
+                for (let i = 0; i < 2; i++) {
+                    const base = redFaces[Math.floor(Math.random() * redFaces.length)];
+                    const giftType = Math.random() > 0.5 ? 'weapon' : 'potion';
+                    gifts.push({
+                        suit: base.suit, val: base.val, type: 'gift',
+                        name: giftType === 'weapon' ? `Divine Blade` : `Elixir of Life`,
+                        actualGift: { suit: base.suit, val: base.val, type: giftType, name: giftType === 'weapon' ? `Divine Blade` : `Elixir of Life` }
+                    });
+                }
+
+                // Add Repair option if we have a weapon
+                if (game.weapon) {
+                    const boost = Math.floor(Math.random() * 6) + 1;
+                    gifts.push({
+                        suit: '🛠️', val: boost, type: 'gift',
+                        name: `Repair Artifact (+${boost})`,
+                        actualGift: { type: 'repair', val: boost, name: `Repaired ${game.weapon.name}` }
+                    });
+                }
+
+                game.combatCards = gifts;
+                game.chosenCount = 0; game.potionsUsedThisTurn = false;
+                logMsg(`Merchant encountered! Pick your blessing.`);
                 showCombat();
                 return;
             }
-
-
             if (room.isBonfire && room.state !== 'cleared') {
                 game.activeRoom = room;
-                game.combatCards = [{
-                    type: 'bonfire',
-                    name: `REST AT BONFIRE (${room.restRemaining} left)`,
-                    val: 5,
-                    suit: '🔥'
-                }];
-                game.chosenCount = 0;
-                game.potionsUsedThisTurn = false;
-                showCombat();
-                return;
+                game.combatCards = [{ type: 'bonfire', name: `REST (${room.restRemaining} left)`, val: 5, suit: '🔥' }];
+                game.chosenCount = 0; game.potionsUsedThisTurn = false;
+                showCombat(); return;
             }
-
-            // Deal cards: Use global carry-over card first
             if (room.cards.length === 0) {
                 room.cards = game.carryCard ? [game.carryCard] : [];
-                game.carryCard = null; // Consume global carry
+                game.carryCard = null;
                 while (room.cards.length < 4 && game.deck.length > 0) room.cards.push(game.deck.shift());
             }
-
-            game.activeRoom = room;
-            game.combatCards = [...room.cards];
-            game.chosenCount = 0;
-            game.potionsUsedThisTurn = false;
-
+            game.activeRoom = room; game.combatCards = [...room.cards];
+            game.chosenCount = 0; game.potionsUsedThisTurn = false;
             showCombat();
         }
 
@@ -1059,11 +1223,24 @@
                 card.className = `card ${c.type} dealing`;
                 card.style.animationDelay = `${idx * 0.1}s`;
 
-                const asset = getAssetData(c.type, c.val, c.suit, c.type === 'gift' ? c.actualGift : null);
-                const bgSize = asset.isStrip ? '900% 100%' : 'cover';
+                let asset = getAssetData(c.type, c.val, c.suit, c.type === 'gift' ? c.actualGift : null);
+                let bgUrl = `assets/images/${asset.file}`;
+                let bgSize = asset.isStrip ? '900% 100%' : 'cover';
+                let bgPos = `${asset.uv.u * 112.5}% 0%`;
+                let animClass = "";
+
+                // Boss Animations: 11-14 Clubs/Spades
+                if (c.type === 'monster' && c.val >= 11) {
+                    const suitName = c.suit === '♣' ? 'club' : 'spade';
+                    const rankName = { 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[c.val];
+                    bgUrl = `assets/images/animations/${suitName}_${rankName}.png`;
+                    bgSize = "2500% 100%"; // 25 framing spritesheet
+                    bgPos = "0% 0%";
+                    animClass = "animated-card-art";
+                }
 
                 card.innerHTML = `
-                    <div class="card-art-container" style="background-image: url('assets/images/${asset.file}'); background-size: ${bgSize}; background-position: ${asset.uv.u * 112.5}% 0%"></div>
+                    <div class="card-art-container ${animClass}" style="background-image: url('${bgUrl}'); background-size: ${bgSize}; background-position: ${bgPos}"></div>
                     <div class="suit" style="background: rgba(0,0,0,0.5); border-radius: 50%; width: 40px; text-align: center;">${c.suit}</div>
                     <div class="val" style="color: #fff; text-shadow: 2px 2px 0 #000;">${getDisplayVal(c.val)}</div>
                     <div class="name">${c.name}</div>
@@ -1075,13 +1252,31 @@
             // If room is cleared, we show the Exit button, otherwise the Avoid button
             const msgEl = document.getElementById('combatMessage');
             if (game.activeRoom && game.activeRoom.state === 'cleared') {
-                msgEl.innerText = "Victory! Path is clear.";
-                document.getElementById('exitCombatBtn').style.display = 'block';
+                if (game.activeRoom.isFinal) {
+                    const allCleared = game.rooms.every(r => r.isWaypoint || r.state === 'cleared');
+                    if (allCleared) {
+                        msgEl.innerText = "Stairs revealed.";
+                        document.getElementById('descendBtn').style.display = 'block';
+                    } else {
+                        msgEl.innerText = "Clear all rooms.";
+                        document.getElementById('descendBtn').style.display = 'none';
+                    }
+                    document.getElementById('exitCombatBtn').style.display = (allCleared ? 'none' : 'block');
+                } else {
+                    msgEl.innerText = "Safe passage.";
+                    document.getElementById('exitCombatBtn').style.display = 'block';
+                    document.getElementById('descendBtn').style.display = 'none';
+                }
                 document.getElementById('modalAvoidBtn').style.display = 'none';
             } else {
-                msgEl.innerText = game.chosenCount === 0 ? "Room Encounter! Pick 3 cards..." : `Battle in progress! Pick ${3 - game.chosenCount} more cards...`;
+                if (game.combatCards[0] && game.combatCards[0].type === 'gift') {
+                    msgEl.innerText = "Choose your blessing...";
+                } else {
+                    msgEl.innerText = game.chosenCount === 0 ? "Room Encounter! Pick 3 cards..." : `Battle in progress! Pick ${3 - game.chosenCount} more cards...`;
+                }
                 document.getElementById('exitCombatBtn').style.display = 'none';
-                document.getElementById('modalAvoidBtn').style.display = 'inline-block';
+                document.getElementById('modalAvoidBtn').style.display = (game.combatCards[0] && game.combatCards[0].type === 'gift' ? 'none' : 'inline-block');
+                document.getElementById('descendBtn').style.display = 'none';
             }
 
             // Bonfire specific
@@ -1110,9 +1305,11 @@
             switch (card.type) {
                 case 'weapon':
                     game.weapon = card;
+                    // Scoundrel Rules: First monster killed can be any level.
+                    // Subsequent monsters must be strictly lower level than the previous one.
                     game.weaponDurability = Infinity;
-                    game.slainStack = []; // Clear old weapon's trophies
-                    logMsg(`Equipped ${card.name}.`);
+                    game.slainStack = [];
+                    logMsg(`Equipped ${card.name}. First kill has no level limit.`);
                     break;
                 case 'monster':
                     let dmg = card.val;
@@ -1120,16 +1317,24 @@
                     const centerX = cardRect.left + cardRect.width / 2;
                     const centerY = cardRect.top + cardRect.height / 2;
 
-                    if (game.weapon && card.val <= game.weaponDurability) {
+                    // STRICT SLAYING: Monster MUST be strictly lower than weapon durability
+                    if (game.weapon && card.val < game.weaponDurability) {
                         dmg = Math.max(0, card.val - game.weapon.val);
                         game.weaponDurability = card.val;
-                        logMsg(`Slit ${card.name}'s throat. Took ${dmg} DMG.`);
-                        spawnParticles(centerX, centerY, '#aaa', 10); // Metal sparks
-                        game.slainStack.push(card); // Add to current weapon's trophies
+                        logMsg(`Slit ${card.name}'s throat. Next enemy must be <${card.val}.`);
+                        spawnParticles(centerX, centerY, '#aaa', 10);
+                        game.slainStack.push(card);
+                    } else if (game.weapon) {
+                        // Combat hit: Weapon breaks but reduces damage
+                        dmg = Math.max(0, card.val - game.weapon.val);
+                        const brokeName = game.weapon.name;
+                        game.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
+                        logMsg(`CRACK! The ${brokeName} has broken!`);
+                        spawnParticles(centerX, centerY, '#555', 25); // Gray shards
+                        triggerShake(15, 30);
                     } else {
                         logMsg(`Grappled ${card.name} barehanded. Took ${dmg} DMG.`);
                     }
-
                     if (dmg > 0) {
                         spawnParticles(window.innerWidth / 2, window.innerHeight / 2, '#800', 30); // Blood
                         triggerShake(10, 20);
@@ -1157,18 +1362,23 @@
                         game.weapon = gift;
                         game.weaponDurability = Infinity;
                         game.slainStack = [];
-                        logMsg(`Merchant's Gift: Equipped ${gift.name}!`);
+                        logMsg(`Merchant's Blessing: Equipped ${gift.name}.`);
                     } else if (gift.type === 'potion') {
                         const heal = Math.min(gift.val, game.maxHp - game.hp);
                         game.hp += heal;
-                        logMsg(`Merchant's Gift: Drank ${gift.name} (+${heal} HP).`);
+                        logMsg(`Merchant's Blessing: Vitality Elixir drank.`);
+                    } else if (gift.type === 'repair' && game.weapon) {
+                        game.weapon.val = Math.min(14, game.weapon.val + gift.val);
+                        // Resetting durability effectively "cleans" it for a first hit again
+                        game.weaponDurability = Infinity;
+                        game.slainStack = []; // Clear trophies when cleansed
+                        logMsg(`Merchant's Repair: ${game.weapon.name} boosted by +${gift.val}!`);
                     }
 
-                    updateUI();
-                    document.getElementById('exitCombatBtn').style.display = 'block';
-                    document.getElementById('modalAvoidBtn').style.display = 'none';
-                    document.getElementById('combatMessage').innerText = "Gift claimed. Path is clear!";
                     game.activeRoom.state = 'cleared';
+                    game.combatCards = []; // Clear other gift options
+                    updateUI();
+                    finishRoom(); // Closes modal with victory message
                     return;
                 case 'bonfire':
                     spawnParticles(window.innerWidth / 2, window.innerHeight / 2, '#ff6600', 40);
@@ -1220,6 +1430,13 @@
             document.getElementById('exitCombatBtn').style.display = 'block';
             document.getElementById('modalAvoidBtn').style.display = 'none';
             document.getElementById('combatMessage').innerText = "Victory! Path is clear.";
+
+            // Proactive Purge Check
+            const allCleared = game.rooms.every(r => r.isWaypoint || r.state === 'cleared');
+            if (allCleared) {
+                logMsg("Floor Purged! Return to the Guardian's lair to descend.");
+            }
+
             updateUI();
         }
 
@@ -1256,17 +1473,46 @@
             document.getElementById('hpValueModal').innerText = game.hp;
             document.getElementById('hpBarModal').style.width = `${(game.hp / game.maxHp) * 100}%`;
 
+            const floorEl = document.getElementById('floorValue');
+            if (floorEl) floorEl.innerText = game.floor;
+
+            const progressEl = document.getElementById('progressValue');
+            if (progressEl && game.rooms) {
+                const total = game.rooms.filter(r => !r.isWaypoint).length;
+                const cleared = game.rooms.filter(r => !r.isWaypoint && r.state === 'cleared').length;
+                progressEl.innerText = `${cleared} / ${total}`;
+            }
+
+            const deckEl = document.getElementById('deckValue');
+            if (deckEl) deckEl.innerText = game.deck.length;
+
             const weaponLabel = document.getElementById('weaponNameModal');
             const weaponDetail = document.getElementById('weaponLastDealModal');
 
             if (game.weapon) {
-                weaponLabel.innerText = `${game.weapon.name} (${game.weapon.val})`;
-                weaponDetail.innerText = game.weaponDurability === Infinity ? "Clean Weapon" : `Bloody (Max Monster: ${game.weaponDurability})`;
+                // Ensure name doesn't already have (X) before adding it
+                const cleanName = game.weapon.name.split(' (')[0];
+                weaponLabel.innerText = `${cleanName} (${game.weapon.val})`;
+                weaponDetail.innerText = game.weaponDurability === Infinity ? "Clean Blade: No limit" : `Bloody: Next <${game.weaponDurability}`;
                 weaponLabel.style.color = 'var(--gold)';
+
+                // Update Sidebar Slot
+                const asset = getAssetData('weapon', game.weapon.val, game.weapon.suit);
+                const weaponArt = document.getElementById('weaponArtSidebar');
+                weaponArt.style.backgroundImage = `url('assets/images/${asset.file}')`;
+                weaponArt.style.backgroundPosition = `${asset.uv.u * 112.5}% 0%`;
+                document.getElementById('weaponNameSidebar').innerText = `${cleanName} (${game.weapon.val})`;
+                document.getElementById('weaponDurSidebar').innerText = game.weaponDurability === Infinity ? "Next: Any" : `Next: <${game.weaponDurability}`;
             } else {
                 weaponLabel.innerText = "BARE HANDS";
                 weaponDetail.innerText = "No protection";
                 weaponLabel.style.color = '#fff';
+
+                // Update Sidebar Slot
+                const weaponArt = document.getElementById('weaponArtSidebar');
+                weaponArt.style.backgroundImage = "none";
+                document.getElementById('weaponNameSidebar').innerText = "UNARMED";
+                document.getElementById('weaponDurSidebar').innerText = "No limit";
             }
 
             // Global buttons
@@ -1353,6 +1599,7 @@
         document.getElementById('newGameBtn').onclick = startDive;
         document.getElementById('modalAvoidBtn').onclick = avoidRoom;
         document.getElementById('exitCombatBtn').onclick = closeCombat;
+        document.getElementById('descendBtn').onclick = descendToNextFloor;
         document.getElementById('bonfireNotNowBtn').onclick = closeCombat;
     </script>
 </body>
