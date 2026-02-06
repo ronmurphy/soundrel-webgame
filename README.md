@@ -12,7 +12,7 @@ Map movement
 Combat
 
 
-
+OLD but relevant.
 https://github.com/user-attachments/assets/099d5be1-9593-4cec-b82d-8e1ce6adba82
 
 
