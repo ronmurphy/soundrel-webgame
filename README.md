@@ -11,12 +11,6 @@ Map movement
 
 Combat
 
-
-OLD but relevant.
-https://github.com/user-attachments/assets/099d5be1-9593-4cec-b82d-8e1ce6adba82
-
-
-
 ---
 
 Original files, the card game scoundrel, two versions, one normal, one made special with a map to move around on
