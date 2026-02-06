@@ -3,10 +3,12 @@
 New: 3D Isometric version!
 [Scoundrel: Gilded Depths](https://ronmurphy.github.io/soundrel-webgame/scoundrel-3d.html)
 
-<img width="1860" height="1022" alt="Screenshot 2026-02-04 at 21-47-20 Scoundrel Gilded Depths" src="https://github.com/user-attachments/assets/d495b8c5-fc8f-4e29-9557-ce862049c453" />
+<img width="1827" height="1022" alt="Screenshot 2026-02-06 at 13-03-40 Scoundrel Gilded Depths" src="https://github.com/user-attachments/assets/5e1e2a94-ce53-41dc-b78e-43c7de4f03b4" />
+
 Map movement
 
-<img width="1861" height="1022" alt="Screenshot 2026-02-04 at 21-45-17 Scoundrel Gilded Depths" src="https://github.com/user-attachments/assets/da494593-f116-4bd5-a06f-9862df3030fb" />
+<img width="1827" height="1022" alt="Screenshot 2026-02-06 at 13-06-12 Scoundrel Gilded Depths" src="https://github.com/user-attachments/assets/6cdbf101-394d-41f3-bf2d-5c08898f7566" />
+
 Combat
 
 
