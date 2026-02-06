@@ -851,6 +851,46 @@
                 p.update();
                 p.draw(fxCtx);
             });
+
+            // Ambient Wisps
+            updateWisps(fxCtx);
+        }
+
+        let wisps = [];
+        class Wisp {
+            constructor() {
+                this.x = Math.random() * fxCanvas.width;
+                this.y = Math.random() * fxCanvas.height;
+                this.vx = (Math.random() - 0.5) * 0.5;
+                this.vy = (Math.random() - 0.5) * 0.5;
+                this.size = Math.random() * 2 + 1;
+                this.color = Math.random() > 0.5 ? 'rgba(200, 255, 255, 0.4)' : 'rgba(255, 255, 200, 0.3)';
+                this.pulse = Math.random() * Math.PI;
+            }
+            update() {
+                this.x += this.vx; this.y += this.vy;
+                this.pulse += 0.05;
+                if (this.x < 0) this.x = fxCanvas.width;
+                if (this.x > fxCanvas.width) this.x = 0;
+                if (this.y < 0) this.y = fxCanvas.height;
+                if (this.y > fxCanvas.height) this.y = 0;
+            }
+            draw(ctx) {
+                const alpha = 0.3 + Math.sin(this.pulse) * 0.2;
+                ctx.fillStyle = this.color.replace('0.4', alpha).replace('0.3', alpha);
+                // Quick hack for alpha replacement, or just set globalAlpha
+                ctx.globalAlpha = alpha;
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        function updateWisps(ctx) {
+            if (wisps.length < 15) wisps.push(new Wisp());
+            wisps.forEach(w => {
+                w.update();
+                w.draw(ctx);
+            });
         }
 
         function resizeFXCanvas() {
@@ -998,10 +1038,55 @@
                                 const rw = r.w; const rh = r.h;
                                 const rDepth = 3.0 + Math.random() * 3.0;
                                 r.rDepth = rDepth;
-                                const geo = new THREE.BoxGeometry(rw, rDepth, rh);
+
+                                let geo;
+                                if (r.isFinal) {
+                                    // Tower/Deep Pit
+                                    geo = new THREE.BoxGeometry(rw, 20, rh);
+                                } else if (r.isBonfire) {
+                                    // Circular Campfire Ring 
+                                    // Use a Cylinder. radius ~ min(w,h)/2.
+                                    const rad = Math.min(rw, rh) * 0.4;
+                                    geo = new THREE.CylinderGeometry(rad, rad, rDepth, 16);
+                                } else if (r.isSpecial && !r.isFinal) { // Merchant/Special
+                                    // Octagonal Room
+                                    const rad = Math.min(rw, rh) * 0.45;
+                                    geo = new THREE.CylinderGeometry(rad, rad, rDepth, 8);
+                                } else {
+                                    // Standard Box
+                                    geo = new THREE.BoxGeometry(rw, rDepth, rh);
+                                }
+
                                 const mat = new THREE.MeshStandardMaterial({ color: 0xffffff });
                                 const mesh = new THREE.Mesh(geo, mat);
-                                mesh.position.set(r.gx, rDepth / 2, r.gy);
+
+                                if (r.isFinal) {
+                                    // Extend downwards
+                                    mesh.position.set(r.gx, -5, r.gy);
+                                } else {
+                                    mesh.position.set(r.gx, rDepth / 2, r.gy);
+                                }
+
+                                if (r.isBonfire) {
+                                    const fire = createEmojiSprite('🔥', 2.0);
+                                    fire.position.set(r.gx, rDepth + 0.5, r.gy);
+                                    // Animate bobbing?
+                                    // Add to mesh to keep relative?
+                                    // Just add to scene for now
+                                    scene.add(fire);
+                                    // Store reference maybe if we want to animate/remove?
+                                    // Ideally add to roomMeshes map or create a separate group
+                                    // For simplicity, add to mesh
+                                    // mesh.add(fire); // This would scale with mesh which might be weird if mesh is scaled
+                                    // But mesh is created with geometry size, so no scale.
+                                    // Wait, mesh.position is center.
+                                    // If mesh extends from 0 to rDepth, and pos is rDepth/2.
+                                    // Top is at rDepth.
+                                    // Fire should be at rDepth + 1.
+                                    fire.position.set(0, rDepth / 2 + 1, 0);
+                                    mesh.add(fire);
+                                }
+
                                 mesh.receiveShadow = true;
                                 mesh.userData = { roomId: r.id };
                                 if (r.isFinal) applyTextureToMesh(mesh, 'block', 7);
@@ -1174,6 +1259,21 @@
                 scene.add(s);
             }
         }
+
+        function createEmojiSprite(emoji, size = 1.5) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.font = '100px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(emoji, 64, 64);
+            const tex = new THREE.CanvasTexture(canvas);
+            const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+            const sprite = new THREE.Sprite(mat);
+            sprite.scale.set(size, size, 1);
+            return sprite;
+        }
         const THEMES = [
             { id: 1, name: 'Dirt', tile: 1, color: 0x3d2817 },    // Brown
             { id: 2, name: 'Stone', tile: 2, color: 0x222222 },   // Grey
@@ -1195,23 +1295,21 @@
 
         function updateAtmosphere(floor) {
             const theme = getThemeForFloor(floor);
-            const dimColor = new THREE.Color(theme.color).multiplyScalar(0.5); // Dim by 50%
+            const dimColor = new THREE.Color(theme.color).multiplyScalar(0.5);
             scene.background = dimColor;
             scene.fog = new THREE.FogExp2(dimColor, 0.05);
 
             // Update lights to match mood?
             // Maybe tint the ambient light slightly
             const amb = scene.children.find(c => c.isAmbientLight);
-            if (amb) amb.color.setHex(theme.color).lerp(new THREE.Color(0xffffff), 0.3);
+            if (amb) amb.color.setHex(theme.color).lerp(new THREE.Color(0xffffff), 0.1).multiplyScalar(0.6);
         }
 
         function generateFloorCA() {
             const theme = getThemeForFloor(game.floor);
-            const bounds = 8; // -8 to 8
+            const bounds = 12; // Expanded from 8 to 12 to catch edge rooms
             const size = bounds * 2 + 1;
-            let grid = {};
-
-            // Init with noise, but ensure room positions are alive
+            let grid = {}; // Use Object map for negative keys supportise, but ensure room positions are alive
             for (let x = -bounds; x <= bounds; x++) {
                 grid[x] = {};
                 for (let z = -bounds; z <= bounds; z++) {
