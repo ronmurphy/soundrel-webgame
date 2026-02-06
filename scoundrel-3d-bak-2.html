@@ -1202,17 +1202,14 @@
                 game.chosenCount = 0; game.potionsUsedThisTurn = false;
                 showCombat(); return;
             }
-            if (room.cards.length === 0 && id !== 0) {
+            if (room.cards.length === 0) {
                 room.cards = game.carryCard ? [game.carryCard] : [];
                 game.carryCard = null;
                 while (room.cards.length < 4 && game.deck.length > 0) room.cards.push(game.deck.shift());
-            } else if (id === 0) {
-                // Room 0 is always safe start, ensure carryCard persists if somehow set
-                room.cards = [];
             }
             game.activeRoom = room; game.combatCards = [...room.cards];
             game.chosenCount = 0; game.potionsUsedThisTurn = false;
-            if (id !== 0) showCombat();
+            showCombat();
         }
 
         function showCombat() {
@@ -1226,18 +1223,17 @@
                 card.className = `card ${c.type} dealing`;
                 card.style.animationDelay = `${idx * 0.1}s`;
 
+                const isClubKing = c.suit === SUITS.CLUBS && c.val === 13;
                 let asset = getAssetData(c.type, c.val, c.suit, c.type === 'gift' ? c.actualGift : null);
+
                 let bgUrl = `assets/images/${asset.file}`;
                 let bgSize = asset.isStrip ? '900% 100%' : 'cover';
                 let bgPos = `${asset.uv.u * 112.5}% 0%`;
                 let animClass = "";
 
-                // Boss Animations: 11-14 Clubs/Spades
-                if (c.type === 'monster' && c.val >= 11) {
-                    const suitName = c.suit === '♣' ? 'club' : 'spade';
-                    const rankName = { 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[c.val];
-                    bgUrl = `assets/images/animations/${suitName}_${rankName}.png`;
-                    bgSize = "2500% 100%"; // 25 framing spritesheet
+                if (isClubKing) {
+                    bgUrl = `assets/images/animations/club_king.png`;
+                    bgSize = "2500% 100%";
                     bgPos = "0% 0%";
                     animClass = "animated-card-art";
                 }
@@ -1320,11 +1316,11 @@
                     const centerX = cardRect.left + cardRect.width / 2;
                     const centerY = cardRect.top + cardRect.height / 2;
 
-                    // SLAYING: Monster MUST be lower than or equal to weapon durability
-                    if (game.weapon && card.val <= game.weaponDurability) {
+                    // STRICT SLAYING: Monster MUST be strictly lower than weapon durability
+                    if (game.weapon && card.val < game.weaponDurability) {
                         dmg = Math.max(0, card.val - game.weapon.val);
                         game.weaponDurability = card.val;
-                        logMsg(`Slit ${card.name}'s throat. Next enemy must be <=${card.val}.`);
+                        logMsg(`Slit ${card.name}'s throat. Next enemy must be <${card.val}.`);
                         spawnParticles(centerX, centerY, '#aaa', 10);
                         game.slainStack.push(card);
                     } else if (game.weapon) {
@@ -1420,11 +1416,7 @@
 
         function finishRoom() {
             game.activeRoom.state = 'cleared';
-            // Only carry over if it's a regular room (not special or bonfire)
-            // Regular rooms start with 4 cards, so if 3 are picked, 1 remains.
-            if (!game.activeRoom.isSpecial && !game.activeRoom.isBonfire) {
-                game.carryCard = game.combatCards[0] || null;
-            }
+            game.carryCard = game.combatCards[0] || null;
             game.combatCards = []; // Clear current area
             game.activeRoom.cards = [];
             game.lastAvoided = false;
@@ -1466,18 +1458,7 @@
 
         function gameOver() {
             logMsg("DEATH HAS CLAIMED YOU.");
-
-            let monsterSum = 0;
-            // Sum monsters in current deck
-            game.deck.forEach(c => { if (c.type === 'monster') monsterSum += c.val; });
-            // Sum monsters in all rooms (active or unvisited)
-            game.rooms.forEach(r => {
-                if (r.cards) r.cards.forEach(c => { if (c.type === 'monster') monsterSum += c.val; });
-            });
-            // Rules say subtract remaining monsters from life
-            const score = game.hp - monsterSum;
-
-            alert(`Game Over! Your vitality reached 0.\n\nFinal Score: ${score}\n(Life: ${game.hp}, Monsters remaining: ${monsterSum})`);
+            alert("Game Over! Your vitality reached 0.");
             location.reload();
         }
 
