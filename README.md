@@ -9,6 +9,12 @@ Map movement
 <img width="1861" height="1022" alt="Screenshot 2026-02-04 at 21-45-17 Scoundrel Gilded Depths" src="https://github.com/user-attachments/assets/da494593-f116-4bd5-a06f-9862df3030fb" />
 Combat
 
+
+
+https://github.com/user-attachments/assets/099d5be1-9593-4cec-b82d-8e1ce6adba82
+
+
+
 ---
 
 Original files, the card game scoundrel, two versions, one normal, one made special with a map to move around on
