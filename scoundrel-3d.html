@@ -637,16 +637,13 @@
         // --- CORE GAME STATE ---
         const game = {
             hp: 20, maxHp: 20,
-            floor: 1, // Track current depth
-            deck: [],
-            weapon: null,
-            weaponDurability: Infinity,
             slain: 0,
             rooms: [],
             currentRoomIdx: 0,
             moves: 0,
             lastAvoided: false,
             potionsUsedThisTurn: false,
+            sex: 'm', // m or f
 
             // Encounter State
             activeRoom: null,
@@ -771,6 +768,7 @@
 
         // --- 3D RENDERING (Three.js Tableau) ---
         let scene, camera, renderer, controls, raycaster, mouse;
+        let playerMarker; // Crystal marker
         let torchLight;
         let roomMeshes = new Map();
         let terrainMeshes = new Map();
@@ -913,8 +911,14 @@
             const spriteMat = new THREE.SpriteMaterial({ map: walkAnims.m.up, transparent: true });
             playerSprite = new THREE.Sprite(spriteMat);
             playerSprite.scale.set(1.5, 1.5, 1.5);
-            playerSprite.position.set(0, 0.75, 0);
+            playerSprite.position.set(0, 0.75, 0); // initial pos
             scene.add(playerSprite);
+
+            // Player Marker (Floating Diamond)
+            const markerGeo = new THREE.OctahedronGeometry(0.3, 0);
+            const markerMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.8 });
+            playerMarker = new THREE.Mesh(markerGeo, markerMat);
+            scene.add(playerMarker);
 
             animate3D();
             window.addEventListener('click', on3DClick);
@@ -1010,11 +1014,26 @@
                             }
                             const mesh = roomMeshes.get(r.id);
                             mesh.visible = true;
-                            let eCol = (r.state === 'cleared' ? 0x111111 : 0x000000);
+                            // Visual Priority: Cleared (Holy Glow) > Special > Base
+                            let eCol = 0x000000;
                             let eInt = (isVisible ? 1.0 : 0.2);
-                            if (r.isFinal) { eCol = 0xff0000; eInt = (isVisible ? 2.5 : 0.5); }
-                            else if (r.isBonfire) { eCol = 0xff8800; eInt = (isVisible ? 2.5 : 0.5); }
-                            else if (r.isSpecial) { eCol = 0x8800ff; eInt = (isVisible ? 1.5 : 0.3); }
+
+                            if (r.state === 'cleared' && !r.isWaypoint) {
+                                eCol = 0xaaaaaa; // Holy Glow
+                                mesh.material.color.setHex(0xffffff); // White Tint
+                                eInt = (isVisible ? 0.8 : 0.4);
+                                if (r.isFinal) {
+                                    eCol = 0x440000; // Bright Red Glow
+                                    mesh.material.color.setHex(0xffaaaa);
+                                    eInt = 1.0;
+                                }
+                            } else {
+                                mesh.material.color.setHex(0x444444); // Reset to dark
+                                if (r.isFinal) { eCol = 0xff0000; eInt = (isVisible ? 2.5 : 0.5); }
+                                else if (r.isBonfire) { eCol = 0xff8800; eInt = (isVisible ? 2.5 : 0.5); }
+                                else if (r.isSpecial) { eCol = 0x8800ff; eInt = (isVisible ? 1.5 : 0.3); }
+                            }
+
                             mesh.material.emissive.setHex(eCol);
                             mesh.material.emissiveIntensity = eInt;
                         }
@@ -1061,6 +1080,14 @@
             requestAnimationFrame(animate3D);
             update3DScene();
             updateFX();
+
+            // Animate Player Marker
+            if (playerMarker && playerSprite) {
+                const time = Date.now() * 0.002;
+                playerMarker.position.set(playerSprite.position.x, 8.0 + Math.sin(time) * 0.5, playerSprite.position.z);
+                playerMarker.rotation.y += 0.02;
+            }
+
             controls.update();
             renderer.render(scene, camera);
             if (window.TWEEN) TWEEN.update();
@@ -1107,6 +1134,32 @@
                     door.rotation.y = dy > 0 ? 0 : Math.PI;
                 }
                 mesh.add(door);
+            });
+            updateRoomVisuals();
+        }
+
+        function updateRoomVisuals() {
+            // Update Room Visuals (Tinting)
+            game.rooms.forEach(r => {
+                if (!r.mesh) return;
+
+                // Reset to default (dark)
+                r.mesh.material.emissive.setHex(0x000000);
+                r.mesh.material.color.setHex(0x444444); // Default Dark Grey
+
+                if (r.state === 'cleared' && !r.isWaypoint) {
+                    // Holy Glow for cleared rooms
+                    r.mesh.material.emissive.setHex(0x222222); // Light emission
+                    r.mesh.material.color.setHex(0xaaaaaa); // Lighten base color
+
+                    if (r.isFinal) {
+                        r.mesh.material.color.setHex(0xffaaaa); // Pale Red
+                        r.mesh.material.emissive.setHex(0x440000);
+                    }
+                } else if (r.isFinal) {
+                    // Uncleared Final Room (Dark Red)
+                    r.mesh.material.color.setHex(0x880000);
+                }
             });
         }
 
@@ -1510,7 +1563,14 @@
             document.getElementById('combatMessage').innerText = "Victory! Path is clear.";
 
             // Proactive Purge Check
-            const allCleared = game.rooms.every(r => r.isWaypoint || r.state === 'cleared');
+            // Rule: All rooms must be cleared OR be a Waypoint/Special/Bonfire
+            const allCleared = game.rooms.every(r =>
+                r.isWaypoint ||
+                r.isSpecial ||
+                r.isBonfire ||
+                r.state === 'cleared'
+            );
+
             if (allCleared) {
                 if (game.activeRoom.isFinal) {
                     // Update message and show descend button immediately
@@ -1522,7 +1582,7 @@
                     logMsg("Floor Purged! Return to the Guardian's lair to descend.");
                 }
             }
-
+            updateRoomVisuals();
             updateUI();
         }
 
