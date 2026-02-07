@@ -1867,6 +1867,7 @@
             if (room.restRemaining <= 0) {
                 room.state = 'cleared';
                 logMsg("The fire fades.");
+                updateUI(); // Update HP display before closing
                 closeCombat();
             } else {
                 updateBonfireUI();
