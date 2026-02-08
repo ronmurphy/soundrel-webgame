@@ -415,18 +415,19 @@ function spawnUIProjectile(name, fromX, fromY, toX, toY, count = 8, opts = {}) {
         uiParticles.push(p);
     }
 
-    /* DEBUG block commented out: Quick visibility boost when debugging (window.DEBUG_UI_FX)
-    if (window.DEBUG_UI_FX) {
-        // draw a bright test circle at center for 400ms
-        if (uiFxCtx) {
-            uiFxCtx.save();
-            uiFxCtx.fillStyle = 'rgba(255,255,255,0.95)';
-            uiFxCtx.beginPath(); uiFxCtx.arc(window.innerWidth/2, window.innerHeight/2, 48, 0, Math.PI*2); uiFxCtx.fill();
-            uiFxCtx.restore();
-            setTimeout(() => { /* clearing will happen in next frame via updateUIFX */ }, 400);
-        }
-    }
-    */
+    // DEBUG block commented out: Quick visibility boost when debugging (window.DEBUG_UI_FX)
+    // if (window.DEBUG_UI_FX) {
+    //     // draw a bright test circle at center for 400ms
+    //     if (uiFxCtx) {
+    //         uiFxCtx.save();
+    //         uiFxCtx.fillStyle = 'rgba(255,255,255,0.95)';
+    //         uiFxCtx.beginPath(); uiFxCtx.arc(window.innerWidth/2, window.innerHeight/2, 48, 0, Math.PI*2); uiFxCtx.fill();
+    //         uiFxCtx.restore();
+    //         setTimeout(() => { // clearing will happen in next frame via updateUIFX 
+    //             /* intentionally left blank - clearing occurs on next frame */
+    //         }, 400);
+    //     }
+    // }
 
     return new Promise(resolve => setTimeout(() => resolve(), duration));
 }
