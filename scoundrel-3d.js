@@ -251,7 +251,7 @@ function spawnDOMParticles(name, x, y, count = 10, opts = {}) {
 
 // DOM-based projectile animation to be used when modal is open so projectiles appear above UI
 function spawnDOMProjectile(name, fromX, fromY, toX, toY, count = 6, opts = {}) {
-    console.debug('spawnDOMProjectile', { name, fromX, fromY, toX, toY, count, opts, uiCanvasPresent: !!uiFxCanvas });
+    // console.debug('spawnDOMProjectile', { name, fromX, fromY, toX, toY, count, opts, uiCanvasPresent: !!uiFxCanvas }); // DEBUG (commented out)
     return new Promise(resolve => {
         const container = document.createElement('div');
         container.className = 'ui-fx ui-projectile';
@@ -386,20 +386,20 @@ function spawnAboveModalTexture(name, x, y, count = 12, opts = {}) {
     const modal = document.getElementById('combatModal');
     const modalOpen = modal && (modal.style.display === 'flex' || modal.style.display === 'block');
     if (modalOpen && typeof spawnUITextureParticles === 'function' && uiFxCanvas) {
-        console.debug('spawnAboveModalTexture -> UI canvas', { name, x, y, count, opts });
+        // console.debug('spawnAboveModalTexture -> UI canvas', { name, x, y, count, opts }); // DEBUG (commented out)
         spawnUITextureParticles(name, x, y, count, opts);
     } else if (modalOpen && typeof spawnDOMParticles === 'function') {
-        console.debug('spawnAboveModalTexture -> DOM fallback', { name, x, y, count, opts });
+        // console.debug('spawnAboveModalTexture -> DOM fallback', { name, x, y, count, opts }); // DEBUG (commented out)
         // Fallback to DOM particles if UI canvas isn't available
         spawnDOMParticles(name, x, y, count, opts);
     } else {
-        console.debug('spawnAboveModalTexture -> scene canvas', { name, x, y, count, opts });
+        // console.debug('spawnAboveModalTexture -> scene canvas', { name, x, y, count, opts }); // DEBUG (commented out)
         spawnTextureParticles(name, x, y, count, opts);
     }
 }
 
 function spawnUIProjectile(name, fromX, fromY, toX, toY, count = 8, opts = {}) {
-    console.debug('spawnUIProjectile', { name, fromX, fromY, toX, toY, count, opts, uiCanvasPresent: !!uiFxCanvas, uiParticlesCount: uiParticles.length });
+    // console.debug('spawnUIProjectile', { name, fromX, fromY, toX, toY, count, opts, uiCanvasPresent: !!uiFxCanvas, uiParticlesCount: uiParticles.length }); // DEBUG (commented out)
     const img = loadFXImage(name);
     const duration = opts.duration || 420; // ms
     const frames = Math.max(1, Math.round(duration / 16));
@@ -415,7 +415,7 @@ function spawnUIProjectile(name, fromX, fromY, toX, toY, count = 8, opts = {}) {
         uiParticles.push(p);
     }
 
-    // Quick visibility boost when debugging (only if window.DEBUG_UI_FX is true)
+    /* DEBUG block commented out: Quick visibility boost when debugging (window.DEBUG_UI_FX)
     if (window.DEBUG_UI_FX) {
         // draw a bright test circle at center for 400ms
         if (uiFxCtx) {
@@ -426,6 +426,7 @@ function spawnUIProjectile(name, fromX, fromY, toX, toY, count = 8, opts = {}) {
             setTimeout(() => { /* clearing will happen in next frame via updateUIFX */ }, 400);
         }
     }
+    */
 
     return new Promise(resolve => setTimeout(() => resolve(), duration));
 }
@@ -627,7 +628,8 @@ function updateUIFX() {
     const MAX_UI_PARTICLES = 400;
     if (uiParticles.length > MAX_UI_PARTICLES) uiParticles.splice(0, uiParticles.length - MAX_UI_PARTICLES);
 
-    if (uiParticles.length > 0) console.debug('updateUIFX - uiParticles', uiParticles.length);
+    // if (uiParticles.length > 0) console.debug('updateUIFX - uiParticles', uiParticles.length); // DEBUG (commented out)
+
 
     uiParticles.forEach((p, idx) => {
         // respect optional noGravity flag
@@ -661,7 +663,8 @@ window.debugUIFXState = function () {
     info.particleCount = uiParticles.length;
     info.modalOpen = (document.getElementById('combatModal') && getComputedStyle(document.getElementById('combatModal')).display !== 'none');
     info.sample = uiParticles.slice(0, 8).map(p => ({ x: Math.round(p.x), y: Math.round(p.y), size: Math.round(p.size), life: Number(p.life.toFixed(2)), imgLoaded: (p.img && p.img.complete) }));
-    console.debug('debugUIFXState', info);
+    // console.debug('debugUIFXState', info); // DEBUG (commented out)
+
     return info;
 };
 
