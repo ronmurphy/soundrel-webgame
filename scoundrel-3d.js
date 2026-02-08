@@ -536,9 +536,23 @@ function animate3D() {
 
     // Animate Player Marker
     if (playerMarker && playerSprite) {
-        const time = Date.now() * 0.002;
-        playerMarker.position.set(playerSprite.position.x, 8.0 + Math.sin(time) * 0.5, playerSprite.position.z);
-        playerMarker.rotation.y += 0.02;
+        const currentRoom = game.rooms.find(r => r.id === game.currentRoomIdx);
+
+        if (currentRoom && currentRoom.isWaypoint) {
+            // Hide marker when in waypoints
+            playerMarker.visible = false;
+        } else {
+            // Show marker when in actual rooms
+            playerMarker.visible = true;
+            const time = Date.now() * 0.002;
+
+            // Position above the room (use room depth if available, otherwise default)
+            const roomHeight = (currentRoom && currentRoom.rDepth) ? currentRoom.rDepth : 3.0;
+            const markerHeight = roomHeight + 2.0 + Math.sin(time) * 0.5;
+
+            playerMarker.position.set(playerSprite.position.x, markerHeight, playerSprite.position.z);
+            playerMarker.rotation.y += 0.02;
+        }
     }
 
     controls.update();
