@@ -1027,8 +1027,22 @@ function showCombat() {
         document.getElementById('descendBtn').style.display = 'none';
     }
 
-    // Bonfire specific
-    document.getElementById('bonfireNotNowBtn').style.display = (game.activeRoom && game.activeRoom.isBonfire && game.activeRoom.state !== 'cleared') ? 'inline-block' : 'none';
+    // Merchant portrait and 'Not Now' button for special rooms (merchant)
+    const isMerchant = (game.combatCards[0] && game.combatCards[0].type === 'gift');
+    const mp = document.getElementById('merchantPortrait');
+    if (mp) {
+        if (isMerchant) {
+            // Calculate left based on sidebar width so the portrait doesn't get hidden under the panel
+            const sidebar = document.querySelector('.sidebar');
+            const leftOffset = (sidebar && sidebar.getBoundingClientRect) ? (Math.round(sidebar.getBoundingClientRect().width) + 32) : 32;
+            mp.style.left = `${leftOffset}px`;
+            mp.style.display = 'block';
+            mp.style.pointerEvents = 'none';
+        } else {
+            mp.style.display = 'none';
+        }
+    }
+    document.getElementById('bonfireNotNowBtn').style.display = (game.activeRoom && (game.activeRoom.isBonfire || (game.activeRoom.isSpecial && isMerchant)) && game.activeRoom.state !== 'cleared') ? 'inline-block' : 'none';
 
     updateUI();
 }
@@ -1224,6 +1238,9 @@ function closeCombat() {
     document.getElementById('combatModal').style.display = 'none';
     document.getElementById('combatContainer').style.display = 'flex';
     document.getElementById('bonfireUI').style.display = 'none';
+    // Hide merchant portrait when modal is closed
+    const mp = document.getElementById('merchantPortrait');
+    if (mp) mp.style.display = 'none';
 }
 window.closeCombat = closeCombat; // Expose for onClick events
 
@@ -1232,6 +1249,9 @@ function showBonfireUI() {
     overlay.style.display = 'flex';
     document.getElementById('combatContainer').style.display = 'none';
     document.getElementById('bonfireUI').style.display = 'flex';
+    // Ensure merchant portrait is hidden when showing bonfire UI
+    const mp = document.getElementById('merchantPortrait');
+    if (mp) mp.style.display = 'none';
     updateBonfireUI();
 }
 
