@@ -138,6 +138,8 @@ function insertWaypoints(r1, r2, allRooms) {
 let scene, camera, renderer, controls, raycaster, mouse;
 let playerMarker; // Crystal marker
 let torchLight;
+let hemisphereLight; // Soft global fill light to improve readability under fog
+let fogRings = []; // Fog ring sprites for atmospheric LOD
 let roomMeshes = new Map();
 let terrainMeshes = new Map();
 let waypointMeshes = new Map();
@@ -165,6 +167,11 @@ const fxCtx = fxCanvas.getContext('2d');
 let particles = [];
 let screenShake = { intensity: 0, duration: 0 };
 
+// UI FX Canvas (above modal) — used for modal combat projectiles/effects
+const uiFxCanvas = document.getElementById('uiFxCanvas');
+const uiFxCtx = uiFxCanvas.getContext('2d');
+let uiParticles = [];
+
 class Particle {
     constructor(x, y, color) {
         this.x = x; this.y = y;
@@ -190,6 +197,335 @@ class Particle {
 function spawnParticles(x, y, color, count = 20) {
     for (let i = 0; i < count; i++) particles.push(new Particle(x, y, color));
 }
+
+// --- Texture-based Image Particles (FX) ---
+const fxImageCache = new Map();
+function loadFXImage(name) {
+    const path = `assets/images/textures/${name}`;
+    if (fxImageCache.has(path)) return fxImageCache.get(path);
+    const img = new Image();
+    img.src = path;
+    img.onload = () => { /* ready */ };
+    fxImageCache.set(path, img);
+    return img;
+}
+
+function preloadFXTextures() {
+    const list = ['slash_02.png','spark_01.png','twirl_01.png','circle_03.png','flame_03.png','muzzle_02.png'];
+    list.forEach(n => loadFXImage(n));
+}
+
+// Spawn simple DOM-based UI particles that sit above the modal overlay
+function spawnDOMParticles(name, x, y, count = 10, opts = {}) {
+    const container = document.createElement('div');
+    container.className = 'ui-fx';
+    document.body.appendChild(container);
+
+    const imgs = [];
+    for (let i = 0; i < count; i++) {
+        const el = document.createElement('img');
+        el.src = `assets/images/textures/${name}`;
+        el.style.position = 'fixed';
+        el.style.left = `${x - 24 + (Math.random() - 0.5) * (opts.spread || 60)}px`;
+        el.style.top = `${y - 24 + (Math.random() - 0.5) * (opts.spread || 60)}px`;
+        el.style.opacity = '0';
+        el.style.transform = `scale(${0.6 + Math.random() * 0.8}) rotate(${Math.random() * 360}deg)`;
+        el.style.transition = `transform ${400 + Math.random() * 400}ms cubic-bezier(0.2,0.8,0.2,1), opacity ${300 + Math.random() * 300}ms ease`;
+        container.appendChild(el);
+        imgs.push(el);
+
+        // allow the browser to layout then animate
+        requestAnimationFrame(() => {
+            el.style.opacity = '1';
+            const dx = (Math.random() - 0.5) * (opts.dx || 120);
+            const dy = -30 - Math.random() * (opts.dy || 120);
+            const rot = (Math.random() - 0.5) * 720;
+            el.style.transform = `translate(${dx}px, ${dy}px) scale(${0.4 + Math.random() * 1.2}) rotate(${rot}deg)`;
+            el.style.opacity = '0';
+        });
+    }
+
+    // Cleanup
+    setTimeout(() => { if (container.parentNode) container.parentNode.removeChild(container); }, opts.life || 1000);
+}
+
+// DOM-based projectile animation to be used when modal is open so projectiles appear above UI
+function spawnDOMProjectile(name, fromX, fromY, toX, toY, count = 6, opts = {}) {
+    return new Promise(resolve => {
+        const container = document.createElement('div');
+        container.className = 'ui-fx ui-projectile';
+        document.body.appendChild(container);
+
+        const duration = opts.duration || 420;
+        let finished = 0;
+        for (let i = 0; i < Math.max(1, count); i++) {
+            const el = document.createElement('img');
+            el.src = `assets/images/textures/${name}`;
+            const size = opts.sizeRange ? (opts.sizeRange[0] + Math.random() * (opts.sizeRange[1] - opts.sizeRange[0])) : (24 + Math.random() * 24);
+            el.style.width = `${size}px`;
+            el.style.height = `${size}px`;
+            el.style.position = 'fixed';
+            const jitter = (opts.jitter || 16);
+            const sx = fromX + (Math.random() - 0.5) * jitter;
+            const sy = fromY + (Math.random() - 0.5) * jitter;
+            el.style.left = `${sx - size/2}px`;
+            el.style.top = `${sy - size/2}px`;
+            el.style.opacity = '1';
+            el.style.transform = `translate(0px,0px) rotate(${Math.random()*360}deg)`;
+            el.style.transition = `transform ${duration + Math.random()*120}ms cubic-bezier(0.2,0.8,0.2,1), opacity ${duration}ms linear`;
+            container.appendChild(el);
+
+            // Start movement on next frame
+            requestAnimationFrame(() => {
+                const dx = toX - sx + (Math.random() - 0.5) * (opts.spread || 40);
+                const dy = toY - sy + (Math.random() - 0.5) * (opts.spread || 40);
+                const rot = (Math.random() - 0.5) * 720;
+                el.style.transform = `translate(${dx}px, ${dy}px) rotate(${rot}deg) scale(${0.6 + Math.random()*0.8})`;
+                el.style.opacity = '0.01';
+            });
+
+            // Cleanup per element
+            setTimeout(() => {
+                finished++;
+                if (finished === Math.max(1, count)) {
+                    if (container.parentNode) container.parentNode.removeChild(container);
+                    resolve();
+                }
+            }, duration + 160);
+        }
+    });
+}
+
+
+class ImageParticle extends Particle {
+    constructor(x, y, img, opts = {}) {
+        super(x, y, null);
+        this.img = img;
+        this.rotation = Math.random() * Math.PI * 2;
+        this.angularVel = (Math.random() - 0.5) * 0.2;
+        this.life = 1.0;
+        this.decay = opts.decay || (0.01 + Math.random() * 0.02);
+        this.size = opts.size || (20 + Math.random() * 40);
+        this.size *= (opts.sizeScale || 1);
+        this.vx = (Math.random() - 0.5) * (opts.spread || 8);
+        this.vy = (Math.random() - 0.5) * (opts.spread || 8);
+        this.blend = opts.blend || 'source-over';
+        this.tint = opts.tint || null;
+    }
+    update() {
+        this.x += this.vx; this.y += this.vy;
+        this.vy += 0.1; // subtle gravity
+        this.rotation += this.angularVel;
+        this.life -= this.decay;
+    }
+    draw(ctx) {
+        if (!this.img || !this.img.complete) return;
+        ctx.save();
+        // Smooth scaled sprites to avoid aliasing artifacts
+        ctx.imageSmoothingEnabled = true;
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.globalCompositeOperation = this.blend;
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+        const s = this.size;
+        // Draw the sprite
+        ctx.drawImage(this.img, -s / 2, -s / 2, s, s);
+        if (this.tint) {
+            // Tint only the existing sprite pixels (no rectangular spill) using source-atop
+            ctx.globalCompositeOperation = 'source-atop';
+            ctx.fillStyle = this.tint;
+            ctx.globalAlpha = Math.max(0, this.life) * 0.6;
+            ctx.fillRect(-s / 2, -s / 2, s, s);
+        }
+        ctx.restore();
+        ctx.globalCompositeOperation = 'source-over';
+    }
+}
+
+function spawnTextureParticles(name, x, y, count = 12, opts = {}) {
+    const img = loadFXImage(name);
+    for (let i = 0; i < count; i++) {
+        const pOpts = {
+            size: opts.sizeRange ? (opts.sizeRange[0] + Math.random() * (opts.sizeRange[1] - opts.sizeRange[0])) : (opts.size || (20 + Math.random() * 40)),
+            spread: opts.spread || 10,
+            blend: opts.blend || 'source-over',
+            tint: opts.tint || null,
+            decay: opts.decay || (0.01 + Math.random() * 0.03)
+        };
+        particles.push(new ImageParticle(x + (Math.random() - 0.5) * (opts.spread || 40), y + (Math.random() - 0.5) * (opts.spread || 40), img, pOpts));
+    }
+}
+
+// UI canvas variants (draw above modal)
+function spawnUITextureParticles(name, x, y, count = 12, opts = {}) {
+    const img = loadFXImage(name);
+    for (let i = 0; i < count; i++) {
+        const pOpts = {
+            size: opts.sizeRange ? (opts.sizeRange[0] + Math.random() * (opts.sizeRange[1] - opts.sizeRange[0])) : (opts.size || (20 + Math.random() * 40)),
+            spread: opts.spread || 10,
+            blend: opts.blend || 'source-over',
+            tint: opts.tint || null,
+            decay: opts.decay || (0.01 + Math.random() * 0.03)
+        };
+        uiParticles.push(new ImageParticle(x + (Math.random() - 0.5) * (opts.spread || 40), y + (Math.random() - 0.5) * (opts.spread || 40), img, pOpts));
+    }
+}
+
+function spawnUIProjectile(name, fromX, fromY, toX, toY, count = 8, opts = {}) {
+    const img = loadFXImage(name);
+    const duration = opts.duration || 420; // ms
+    const frames = Math.max(1, Math.round(duration / 16));
+
+    for (let i = 0; i < count; i++) {
+        const jitter = (opts.jitter || 20);
+        const sx = fromX + (Math.random() - 0.5) * jitter;
+        const sy = fromY + (Math.random() - 0.5) * jitter;
+        const p = new ImageParticle(sx, sy, img, { size: opts.size || (18 + Math.random() * 32), spread: 0, blend: opts.blend || 'lighter', tint: opts.tint || null, decay: 1.0 / frames, sizeScale: 1 });
+        p.vx = (toX - sx) / frames + (Math.random() - 0.5) * 2;
+        p.vy = (toY - sy) / frames + (Math.random() - 0.5) * 2;
+        p.noGravity = true;
+        uiParticles.push(p);
+    }
+
+    return new Promise(resolve => setTimeout(() => resolve(), duration));
+}
+
+// Spawn projectiles that travel from point A to B and call onHit when they arrive
+function spawnProjectile(name, fromX, fromY, toX, toY, count = 8, opts = {}) {
+    const img = loadFXImage(name);
+    const duration = opts.duration || 450; // ms
+    const frames = Math.max(1, Math.round(duration / 16));
+    const particlesCreated = [];
+
+    for (let i = 0; i < count; i++) {
+        const jitter = (opts.jitter || 20);
+        const sx = fromX + (Math.random() - 0.5) * jitter;
+        const sy = fromY + (Math.random() - 0.5) * jitter;
+        const pOpts = {
+            size: opts.size || (12 + Math.random() * 24),
+            spread: 0,
+            blend: opts.blend || 'lighter',
+            tint: opts.tint || null,
+            decay: 1.0 / frames,
+            sizeScale: 1,
+            noGravity: true
+        };
+        const p = new ImageParticle(sx, sy, img, pOpts);
+        // set velocity so particle reaches target in `frames` updates
+        p.vx = (toX - sx) / frames + (Math.random() - 0.5) * 2;
+        p.vy = (toY - sy) / frames + (Math.random() - 0.5) * 2;
+        p.noGravity = true;
+        particles.push(p);
+        particlesCreated.push(p);
+    }
+
+    // Return a promise that resolves when the projectile 'arrives'
+    return new Promise(resolve => setTimeout(() => resolve(), duration));
+}
+
+// Small full-screen hit flash used during UI projectile hits
+function spawnUIHitFlash(x, y, duration = 280) {
+    const el = document.createElement('div');
+    el.className = 'ui-hit-flash';
+    // set CSS variables for gradient origin
+    const nx = Math.round((x / window.innerWidth) * 100);
+    const ny = Math.round((y / window.innerHeight) * 100);
+    el.style.setProperty('--fx-x', `${nx}%`);
+    el.style.setProperty('--fx-y', `${ny}%`);
+    document.body.appendChild(el);
+    // Trigger show
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => { el.classList.remove('show'); setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 240); }, duration);
+}
+
+function getElementCenter(el) {
+    if (!el) return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+// Animate card flipping over and removing; calls cb when finished
+function animateCardDeath(cardEl, cb) {
+    if (!cardEl) { if (cb) cb(); return; }
+    const original = cardEl.style.transition || '';
+    // Add the dead-flip class which uses CSS transitions for a 3D flip
+    cardEl.classList.add('dead-flip');
+    // Ensure we only fire callback once
+    const handler = (e) => {
+        cardEl.removeEventListener('transitionend', handler);
+        if (cardEl.parentNode) cardEl.parentNode.removeChild(cardEl);
+        if (cb) cb();
+    };
+    cardEl.addEventListener('transitionend', handler);
+}
+
+// Animate an enemy card 'telegraphing' then launching an attack towards the player UI
+function enemyAttackAnimation(card, cardEl, fromX, fromY, dmg, opts = {}, onComplete) {
+    // Choose preset based on card value/rank
+    const boss = card.val >= 11;
+
+    // Rank-based presets (textures, projectile counts & tinting)
+    const presets = {
+        normal: { texs: ['muzzle_02.png','spark_01.png','trace_04.png'], count: 8, tint: '#ffffff', blend: 'lighter' },
+        jack:   { texs: ['muzzle_02.png','spark_01.png'], count: 10, tint: '#ddd', blend: 'lighter' },
+        queen:  { texs: ['magic_01.png','magic_03.png','twirl_01.png'], count: 10, tint: '#ffdca8', blend: 'lighter' },
+        king:   { texs: ['slash_02.png','spark_04.png','trace_04.png'], count: 14, tint: '#fff6e6', blend: 'source-over' },
+        ace:    { texs: ['twirl_01.png','light_02.png','flare_01.png','magic_05.png'], count: 16, tint: '#ffeed6', blend: 'lighter' }
+    };
+
+    let preset = presets.normal;
+    if (boss) {
+        if (card.val === 11) preset = presets.jack;
+        else if (card.val === 12) preset = presets.queen;
+        else if (card.val === 13) preset = presets.king;
+        else if (card.val === 14) preset = presets.ace;
+    }
+
+    const tex = preset.texs[Math.floor(Math.random() * preset.texs.length)];
+
+    const targetEl = document.getElementById('hpValueModal') || document.getElementById('hpValueSidebar');
+    const target = getElementCenter(targetEl);
+
+    // Card telegraph animation (pop forward)
+    const origTransform = cardEl.style.transform || '';
+    cardEl.style.transition = 'transform 180ms cubic-bezier(0.2,0.8,0.2,1)';
+    // Use different telegraph for melee-type (king) vs magic-type (queen)
+    if (preset === presets.king) cardEl.style.transform = `${origTransform} translateY(-22px) scale(1.08) rotate(-8deg)`;
+    else if (preset === presets.queen) cardEl.style.transform = `${origTransform} translateY(-12px) scale(1.04) rotate(-4deg)`;
+    else cardEl.style.transform = `${origTransform} translateY(-18px) scale(1.06) rotate(-6deg)`;
+
+    cardEl.style.zIndex = 2000;
+    cardEl.style.pointerEvents = 'none';
+
+    // After telegraph, fire projectile
+    setTimeout(async () => {
+        // Launch a quick projectile towards target
+        if (document.getElementById('combatModal').style.display === 'flex') {
+            // Prefer UI-canvas projectile when available so textures render above modal
+            if (uiFxCanvas) {
+                await spawnUIProjectile(tex, fromX, fromY, target.x, target.y, opts.count || preset.count, {duration: 420, jitter: 18, spread: 16, sizeRange: [18, 42]});
+                const hitTex = boss ? (preset === presets.queen ? 'magic_03.png' : 'twirl_01.png') : (preset === presets.king ? 'slash_02.png' : 'slash_02.png');
+                spawnUITextureParticles(hitTex, target.x, target.y, Math.max(10, Math.floor((opts.count || preset.count)/1.2)), {spread: 28, life: 900});
+            } else {
+                // Fallback to DOM-based projectile so it renders above modal UI
+                await spawnDOMProjectile(tex, fromX, fromY, target.x, target.y, opts.count || preset.count, {duration: 420, jitter: 18, spread: 16, sizeRange: [18, 42]});
+                const hitTex = boss ? (preset === presets.queen ? 'magic_03.png' : 'twirl_01.png') : (preset === presets.king ? 'slash_02.png' : 'slash_02.png');
+                spawnDOMParticles(hitTex, target.x, target.y, Math.max(10, Math.floor((opts.count || preset.count)/1.2)), {spread: 28, life: 900});
+            }
+
+            // Always show a UI hit flash & shake
+            spawnUIHitFlash(target.x, target.y, 280);
+            triggerShake(boss ? 18 : 10, boss ? 40 : 20);
+        }
+
+        // Restore card position
+        cardEl.style.transform = origTransform;
+        setTimeout(() => { cardEl.style.transition = ''; cardEl.style.zIndex = ''; cardEl.style.pointerEvents = ''; }, 200);
+
+        if (onComplete) onComplete();
+    }, 200);
+}
+
 
 function triggerShake(intensity, duration) {
     screenShake.intensity = intensity;
@@ -264,6 +600,8 @@ function updateWisps(ctx) {
 function resizeFXCanvas() {
     fxCanvas.width = window.innerWidth;
     fxCanvas.height = window.innerHeight;
+    // Also size UI FX canvas
+    if (uiFxCanvas) { uiFxCanvas.width = window.innerWidth; uiFxCanvas.height = window.innerHeight; }
 }
 window.addEventListener('resize', resizeFXCanvas);
 resizeFXCanvas();
@@ -302,6 +640,9 @@ function init3D() {
 
     // Lights
     scene.add(new THREE.AmbientLight(0xffffff, 0.15));
+    // Hemisphere light — soft global fill to keep scenes readable under heavy fog
+    hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x222222, 0.35);
+    scene.add(hemisphereLight);
     // Initial Torch
     torchLight = new THREE.PointLight(0xffaa44, 300, 40);
     torchLight.castShadow = true;
@@ -328,8 +669,37 @@ function init3D() {
     playerMarker = new THREE.Mesh(markerGeo, markerMat);
     scene.add(playerMarker);
 
+    // Create atmospheric fog rings around the map
+    createFogRings();
+
     animate3D();
     window.addEventListener('click', on3DClick);
+}
+
+function createFogRings() {
+    // Remove existing rings
+    clearFogRings();
+
+    const tex = loadTexture('assets/images/textures/large-smoke.png');
+    for (let i = 0; i < 2; i++) {
+        const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: i === 0 ? 0.12 : 0.08, depthWrite: false });
+        const s = new THREE.Sprite(mat);
+        s.raycast = () => { }; // Non-interactive
+        // Scale rings: inner and outer
+        const scale = i === 0 ? 40 : 70;
+        s.scale.set(scale, scale, 1);
+        // Slight vertical offset so they feel layered
+        s.position.set(0, i === 0 ? 4 : 10, 0);
+        s.renderOrder = 10; // render early
+        scene.add(s);
+        // Speeds in radians per millisecond (very small) - inner is slightly faster
+        fogRings.push({ sprite: s, speed: (i === 0 ? 0.00006 : -0.00003) });
+    }
+}
+
+function clearFogRings() {
+    fogRings.forEach(f => { if (f.sprite && f.sprite.parent) f.sprite.parent.remove(f.sprite); });
+    fogRings = [];
 }
 
 function on3DClick(event) {
@@ -533,6 +903,8 @@ function animate3D() {
     requestAnimationFrame(animate3D);
     update3DScene();
     updateFX();
+    // Update UI FX canvas (draw on top of modal as needed)
+    updateUIFX();
 
     // Animate Player Marker
     if (playerMarker && playerSprite) {
@@ -556,6 +928,14 @@ function animate3D() {
     }
 
     controls.update();
+
+    // Rotate fog rings slowly for subtle motion
+    const t = Date.now();
+    fogRings.forEach(f => {
+        if (!f.sprite) return;
+        f.sprite.material.rotation = (t * f.speed) % (Math.PI * 2);
+    });
+
     renderer.render(scene, camera);
     if (window.TWEEN) TWEEN.update();
     animatePlayerSprite();
@@ -657,15 +1037,15 @@ function createEmojiSprite(emoji, size = 1.5) {
     return sprite;
 }
 const THEMES = [
-    { id: 1, name: 'Dirt', tile: 1, color: 0x3d2817 },    // Brown
-    { id: 2, name: 'Stone', tile: 2, color: 0x222222 },   // Grey
-    { id: 3, name: 'Moss', tile: 3, color: 0x173d1a },    // Green
-    { id: 4, name: 'Ancient', tile: 4, color: 0x3d173d }, // Purple
-    { id: 5, name: 'Magma', tile: 5, color: 0x3d1717 },   // Red
-    { id: 6, name: 'Ice', tile: 6, color: 0x173d3d },     // Cyan/Teal
-    { id: 7, name: 'Abyss', tile: 7, color: 0x050505 },   // Near Black
-    { id: 8, name: 'Bone', tile: 8, color: 0x3d3517 },    // Yellow/Bone
-    { id: 9, name: 'Ruins', tile: 9, color: 0x282222 },   // Dusty
+    { id: 1, name: 'Dirt', tile: 1, color: 0x3d2817, fogDensity: 0.05, hemiIntensity: 0.35 },    // Brown
+    { id: 2, name: 'Stone', tile: 2, color: 0x222222, fogDensity: 0.05, hemiIntensity: 0.34 },   // Grey
+    { id: 3, name: 'Moss', tile: 3, color: 0x173d1a, fogDensity: 0.04, hemiIntensity: 0.36 },    // Green
+    { id: 4, name: 'Ancient', tile: 4, color: 0x3d173d, fogDensity: 0.05, hemiIntensity: 0.34 }, // Purple
+    { id: 5, name: 'Magma', tile: 5, color: 0x3d1717, fogDensity: 0.06, hemiIntensity: 0.30 },   // Red
+    { id: 6, name: 'Ice', tile: 6, color: 0x173d3d, fogDensity: 0.03, hemiIntensity: 0.42 },     // Cyan/Teal
+    { id: 7, name: 'Abyss', tile: 7, color: 0x050505, fogDensity: 0.07, hemiIntensity: 0.22 },   // Near Black
+    { id: 8, name: 'Bone', tile: 8, color: 0x3d3517, fogDensity: 0.04, hemiIntensity: 0.36 },    // Yellow/Bone
+    { id: 9, name: 'Ruins', tile: 9, color: 0x282222, fogDensity: 0.035, hemiIntensity: 0.38 },   // Dusty
 ];
 
 function getThemeForFloor(floor) {
@@ -679,12 +1059,35 @@ function updateAtmosphere(floor) {
     const theme = getThemeForFloor(floor);
     const dimColor = new THREE.Color(theme.color).multiplyScalar(0.5);
     scene.background = dimColor;
-    scene.fog = new THREE.FogExp2(dimColor, 0.05);
+    // Use per-theme fog density when available
+    scene.fog = new THREE.FogExp2(dimColor, theme.fogDensity || 0.05);
 
-    // Update lights to match mood?
-    // Maybe tint the ambient light slightly
+    // Tint fog ring materials to match theme and adjust opacity with density
+    fogRings.forEach((f, idx) => {
+        if (f && f.sprite && f.sprite.material) {
+            const m = f.sprite.material;
+            // colorize slightly toward theme
+            m.color.setHex(theme.color).lerp(new THREE.Color(0xffffff), 0.2);
+            // make ring opacity correlate inversely with fog density (so high fog -> stronger ring)
+            const base = idx === 0 ? 0.12 : 0.08;
+            m.opacity = Math.min(0.6, base + (theme.fogDensity || 0.05) * 6);
+        }
+    });
+
+    // Update ambient and hemisphere lights to match mood
     const amb = scene.children.find(c => c.isAmbientLight);
-    if (amb) amb.color.setHex(theme.color).lerp(new THREE.Color(0xffffff), 0.1).multiplyScalar(0.6);
+    if (amb) {
+        amb.color.setHex(theme.color).lerp(new THREE.Color(0xffffff), 0.1);
+        amb.intensity = theme.ambientIntensity || 0.15;
+    }
+
+    if (typeof hemisphereLight !== 'undefined' && hemisphereLight) {
+        const sky = new THREE.Color(theme.color).lerp(new THREE.Color(0xffffff), 0.6);
+        const ground = new THREE.Color(theme.color).multiplyScalar(0.25);
+        hemisphereLight.color.copy(sky);
+        hemisphereLight.groundColor.copy(ground);
+        hemisphereLight.intensity = theme.hemiIntensity || 0.35;
+    }
 }
 
 function generateFloorCA() {
@@ -862,6 +1265,8 @@ function finalizeStartDive() {
     game.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
     game.rooms = generateDungeon(); game.currentRoomIdx = 0; game.lastAvoided = false;
     clear3DScene(); init3D();
+    // Preload FX textures for particle effects
+    preloadFXTextures();
     generateFloorCA(); // Generate Atmosphere and Floor
     updateAtmosphere(game.floor);
 
@@ -877,6 +1282,8 @@ function descendToNextFloor() {
     game.deck = createDeck(); game.rooms = generateDungeon();
     game.currentRoomIdx = 0; game.lastAvoided = false;
     clear3DScene(); init3D();
+    // Preload FX textures for particle effects
+    preloadFXTextures();
     generateFloorCA();
     updateAtmosphere(game.floor);
 
@@ -1027,8 +1434,22 @@ function showCombat() {
         document.getElementById('descendBtn').style.display = 'none';
     }
 
-    // Bonfire specific
-    document.getElementById('bonfireNotNowBtn').style.display = (game.activeRoom && game.activeRoom.isBonfire && game.activeRoom.state !== 'cleared') ? 'inline-block' : 'none';
+    // Merchant portrait and 'Not Now' button for special rooms (merchant)
+    const isMerchant = (game.combatCards[0] && game.combatCards[0].type === 'gift');
+    const mp = document.getElementById('merchantPortrait');
+    if (mp) {
+        if (isMerchant) {
+            // Calculate left based on sidebar width so the portrait doesn't get hidden under the panel
+            const sidebar = document.querySelector('.sidebar');
+            const leftOffset = (sidebar && sidebar.getBoundingClientRect) ? (Math.round(sidebar.getBoundingClientRect().width) + 32) : 32;
+            mp.style.left = `${leftOffset}px`;
+            mp.style.display = 'block';
+            mp.style.pointerEvents = 'none';
+        } else {
+            mp.style.display = 'none';
+        }
+    }
+    document.getElementById('bonfireNotNowBtn').style.display = (game.activeRoom && (game.activeRoom.isBonfire || (game.activeRoom.isSpecial && isMerchant)) && game.activeRoom.state !== 'cleared') ? 'inline-block' : 'none';
 
     updateUI();
 }
@@ -1043,12 +1464,17 @@ function pickCard(idx, event) {
 
     const card = game.combatCards[idx];
 
-    // Animation for removal
+    // Animation for removal (for non-monster cards)
     const cardEl = event.target.closest('.card');
     cardEl.style.pointerEvents = 'none';
-    cardEl.style.transform = 'scale(0) rotate(15deg)';
-    cardEl.style.opacity = '0';
-    cardEl.style.transition = 'all 0.4s cubic-bezier(0.4, 0, 1, 1)';
+    if (card.type !== 'monster') {
+        cardEl.style.transform = 'scale(0) rotate(15deg)';
+        cardEl.style.opacity = '0';
+        cardEl.style.transition = 'all 0.4s cubic-bezier(0.4, 0, 1, 1)';
+    } else {
+        // Ensure monsters telegraph cleanly (don't hide immediately)
+        cardEl.style.transition = 'transform 180ms cubic-bezier(0.2,0.8,0.2,1), opacity 300ms ease';
+    }
 
     switch (card.type) {
         case 'weapon':
@@ -1060,39 +1486,69 @@ function pickCard(idx, event) {
             logMsg(`Equipped ${card.name}. First kill has no level limit.`);
             break;
         case 'monster':
+            // Compute damage/state but defer applying until animation finishes
             let dmg = card.val;
             const cardRect = event.target.getBoundingClientRect();
             const centerX = cardRect.left + cardRect.width / 2;
             const centerY = cardRect.top + cardRect.height / 2;
 
-            // SLAYING: Monster MUST be lower than or equal to weapon durability
+            let willBreak = false;
+            let brokeName = null;
+
             if (game.weapon && card.val <= game.weaponDurability) {
                 dmg = Math.max(0, card.val - game.weapon.val);
                 game.weaponDurability = card.val;
                 logMsg(`Slit ${card.name}'s throat. Next enemy must be <=${card.val}.`);
-                spawnParticles(centerX, centerY, '#aaa', 10);
-                game.slainStack.push(card);
             } else if (game.weapon) {
-                // Combat hit: Weapon breaks but reduces damage
                 dmg = Math.max(0, card.val - game.weapon.val);
-                const brokeName = game.weapon.name;
+                brokeName = game.weapon.name;
+                willBreak = true;
                 game.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
                 logMsg(`CRACK! The ${brokeName} has broken!`);
-                spawnParticles(centerX, centerY, '#555', 25); // Gray shards
-                triggerShake(15, 30);
             } else {
                 logMsg(`Grappled ${card.name} barehanded. Took ${dmg} DMG.`);
             }
-            if (dmg > 0) {
-                spawnParticles(window.innerWidth / 2, window.innerHeight / 2, '#800', 30); // Blood
-                triggerShake(10, 20);
-            }
-            game.hp -= dmg;
-            updateUI(); // Ensure immediate feedback
-            break;
+
+            // Play attack animation from this enemy card to the HP UI, then finalize damage/effects
+            enemyAttackAnimation(card, cardEl, centerX, centerY, dmg, {}, () => {
+                if (willBreak) {
+                    spawnTextureParticles('spark_01.png', centerX, centerY, 30, {tint: '#888', blend: 'lighter', sizeRange: [6,40]});
+                    spawnTextureParticles('slash_02.png', window.innerWidth / 2, window.innerHeight / 2, 18, {tint: '#8b0000', blend: 'source-over', sizeRange: [40,120]});
+                    triggerShake(15, 30);
+                } else if (game.weapon && !willBreak) {
+                    // slay with weapon: small sparks
+                    spawnTextureParticles('spark_01.png', centerX, centerY, 12, {tint: '#ccc', blend: 'lighter', sizeRange: [8,36]});
+                    game.slainStack.push(card);
+                }
+
+                if (dmg > 0) {
+                    spawnTextureParticles('slash_02.png', window.innerWidth / 2, window.innerHeight / 2, 18, {tint: '#8b0000', blend: 'source-over', sizeRange: [40,120]});
+                    triggerShake(10, 20);
+                }
+
+                game.hp -= dmg;
+                updateUI();
+
+                // Animate card death (flip) and then remove from combat array
+                animateCardDeath(cardEl, () => {
+                    game.combatCards.splice(idx, 1);
+                    game.chosenCount++;
+
+                    if (game.hp <= 0) { gameOver(); return; }
+
+                    if (game.chosenCount === 3) finishRoom();
+                    else showCombat();
+                    updateUI();
+                });
+            });
+
+            // Return so we don't run the default removal logic below (we handle that in the callback)
+            return;
         case 'potion':
             const heal = Math.min(card.val, game.maxHp - game.hp);
-            spawnParticles(window.innerWidth / 2, window.innerHeight / 2, '#00cc00', 25);
+            // Spawn both canvas FX (for background) and DOM UI FX (so they appear above the modal)
+            spawnTextureParticles('circle_03.png', window.innerWidth / 2, window.innerHeight / 2, 20, {tint: '#00cc00', blend: 'lighter', sizeRange: [24,64]});
+            if (document.getElementById('combatModal').style.display === 'flex') spawnDOMParticles('circle_03.png', window.innerWidth / 2, window.innerHeight / 2, 14, {spread: 40, life: 900});
             if (game.potionsUsedThisTurn) {
                 logMsg("Second potion discarded. (Limit: 1/turn)");
             } else {
@@ -1104,7 +1560,8 @@ function pickCard(idx, event) {
             break;
         case 'gift':
             const gift = card.actualGift;
-            spawnParticles(window.innerWidth / 2, window.innerHeight / 2, '#d4af37', 40);
+            spawnTextureParticles('twirl_01.png', window.innerWidth / 2, window.innerHeight / 2, 26, {tint: '#d4af37', blend: 'lighter', sizeRange: [40,160]});
+            if (document.getElementById('combatModal').style.display === 'flex') spawnDOMParticles('twirl_01.png', window.innerWidth / 2, window.innerHeight / 2, 10, {spread: 30, life: 1200});
 
             if (gift.type === 'weapon') {
                 game.weapon = gift;
@@ -1129,7 +1586,8 @@ function pickCard(idx, event) {
             finishRoom(); // Closes modal with victory message
             return;
         case 'bonfire':
-            spawnParticles(window.innerWidth / 2, window.innerHeight / 2, '#ff6600', 40);
+            spawnTextureParticles('flame_03.png', window.innerWidth / 2, window.innerHeight / 2, 30, {tint: '#ff6600', blend: 'lighter', sizeRange: [48,160]});
+            if (document.getElementById('combatModal').style.display === 'flex') spawnDOMParticles('flame_03.png', window.innerWidth / 2, window.innerHeight / 2, 16, {spread: 40, life: 1200});
             const bonfireHeal = Math.min(card.val, game.maxHp - game.hp);
             game.hp += bonfireHeal;
             logMsg(`Rested at bonfire. Vitality +${bonfireHeal}.`);
@@ -1224,6 +1682,9 @@ function closeCombat() {
     document.getElementById('combatModal').style.display = 'none';
     document.getElementById('combatContainer').style.display = 'flex';
     document.getElementById('bonfireUI').style.display = 'none';
+    // Hide merchant portrait when modal is closed
+    const mp = document.getElementById('merchantPortrait');
+    if (mp) mp.style.display = 'none';
 }
 window.closeCombat = closeCombat; // Expose for onClick events
 
@@ -1232,6 +1693,9 @@ function showBonfireUI() {
     overlay.style.display = 'flex';
     document.getElementById('combatContainer').style.display = 'none';
     document.getElementById('bonfireUI').style.display = 'flex';
+    // Ensure merchant portrait is hidden when showing bonfire UI
+    const mp = document.getElementById('merchantPortrait');
+    if (mp) mp.style.display = 'none';
     updateBonfireUI();
 }
 
@@ -1243,7 +1707,7 @@ window.handleBonfire = function (cost) {
     const heal = Math.min(5 * cost, game.maxHp - game.hp);
     game.hp += heal;
 
-    spawnParticles(window.innerWidth / 2, window.innerHeight / 2, '#ff6600', 40);
+    spawnTextureParticles('flame_03.png', window.innerWidth / 2, window.innerHeight / 2, 30, {tint: '#ff6600', blend: 'lighter', sizeRange: [48,160]});
     logMsg(`Bonfire Rest: +${heal} Vitality.`);
 
     if (room.restRemaining <= 0) {
