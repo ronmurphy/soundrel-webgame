@@ -167,6 +167,18 @@ const fxCtx = fxCanvas.getContext('2d');
 let particles = [];
 let screenShake = { intensity: 0, duration: 0 };
 
+// Simple object pools for particles to avoid GC churn
+const particlePool = [];
+const uiParticlePool = [];
+const MAX_PARTICLES = 600;        // scene-level cap
+const MAX_UI_PARTICLES = 400;     // UI-level cap (was previously enforced in updateUIFX)
+
+// Throttle settings (30 fps targets)
+const FX_INTERVAL = 1000 / 30;    // ms
+let lastFXTime = 0;
+const RENDER_INTERVAL = 1000 / 30;
+let lastRenderTime = 0;
+
 // UI FX Canvas (above modal) — used for modal combat projectiles/effects
 const uiFxCanvas = document.getElementById('uiFxCanvas');
 const uiFxCtx = uiFxCanvas.getContext('2d');
@@ -301,7 +313,12 @@ function spawnDOMProjectile(name, fromX, fromY, toX, toY, count = 6, opts = {}) 
 class ImageParticle extends Particle {
     constructor(x, y, img, opts = {}) {
         super(x, y, null);
+        this.reset(x, y, img, opts);
+    }
+    // Reinitialize a pooled particle (avoids allocs)
+    reset(x, y, img, opts = {}) {
         this.img = img;
+        this.x = x; this.y = y;
         this.rotation = Math.random() * Math.PI * 2;
         this.angularVel = (Math.random() - 0.5) * 0.2;
         this.life = 1.0;
@@ -352,6 +369,11 @@ class ImageParticle extends Particle {
 
 function spawnTextureParticles(name, x, y, count = 12, opts = {}) {
     const img = loadFXImage(name);
+    // Make space if we're near cap
+    while (particles.length + count > MAX_PARTICLES) {
+        const old = particles.shift();
+        if (old) particlePool.push(old);
+    }
     for (let i = 0; i < count; i++) {
         const pOpts = {
             size: opts.sizeRange ? (opts.sizeRange[0] + Math.random() * (opts.sizeRange[1] - opts.sizeRange[0])) : (opts.size || (20 + Math.random() * 40)),
@@ -360,13 +382,24 @@ function spawnTextureParticles(name, x, y, count = 12, opts = {}) {
             tint: opts.tint || null,
             decay: opts.decay || (0.01 + Math.random() * 0.03)
         };
-        particles.push(new ImageParticle(x + (Math.random() - 0.5) * (opts.spread || 40), y + (Math.random() - 0.5) * (opts.spread || 40), img, pOpts));
+        // Acquire from pool when possible
+        const sx = x + (Math.random() - 0.5) * (opts.spread || 40);
+        const sy = y + (Math.random() - 0.5) * (opts.spread || 40);
+        let p = particlePool.pop();
+        if (p) p.reset(sx, sy, img, pOpts);
+        else p = new ImageParticle(sx, sy, img, pOpts);
+        particles.push(p);
     }
 }
 
 // UI canvas variants (draw above modal)
 function spawnUITextureParticles(name, x, y, count = 12, opts = {}) {
     const img = loadFXImage(name);
+    // Make space if we're near cap
+    while (uiParticles.length + count > MAX_UI_PARTICLES) {
+        const old = uiParticles.shift();
+        if (old) uiParticlePool.push(old);
+    }
     for (let i = 0; i < count; i++) {
         const pOpts = {
             size: opts.sizeRange ? (opts.sizeRange[0] + Math.random() * (opts.sizeRange[1] - opts.sizeRange[0])) : (opts.size || (20 + Math.random() * 40)),
@@ -377,7 +410,12 @@ function spawnUITextureParticles(name, x, y, count = 12, opts = {}) {
             filter: opts.filter || 'brightness(1.6) saturate(1.2)',
             intensity: opts.intensity || 1.25
         };
-        uiParticles.push(new ImageParticle(x + (Math.random() - 0.5) * (opts.spread || 40), y + (Math.random() - 0.5) * (opts.spread || 40), img, pOpts));
+        const sx = x + (Math.random() - 0.5) * (opts.spread || 40);
+        const sy = y + (Math.random() - 0.5) * (opts.spread || 40);
+        let p = uiParticlePool.pop();
+        if (p) p.reset(sx, sy, img, pOpts);
+        else p = new ImageParticle(sx, sy, img, pOpts);
+        uiParticles.push(p);
     }
 }
 
@@ -609,11 +647,17 @@ function updateFX() {
         }
     }
 
-    particles = particles.filter(p => p.life > 0);
-    particles.forEach(p => {
+    // Update particles with recycling to avoid allocations
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
         p.update();
-        p.draw(fxCtx);
-    });
+        if (p.life <= 0) {
+            particles.splice(i, 1);
+            particlePool.push(p);
+        } else {
+            p.draw(fxCtx);
+        }
+    }
 
     // Ambient Wisps
     updateWisps(fxCtx);
@@ -625,31 +669,35 @@ function updateUIFX() {
     uiFxCtx.clearRect(0, 0, uiFxCanvas.width, uiFxCanvas.height);
 
     // Basic culling/filter and cap to avoid runaway
-    uiParticles = uiParticles.filter(p => p.life > 0);
-    const MAX_UI_PARTICLES = 400;
-    if (uiParticles.length > MAX_UI_PARTICLES) uiParticles.splice(0, uiParticles.length - MAX_UI_PARTICLES);
+    // Update UI particles with recycling and cap
+    const MAX_UI_PARTICLES = 400; // enforce locally for safety
+    while (uiParticles.length > MAX_UI_PARTICLES) {
+        const old = uiParticles.shift(); if (old) uiParticlePool.push(old);
+    }
 
-    // if (uiParticles.length > 0) console.debug('updateUIFX - uiParticles', uiParticles.length); // DEBUG (commented out)
-
-
-    uiParticles.forEach((p, idx) => {
-        // respect optional noGravity flag
+    for (let i = uiParticles.length - 1; i >= 0; i--) {
+        const p = uiParticles[i];
         if (!p.noGravity) p.vy += 0.1;
         p.update();
-        p.draw(uiFxCtx);
+        if (p.life <= 0) {
+            uiParticles.splice(i, 1);
+            uiParticlePool.push(p);
+        } else {
+            p.draw(uiFxCtx);
 
-        // Extra diagnostics when requested: draw bright outlines so we can see if they exist
-        if (window.DEBUG_UI_FX) {
-            uiFxCtx.save();
-            uiFxCtx.globalCompositeOperation = 'lighter';
-            uiFxCtx.strokeStyle = 'rgba(255,255,0,0.95)';
-            uiFxCtx.lineWidth = 2;
-            uiFxCtx.beginPath();
-            uiFxCtx.arc(p.x, p.y, Math.max(6, Math.min(48, p.size/2)), 0, Math.PI * 2);
-            uiFxCtx.stroke();
-            uiFxCtx.restore();
+            // Extra diagnostics when requested: draw bright outlines so we can see if they exist
+            if (window.DEBUG_UI_FX) {
+                uiFxCtx.save();
+                uiFxCtx.globalCompositeOperation = 'lighter';
+                uiFxCtx.strokeStyle = 'rgba(255,255,0,0.95)';
+                uiFxCtx.lineWidth = 2;
+                uiFxCtx.beginPath();
+                uiFxCtx.arc(p.x, p.y, Math.max(6, Math.min(48, p.size/2)), 0, Math.PI * 2);
+                uiFxCtx.stroke();
+                uiFxCtx.restore();
+            }
         }
-    });
+    }
 }
 
 // Debugging helper to inspect UI FX canvas and particles
@@ -906,6 +954,8 @@ function update3DScene() {
 
                         const mat = new THREE.MeshStandardMaterial({ color: 0xffffff });
                         const mesh = new THREE.Mesh(geo, mat);
+                        // These room meshes are static; avoid matrix recomputation every frame
+                        mesh.matrixAutoUpdate = false;
 
                         if (r.isFinal) {
                             // Extend downwards
@@ -913,6 +963,8 @@ function update3DScene() {
                         } else {
                             mesh.position.set(r.gx, rDepth / 2, r.gy);
                         }
+                        // Apply the matrix once
+                        mesh.updateMatrix();
 
                         if (r.isBonfire) {
                             const fire = createEmojiSprite('🔥', 2.0);
@@ -1045,7 +1097,20 @@ function animate3D() {
         f.sprite.material.rotation = (t * f.speed) % (Math.PI * 2);
     });
 
-    renderer.render(scene, camera);
+    // Throttle FX updates and rendering to a target of 30 FPS to reduce CPU/GPU pressure on low-end machines
+    const now = performance.now();
+    if (now - lastFXTime >= FX_INTERVAL) {
+        updateFX();
+        updateUIFX();
+        lastFXTime = now;
+    }
+
+    // Throttled render so we don't render >30fps
+    if (now - lastRenderTime >= RENDER_INTERVAL) {
+        renderer.render(scene, camera);
+        lastRenderTime = now;
+    }
+
     if (window.TWEEN) TWEEN.update();
     animatePlayerSprite();
 }
@@ -1081,6 +1146,8 @@ function addDoorsToRoom(room, mesh) {
         if (!target) return;
         const dx = target.gx - room.gx; const dy = target.gy - room.gy;
         const door = new THREE.Mesh(new THREE.PlaneGeometry(1, 2), new THREE.MeshStandardMaterial({ map: tex, transparent: true, side: THREE.FrontSide }));
+        // Doors are static geometry relative to the room; disable matrix auto updates
+        door.matrixAutoUpdate = false;
         const rw = room.w / 2; const rh = room.h / 2; const margin = 0.05;
         if (Math.abs(dx) > Math.abs(dy)) {
             door.position.set(dx > 0 ? rw + margin : -rw - margin, -(room.rDepth / 2) + 1, 0);
@@ -1089,6 +1156,8 @@ function addDoorsToRoom(room, mesh) {
             door.position.set(0, -(room.rDepth / 2) + 1, dy > 0 ? rh + margin : -rh - margin);
             door.rotation.y = dy > 0 ? 0 : Math.PI;
         }
+        // Bake matrix once
+        door.updateMatrix();
         mesh.add(door);
     });
     updateRoomVisuals();
