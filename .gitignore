@@ -1,0 +1,9 @@
+# Ignore editor recovery/backups
+*.recover-bak
+
+# Ignore Archive folder (kept in working tree but ignored for future untracked files)
+Archive/
+
+# Optional local files
+.DS_Store
+node_modules/
