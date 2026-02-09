@@ -23,6 +23,8 @@ const game = {
 
 const SUITS = { HEARTS: '♥', DIAMONDS: '♦', CLUBS: '♣', SPADES: '♠' };
 
+
+
 // --- PROC-GEN DUNGEON (Grid Based) ---
 function generateDungeon() {
     const numRooms = 12;
@@ -888,6 +890,12 @@ function on3DClick(event) {
 function update3DScene() {
     if (!scene) return;
     const currentRoom = game.rooms.find(room => room.id === game.currentRoomIdx);
+    // Only update room visuals when player actually changes rooms
+    if (!window.lastPlayerRoomId) window.lastPlayerRoomId = -1;
+    const playerMovedRooms = (window.lastPlayerRoomId !== game.currentRoomIdx);
+    if (playerMovedRooms) {
+        window.lastPlayerRoomId = game.currentRoomIdx;
+    }
 
     if (playerSprite && torchLight) {
         let vRad = 2.5;
@@ -908,6 +916,7 @@ function update3DScene() {
         }
         torchLight.position.set(playerSprite.position.x, 2.5, playerSprite.position.z);
 
+        // if (playerMovedRooms) {
         game.rooms.forEach(r => {
             const dist = Math.sqrt(Math.pow(r.gx - playerSprite.position.x, 2) + Math.pow(r.gy - playerSprite.position.z, 2));
             const isVisible = dist < vRad;
@@ -1052,6 +1061,8 @@ function update3DScene() {
                 }
             });
         });
+        // }
+
 
         if (currentRoom) {
             const targetPos = new THREE.Vector3(currentRoom.gx, 0, currentRoom.gy);
@@ -1267,29 +1278,117 @@ function updateAtmosphere(floor) {
         hemisphereLight.intensity = theme.hemiIntensity || 0.35;
     }
 }
+// original version with many draw calls
+// function generateFloorCA() {
+//     const theme = getThemeForFloor(game.floor);
+//     const bounds = 12 + (game.floor * 2); // Expanded from 8 to 12 to catch edge rooms, game.floor *2 to grow with floor (more rooms)
+//     console.debug(`Generating floor CA with theme ${theme.name} and bounds ${bounds}`);
 
+//     const size = bounds * 2 + 1;
+//     let grid = {}; // Use Object map for negative keys supportise, but ensure room positions are alive
+//     for (let x = -bounds; x <= bounds; x++) {
+//         grid[x] = {};
+//         for (let z = -bounds; z <= bounds; z++) {
+//             let alive = Math.random() < 0.45;
+
+//             // Check rooms: if (x,z) is inside/near a room, force alive
+//             const nearRoom = game.rooms.some(r => {
+//                 return x >= r.gx - r.w / 2 - 1 && x <= r.gx + r.w / 2 + 1 &&
+//                     z >= r.gy - r.h / 2 - 1 && z <= r.gy + r.h / 2 + 1;
+//             });
+
+//             // Check corridors roughly
+//             const nearCorr = Array.from(corridorMeshes.values()).some(m => {
+//                 const p = m.position;
+//                 // Simple distance check since corridors are rotated lines
+//                 return Math.abs(x - p.x) < 2 && Math.abs(z - p.z) < 2;
+//             });
+
+//             if (nearRoom || nearCorr) alive = true;
+//             grid[x][z] = alive;
+//         }
+//     }
+
+//     // CA Steps
+//     for (let step = 0; step < 3; step++) {
+//         let nextGrid = JSON.parse(JSON.stringify(grid));
+//         for (let x = -bounds; x <= bounds; x++) {
+//             for (let z = -bounds; z <= bounds; z++) {
+//                 let n = countNeighbors(grid, x, z, bounds);
+//                 if (grid[x] && grid[x][z]) {
+//                     if (n < 3) nextGrid[x][z] = false; // Starve
+//                     else nextGrid[x][z] = true;
+//                 } else {
+//                     if (n > 4) {
+//                         if (!nextGrid[x]) nextGrid[x] = {};
+//                         nextGrid[x][z] = true; // Born
+//                     }
+//                 }
+
+//                 // Keep rooms protected
+//                 const protectedCell = game.rooms.some(r =>
+//                     x >= r.gx - r.w / 2 - 1 && x <= r.gx + r.w / 2 + 1 &&
+//                     z >= r.gy - r.h / 2 - 1 && z <= r.gy + r.h / 2 + 1
+//                 );
+//                 if (protectedCell) {
+//                     if (!nextGrid[x]) nextGrid[x] = {};
+//                     nextGrid[x][z] = true;
+//                 }
+//             }
+//         }
+//         grid = nextGrid;
+//     }
+
+//     // Mesh Generation
+//     const floorGeo = new THREE.BoxGeometry(1, 1, 1);
+//     // We'll create individual meshes for simplicity as we need texture mapping
+//     // Ideally we'd use InstancedMesh but we want to use the existing block texture func
+
+//     // To optimize, let's create a single geometry merging? 
+//     // Actually, for just ~100-200 tiles, individual meshes are ok for now.
+
+//     for (let x = -bounds; x <= bounds; x++) {
+//         for (let z = -bounds; z <= bounds; z++) {
+//             if (grid[x][z]) {
+//                 const m = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ color: 0xffffff }));
+//                 m.position.set(x, -0.6, z); // Slightly below rooms (rooms are at y=0, floor needs to be ground level)
+//                 // Wait, rooms are generated at y = rDepth/2.
+//                 // Corridors are at h=0.05.
+//                 // Rooms floor is effectively ~0.
+//                 // Let's put this floor at y = -0.5
+
+//                 applyTextureToMesh(m, 'block', theme.tile - 1); // 0-indexed
+//                 scene.add(m);
+//             }
+//         }
+//     }
+// }
+
+// OPTIMIZED FLOOR GENERATION
+// Replace your generateFloorCA function (lines 911-980) with this version
+
+// optimized, single plane mesh version
 function generateFloorCA() {
     const theme = getThemeForFloor(game.floor);
-    const bounds = 12 + (game.floor * 2); // Expanded from 8 to 12 to catch edge rooms, game.floor *2 to grow with floor (more rooms)
+    const bounds = 12 + (game.floor * 2);
     console.debug(`Generating floor CA with theme ${theme.name} and bounds ${bounds}`);
 
     const size = bounds * 2 + 1;
-    let grid = {}; // Use Object map for negative keys supportise, but ensure room positions are alive
+    let grid = {};
+    
+    // Initialize grid (same as before)
     for (let x = -bounds; x <= bounds; x++) {
         grid[x] = {};
         for (let z = -bounds; z <= bounds; z++) {
             let alive = Math.random() < 0.45;
 
-            // Check rooms: if (x,z) is inside/near a room, force alive
             const nearRoom = game.rooms.some(r => {
                 return x >= r.gx - r.w / 2 - 1 && x <= r.gx + r.w / 2 + 1 &&
                     z >= r.gy - r.h / 2 - 1 && z <= r.gy + r.h / 2 + 1;
             });
 
-            // Check corridors roughly
             const nearCorr = Array.from(corridorMeshes.values()).some(m => {
                 const p = m.position;
-                // Simple distance check since corridors are rotated lines
                 return Math.abs(x - p.x) < 2 && Math.abs(z - p.z) < 2;
             });
 
@@ -1298,23 +1397,22 @@ function generateFloorCA() {
         }
     }
 
-    // CA Steps
+    // CA Steps (same as before)
     for (let step = 0; step < 3; step++) {
         let nextGrid = JSON.parse(JSON.stringify(grid));
         for (let x = -bounds; x <= bounds; x++) {
             for (let z = -bounds; z <= bounds; z++) {
                 let n = countNeighbors(grid, x, z, bounds);
                 if (grid[x] && grid[x][z]) {
-                    if (n < 3) nextGrid[x][z] = false; // Starve
+                    if (n < 3) nextGrid[x][z] = false;
                     else nextGrid[x][z] = true;
                 } else {
                     if (n > 4) {
                         if (!nextGrid[x]) nextGrid[x] = {};
-                        nextGrid[x][z] = true; // Born
+                        nextGrid[x][z] = true;
                     }
                 }
 
-                // Keep rooms protected
                 const protectedCell = game.rooms.some(r =>
                     x >= r.gx - r.w / 2 - 1 && x <= r.gx + r.w / 2 + 1 &&
                     z >= r.gy - r.h / 2 - 1 && z <= r.gy + r.h / 2 + 1
@@ -1328,30 +1426,290 @@ function generateFloorCA() {
         grid = nextGrid;
     }
 
-    // Mesh Generation
-    const floorGeo = new THREE.BoxGeometry(1, 1, 1);
-    // We'll create individual meshes for simplicity as we need texture mapping
-    // Ideally we'd use InstancedMesh but we want to use the existing block texture func
+    // ========================================
+    // NEW: MERGED GEOMETRY APPROACH
+    // ========================================
+    
+    const positions = [];
+    const uvs = [];
+    const indices = [];
+    let vertexCount = 0;
 
-    // To optimize, let's create a single geometry merging? 
-    // Actually, for just ~100-200 tiles, individual meshes are ok for now.
+    // Helper function to add a quad to the merged geometry
+    function addFloorQuad(x, z, tileIndex) {
+        const y = -0.5; // Floor height
+        const size = 1;
+        
+        // Add 4 vertices for top face
+        positions.push(
+            x, y, z,                    // 0: bottom-left
+            x + size, y, z,             // 1: bottom-right
+            x + size, y, z + size,      // 2: top-right
+            x, y, z + size              // 3: top-left
+        );
+        
+        // UV coordinates (9 tiles in horizontal strip)
+        const tileWidth = 1.0 / 9;
+        const u = (tileIndex % 9) * tileWidth;
+        
+        uvs.push(
+            u, 0,                       // bottom-left
+            u + tileWidth, 0,           // bottom-right
+            u + tileWidth, 1,           // top-right
+            u, 1                        // top-left
+        );
+        
+        // Create two triangles
+        indices.push(
+            vertexCount, vertexCount + 1, vertexCount + 2,      // First triangle
+            vertexCount, vertexCount + 2, vertexCount + 3       // Second triangle
+        );
+        
+        vertexCount += 4;
+    }
 
+    // Build the merged floor mesh
     for (let x = -bounds; x <= bounds; x++) {
         for (let z = -bounds; z <= bounds; z++) {
             if (grid[x][z]) {
-                const m = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ color: 0xffffff }));
-                m.position.set(x, -0.6, z); // Slightly below rooms (rooms are at y=0, floor needs to be ground level)
-                // Wait, rooms are generated at y = rDepth/2.
-                // Corridors are at h=0.05.
-                // Rooms floor is effectively ~0.
-                // Let's put this floor at y = -0.5
-
-                applyTextureToMesh(m, 'block', theme.tile - 1); // 0-indexed
-                scene.add(m);
+                // Choose tile variation based on position (noise-like pattern)
+                const tileIndex = ((Math.abs(x) * 3 + Math.abs(z) * 7) % 3) + (theme.tile - 1);
+                addFloorQuad(x, z, Math.min(8, tileIndex)); // Ensure 0-8 range
             }
         }
     }
+
+    // Create the merged geometry
+    const mergedGeometry = new THREE.BufferGeometry();
+    mergedGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    mergedGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    mergedGeometry.setIndex(indices);
+    
+    // Compute normals for lighting
+    mergedGeometry.computeVertexNormals();
+
+    // Load the block texture
+    const blockTex = loadTexture('assets/images/block.png');
+    blockTex.wrapS = THREE.RepeatWrapping;
+    blockTex.wrapT = THREE.RepeatWrapping;
+    
+    // Create material
+    const floorMaterial = new THREE.MeshStandardMaterial({
+        map: blockTex,
+        color: 0xffffff,
+        roughness: 0.9,
+        metalness: 0.1,
+        side: THREE.DoubleSide
+    });
+
+    // Create ONE mesh for entire floor
+    const floorMesh = new THREE.Mesh(mergedGeometry, floorMaterial);
+    floorMesh.receiveShadow = true;
+    floorMesh.matrixAutoUpdate = false; // Static - never moves!
+    floorMesh.updateMatrix();
+    
+    scene.add(floorMesh);
+    
+    console.debug(`Floor created: ${vertexCount / 4} tiles in 1 draw call (was ${vertexCount / 4} draw calls)`);
 }
+
+// slightly less efficient 3d version of the optimized version
+// FULL 3D CUBE VERSION
+// Replace the optimized floor generation with this for actual cube shapes
+
+// function generateFloorCA() {
+//     const theme = getThemeForFloor(game.floor);
+//     const bounds = 12 + (game.floor * 2);
+//     console.debug(`Generating floor CA with theme ${theme.name} and bounds ${bounds}`);
+
+//     const size = bounds * 2 + 1;
+//     let grid = {};
+    
+//     // Initialize grid (same as before - keeping your existing logic)
+//     for (let x = -bounds; x <= bounds; x++) {
+//         grid[x] = {};
+//         for (let z = -bounds; z <= bounds; z++) {
+//             let alive = Math.random() < 0.45;
+
+//             const nearRoom = game.rooms.some(r => {
+//                 return x >= r.gx - r.w / 2 - 1 && x <= r.gx + r.w / 2 + 1 &&
+//                     z >= r.gy - r.h / 2 - 1 && z <= r.gy + r.h / 2 + 1;
+//             });
+
+//             const nearCorr = Array.from(corridorMeshes.values()).some(m => {
+//                 const p = m.position;
+//                 return Math.abs(x - p.x) < 2 && Math.abs(z - p.z) < 2;
+//             });
+
+//             if (nearRoom || nearCorr) alive = true;
+//             grid[x][z] = alive;
+//         }
+//     }
+
+//     // CA Steps (same as before)
+//     for (let step = 0; step < 3; step++) {
+//         let nextGrid = JSON.parse(JSON.stringify(grid));
+//         for (let x = -bounds; x <= bounds; x++) {
+//             for (let z = -bounds; z <= bounds; z++) {
+//                 let n = countNeighbors(grid, x, z, bounds);
+//                 if (grid[x] && grid[x][z]) {
+//                     if (n < 3) nextGrid[x][z] = false;
+//                     else nextGrid[x][z] = true;
+//                 } else {
+//                     if (n > 4) {
+//                         if (!nextGrid[x]) nextGrid[x] = {};
+//                         nextGrid[x][z] = true;
+//                     }
+//                 }
+
+//                 const protectedCell = game.rooms.some(r =>
+//                     x >= r.gx - r.w / 2 - 1 && x <= r.gx + r.w / 2 + 1 &&
+//                     z >= r.gy - r.h / 2 - 1 && z <= r.gy + r.h / 2 + 1
+//                 );
+//                 if (protectedCell) {
+//                     if (!nextGrid[x]) nextGrid[x] = {};
+//                     nextGrid[x][z] = true;
+//                 }
+//             }
+//         }
+//         grid = nextGrid;
+//     }
+
+//     // ========================================
+//     // 3D CUBE MERGED GEOMETRY
+//     // ========================================
+    
+//     const positions = [];
+//     const uvs = [];
+//     const indices = [];
+//     let vertexCount = 0;
+
+//     // Helper function to add a full cube to the merged geometry
+//     function addFloorCube(x, z, tileIndex) {
+//         const y = -0.5;  // Bottom of cube
+//         const size = 1;
+//         const height = 0.2; // Make it a short cube (adjust if you want taller)
+        
+//         // UV coordinates (9 tiles in horizontal strip)
+//         const tileWidth = 1.0 / 9;
+//         const u = (tileIndex % 9) * tileWidth;
+        
+//         // Helper to add a quad (4 vertices)
+//         function addQuad(v0, v1, v2, v3) {
+//             // Add vertices
+//             positions.push(...v0, ...v1, ...v2, ...v3);
+            
+//             // Add UVs (full tile on each face)
+//             uvs.push(
+//                 u, 0,
+//                 u + tileWidth, 0,
+//                 u + tileWidth, 1,
+//                 u, 1
+//             );
+            
+//             // Add indices (2 triangles)
+//             indices.push(
+//                 vertexCount, vertexCount + 1, vertexCount + 2,
+//                 vertexCount, vertexCount + 2, vertexCount + 3
+//             );
+//             vertexCount += 4;
+//         }
+        
+//         // Top face (most visible)
+//         addQuad(
+//             [x, y + height, z],
+//             [x + size, y + height, z],
+//             [x + size, y + height, z + size],
+//             [x, y + height, z + size]
+//         );
+        
+//         // Bottom face
+//         addQuad(
+//             [x, y, z + size],
+//             [x + size, y, z + size],
+//             [x + size, y, z],
+//             [x, y, z]
+//         );
+        
+//         // Front face (+Z)
+//         addQuad(
+//             [x, y, z + size],
+//             [x + size, y, z + size],
+//             [x + size, y + height, z + size],
+//             [x, y + height, z + size]
+//         );
+        
+//         // Back face (-Z)
+//         addQuad(
+//             [x + size, y, z],
+//             [x, y, z],
+//             [x, y + height, z],
+//             [x + size, y + height, z]
+//         );
+        
+//         // Right face (+X)
+//         addQuad(
+//             [x + size, y, z + size],
+//             [x + size, y, z],
+//             [x + size, y + height, z],
+//             [x + size, y + height, z + size]
+//         );
+        
+//         // Left face (-X)
+//         addQuad(
+//             [x, y, z],
+//             [x, y, z + size],
+//             [x, y + height, z + size],
+//             [x, y + height, z]
+//         );
+//     }
+
+//     // Build the merged floor mesh with cubes
+//     for (let x = -bounds; x <= bounds; x++) {
+//         for (let z = -bounds; z <= bounds; z++) {
+//             if (grid[x][z]) {
+//                 // Choose tile variation based on position (noise-like pattern)
+//                 const tileIndex = ((Math.abs(x) * 3 + Math.abs(z) * 7) % 3) + (theme.tile - 1);
+//                 addFloorCube(x, z, Math.min(8, tileIndex)); // Ensure 0-8 range
+//             }
+//         }
+//     }
+
+//     // Create the merged geometry
+//     const mergedGeometry = new THREE.BufferGeometry();
+//     mergedGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+//     mergedGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+//     mergedGeometry.setIndex(indices);
+    
+//     // Compute normals for lighting
+//     mergedGeometry.computeVertexNormals();
+
+//     // Load the block texture
+//     const blockTex = loadTexture('assets/images/block.png');
+//     blockTex.wrapS = THREE.RepeatWrapping;
+//     blockTex.wrapT = THREE.RepeatWrapping;
+    
+//     // Create material
+//     const floorMaterial = new THREE.MeshStandardMaterial({
+//         map: blockTex,
+//         color: 0xffffff,
+//         roughness: 0.9,
+//         metalness: 0.1
+//     });
+
+//     // Create ONE mesh for entire floor
+//     const floorMesh = new THREE.Mesh(mergedGeometry, floorMaterial);
+//     floorMesh.receiveShadow = true;
+//     floorMesh.castShadow = true;  // Optional: if you want cubes to cast shadows
+//     floorMesh.matrixAutoUpdate = false; // Static - never moves!
+//     floorMesh.updateMatrix();
+    
+//     scene.add(floorMesh);
+    
+//     const tileCount = vertexCount / 24; // 24 vertices per cube (6 faces × 4 vertices)
+//     console.debug(`Floor created: ${tileCount} cube tiles in 1 draw call (was ${tileCount} draw calls)`);
+// }
+
 
 function countNeighbors(grid, x, z, b) {
     let count = 0;
