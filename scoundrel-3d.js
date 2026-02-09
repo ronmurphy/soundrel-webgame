@@ -223,7 +223,7 @@ function loadFXImage(name) {
 }
 
 function preloadFXTextures() {
-    const list = ['slash_02.png','spark_01.png','twirl_01.png','circle_03.png','flame_03.png','muzzle_02.png'];
+    const list = ['slash_02.png', 'spark_01.png', 'twirl_01.png', 'circle_03.png', 'flame_03.png', 'muzzle_02.png'];
     list.forEach(n => loadFXImage(n));
 }
 
@@ -281,11 +281,11 @@ function spawnDOMProjectile(name, fromX, fromY, toX, toY, count = 6, opts = {}) 
             const jitter = (opts.jitter || 16);
             const sx = fromX + (Math.random() - 0.5) * jitter;
             const sy = fromY + (Math.random() - 0.5) * jitter;
-            el.style.left = `${sx - size/2}px`;
-            el.style.top = `${sy - size/2}px`;
+            el.style.left = `${sx - size / 2}px`;
+            el.style.top = `${sy - size / 2}px`;
             el.style.opacity = '1';
-            el.style.transform = `translate(0px,0px) rotate(${Math.random()*360}deg)`;
-            el.style.transition = `transform ${duration + Math.random()*120}ms cubic-bezier(0.2,0.8,0.2,1), opacity ${duration}ms linear`;
+            el.style.transform = `translate(0px,0px) rotate(${Math.random() * 360}deg)`;
+            el.style.transition = `transform ${duration + Math.random() * 120}ms cubic-bezier(0.2,0.8,0.2,1), opacity ${duration}ms linear`;
             container.appendChild(el);
 
             // Start movement on next frame
@@ -293,7 +293,7 @@ function spawnDOMProjectile(name, fromX, fromY, toX, toY, count = 6, opts = {}) 
                 const dx = toX - sx + (Math.random() - 0.5) * (opts.spread || 40);
                 const dy = toY - sy + (Math.random() - 0.5) * (opts.spread || 40);
                 const rot = (Math.random() - 0.5) * 720;
-                el.style.transform = `translate(${dx}px, ${dy}px) rotate(${rot}deg) scale(${0.6 + Math.random()*0.8})`;
+                el.style.transform = `translate(${dx}px, ${dy}px) rotate(${rot}deg) scale(${0.6 + Math.random() * 0.8})`;
                 el.style.opacity = '0.01';
             });
 
@@ -561,11 +561,11 @@ function enemyAttackAnimation(card, cardEl, fromX, fromY, dmg, opts = {}, onComp
 
     // Rank-based presets (textures, projectile counts & tinting)
     const presets = {
-        normal: { texs: ['muzzle_02.png','spark_01.png','trace_04.png'], count: 8, tint: '#ffffff', blend: 'lighter' },
-        jack:   { texs: ['muzzle_02.png','spark_01.png'], count: 10, tint: '#ddd', blend: 'lighter' },
-        queen:  { texs: ['magic_01.png','magic_03.png','twirl_01.png'], count: 10, tint: '#ffdca8', blend: 'lighter' },
-        king:   { texs: ['slash_02.png','spark_04.png','trace_04.png'], count: 14, tint: '#fff6e6', blend: 'source-over' },
-        ace:    { texs: ['twirl_01.png','light_02.png','flare_01.png','magic_05.png'], count: 16, tint: '#ffeed6', blend: 'lighter' }
+        normal: { texs: ['scorch_03.png', 'star_04.png', 'star_08.png'], count: 8, tint: '#ffffff', blend: 'lighter' },
+        jack: { texs: ['muzzle_02.png', 'spark_01.png'], count: 10, tint: '#ddd', blend: 'lighter' },
+        queen: { texs: ['magic_01.png', 'magic_03.png', 'twirl_01.png'], count: 10, tint: '#ffdca8', blend: 'lighter' },
+        king: { texs: ['slash_02.png', 'spark_04.png', 'trace_04.png'], count: 14, tint: '#fff6e6', blend: 'source-over' },
+        ace: { texs: ['twirl_01.png', 'light_02.png', 'flare_01.png', 'magic_05.png'], count: 16, tint: '#ffeed6', blend: 'lighter' }
     };
 
     let preset = presets.normal;
@@ -600,14 +600,14 @@ function enemyAttackAnimation(card, cardEl, fromX, fromY, dmg, opts = {}, onComp
         if (modalVisible) {
             // Prefer UI-canvas projectile when available so textures render above modal
             if (uiFxCanvas && uiFxCtx) {
-                await spawnUIProjectile(tex, fromX, fromY, target.x, target.y, opts.count || preset.count, {duration: 420, jitter: 18, spread: 16, sizeRange: [18, 42]});
+                await spawnUIProjectile(tex, fromX, fromY, target.x, target.y, opts.count || preset.count, { duration: 420, jitter: 18, spread: 16, sizeRange: [18, 42] });
                 const hitTex = boss ? (preset === presets.queen ? 'magic_03.png' : 'twirl_01.png') : (preset === presets.king ? 'slash_02.png' : 'slash_02.png');
-                spawnUITextureParticles(hitTex, target.x, target.y, Math.max(10, Math.floor((opts.count || preset.count)/1.2)), {spread: 28, life: 900});
+                spawnUITextureParticles(hitTex, target.x, target.y, Math.max(10, Math.floor((opts.count || preset.count) / 1.2)), { spread: 28, life: 900 });
             } else {
                 // Fallback to DOM-based projectile so it renders above modal UI
-                await spawnDOMProjectile(tex, fromX, fromY, target.x, target.y, opts.count || preset.count, {duration: 420, jitter: 18, spread: 16, sizeRange: [18, 42]});
+                await spawnDOMProjectile(tex, fromX, fromY, target.x, target.y, opts.count || preset.count, { duration: 420, jitter: 18, spread: 16, sizeRange: [18, 42] });
                 const hitTex = boss ? (preset === presets.queen ? 'magic_03.png' : 'twirl_01.png') : (preset === presets.king ? 'slash_02.png' : 'slash_02.png');
-                spawnDOMParticles(hitTex, target.x, target.y, Math.max(10, Math.floor((opts.count || preset.count)/1.2)), {spread: 28, life: 900});
+                spawnDOMParticles(hitTex, target.x, target.y, Math.max(10, Math.floor((opts.count || preset.count) / 1.2)), { spread: 28, life: 900 });
             }
 
             // Always show a UI hit flash & shake
@@ -692,7 +692,7 @@ function updateUIFX() {
                 uiFxCtx.strokeStyle = 'rgba(255,255,0,0.95)';
                 uiFxCtx.lineWidth = 2;
                 uiFxCtx.beginPath();
-                uiFxCtx.arc(p.x, p.y, Math.max(6, Math.min(48, p.size/2)), 0, Math.PI * 2);
+                uiFxCtx.arc(p.x, p.y, Math.max(6, Math.min(48, p.size / 2)), 0, Math.PI * 2);
                 uiFxCtx.stroke();
                 uiFxCtx.restore();
             }
@@ -1270,7 +1270,9 @@ function updateAtmosphere(floor) {
 
 function generateFloorCA() {
     const theme = getThemeForFloor(game.floor);
-    const bounds = 12; // Expanded from 8 to 12 to catch edge rooms
+    const bounds = 12 + (game.floor * 2); // Expanded from 8 to 12 to catch edge rooms, game.floor *2 to grow with floor (more rooms)
+    console.debug(`Generating floor CA with theme ${theme.name} and bounds ${bounds}`);
+
     const size = bounds * 2 + 1;
     let grid = {}; // Use Object map for negative keys supportise, but ensure room positions are alive
     for (let x = -bounds; x <= bounds; x++) {
@@ -1563,9 +1565,12 @@ function showCombat() {
         let animClass = "";
 
         // Boss Animations: 11-14 Clubs/Spades
-        if (c.type === 'monster' && c.val >= 11) {
+        // if (c.type === 'monster' && c.val >= 11) {
+        // all monster cards now have sprite sheet animations. 
+        if (c.type === 'monster' && c.val >= 1) {
             const suitName = c.suit === '♣' ? 'club' : 'spade';
-            const rankName = { 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[c.val];
+            // const rankName = { 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[c.val];
+            const rankName = { 1:'1', 2:'1', 3:'1', 4:'2', 5:'2', 6:'3', 7:'3', 8:'4', 9:'4', 10:'5', 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[c.val];
             bgUrl = `assets/images/animations/${suitName}_${rankName}.png`;
             bgSize = "2500% 100%"; // 25 framing spritesheet
             bgPos = "0% 0%";
@@ -1690,17 +1695,17 @@ function pickCard(idx, event) {
             // Play attack animation from this enemy card to the HP UI, then finalize damage/effects
             enemyAttackAnimation(card, cardEl, centerX, centerY, dmg, {}, () => {
                 if (willBreak) {
-                    spawnAboveModalTexture('spark_01.png', centerX, centerY, 30, {tint: '#888', blend: 'lighter', sizeRange: [6,40], intensity: 2.0, filter: 'brightness(2) saturate(1.1)'});
-                    spawnAboveModalTexture('slash_02.png', window.innerWidth / 2, window.innerHeight / 2, 18, {tint: '#8b0000', blend: 'lighter', sizeRange: [40,120], intensity: 1.9, filter: 'brightness(1.8) contrast(1.2)'});
+                    spawnAboveModalTexture('spark_01.png', centerX, centerY, 30, { tint: '#888', blend: 'lighter', sizeRange: [6, 40], intensity: 2.0, filter: 'brightness(2) saturate(1.1)' });
+                    spawnAboveModalTexture('slash_02.png', window.innerWidth / 2, window.innerHeight / 2, 18, { tint: '#8b0000', blend: 'lighter', sizeRange: [40, 120], intensity: 1.9, filter: 'brightness(1.8) contrast(1.2)' });
                     triggerShake(15, 30);
                 } else if (game.weapon && !willBreak) {
                     // slay with weapon: small sparks
-                    spawnAboveModalTexture('spark_01.png', centerX, centerY, 12, {tint: '#ccc', blend: 'lighter', sizeRange: [8,36], intensity: 1.2});
+                    spawnAboveModalTexture('spark_01.png', centerX, centerY, 12, { tint: '#ccc', blend: 'lighter', sizeRange: [8, 36], intensity: 1.2 });
                     game.slainStack.push(card);
                 }
 
                 if (dmg > 0) {
-                    spawnAboveModalTexture('slash_02.png', window.innerWidth / 2, window.innerHeight / 2, 18, {tint: '#8b0000', blend: 'lighter', sizeRange: [40,120], intensity: 1.7, filter: 'brightness(1.6) contrast(1.15)'});
+                    spawnAboveModalTexture('slash_02.png', window.innerWidth / 2, window.innerHeight / 2, 18, { tint: '#8b0000', blend: 'lighter', sizeRange: [40, 120], intensity: 1.7, filter: 'brightness(1.6) contrast(1.15)' });
                     triggerShake(10, 20);
                 }
 
@@ -1725,7 +1730,7 @@ function pickCard(idx, event) {
         case 'potion':
             const heal = Math.min(card.val, game.maxHp - game.hp);
             // Spawn both canvas FX (for background) and DOM UI FX (so they appear above the modal)
-            spawnAboveModalTexture('circle_03.png', window.innerWidth / 2, window.innerHeight / 2, 20, {tint: '#00cc00', blend: 'lighter', sizeRange: [24,64], intensity: 1.35});
+            spawnAboveModalTexture('circle_03.png', window.innerWidth / 2, window.innerHeight / 2, 20, { tint: '#00cc00', blend: 'lighter', sizeRange: [24, 64], intensity: 1.35 });
             if (game.potionsUsedThisTurn) {
                 logMsg("Second potion discarded. (Limit: 1/turn)");
             } else {
@@ -1737,7 +1742,7 @@ function pickCard(idx, event) {
             break;
         case 'gift':
             const gift = card.actualGift;
-            spawnAboveModalTexture('twirl_01.png', window.innerWidth / 2, window.innerHeight / 2, 26, {tint: '#d4af37', blend: 'lighter', sizeRange: [40,160], intensity: 1.45});
+            spawnAboveModalTexture('twirl_01.png', window.innerWidth / 2, window.innerHeight / 2, 26, { tint: '#d4af37', blend: 'lighter', sizeRange: [40, 160], intensity: 1.45 });
 
             if (gift.type === 'weapon') {
                 game.weapon = gift;
@@ -1762,7 +1767,7 @@ function pickCard(idx, event) {
             finishRoom(); // Closes modal with victory message
             return;
         case 'bonfire':
-            spawnAboveModalTexture('flame_03.png', window.innerWidth / 2, window.innerHeight / 2, 30, {tint: '#ff6600', blend: 'lighter', sizeRange: [48,160], intensity: 1.45});
+            spawnAboveModalTexture('flame_03.png', window.innerWidth / 2, window.innerHeight / 2, 30, { tint: '#ff6600', blend: 'lighter', sizeRange: [48, 160], intensity: 1.45 });
             const bonfireHeal = Math.min(card.val, game.maxHp - game.hp);
             game.hp += bonfireHeal;
             logMsg(`Rested at bonfire. Vitality +${bonfireHeal}.`);
@@ -1882,7 +1887,7 @@ window.handleBonfire = function (cost) {
     const heal = Math.min(5 * cost, game.maxHp - game.hp);
     game.hp += heal;
 
-    spawnAboveModalTexture('flame_03.png', window.innerWidth / 2, window.innerHeight / 2, 30, {tint: '#ff6600', blend: 'lighter', sizeRange: [48,160], intensity: 1.45});
+    spawnAboveModalTexture('flame_03.png', window.innerWidth / 2, window.innerHeight / 2, 30, { tint: '#ff6600', blend: 'lighter', sizeRange: [48, 160], intensity: 1.45 });
     logMsg(`Bonfire Rest: +${heal} Vitality.`);
 
     if (room.restRemaining <= 0) {
