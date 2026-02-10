@@ -1476,7 +1476,7 @@ function generateFloorCA() {
     const positions = [];
     const uvs = [];
     const indices = [];
-    
+
     const treeInstances = [];
     const rockInstances = [];
     let vertexCount = 0;
@@ -1565,13 +1565,13 @@ function generateFloorCA() {
     // Check if a coordinate is "structural" (reserved for rooms/paths)
     function isStructuralTile(x, z) {
         // Check rooms
-        if (game.rooms.some(r => 
+        if (game.rooms.some(r =>
             x >= r.gx - r.w / 2 - 1.5 && x <= r.gx + r.w / 2 + 1.5 &&
             z >= r.gy - r.h / 2 - 1.5 && z <= r.gy + r.h / 2 + 1.5
         )) return true;
-        
+
         // Check corridors
-        if (Array.from(corridorMeshes.values()).some(m => 
+        if (Array.from(corridorMeshes.values()).some(m =>
             Math.abs(x - m.position.x) < 2.5 && Math.abs(z - m.position.z) < 2.5
         )) return true;
         return false;
@@ -1597,18 +1597,18 @@ function generateFloorCA() {
                 if (!isStructuralTile(x, z)) {
                     const h = getVertexHeight(x, z);
                     // Trees (Dead/Spooky)
-                    if (Math.random() < 0.05) { 
+                    if (Math.random() < 0.05) {
                         dummy.position.set(x, h, z);
-                        dummy.rotation.set((Math.random()-0.5)*0.2, Math.random()*Math.PI*2, (Math.random()-0.5)*0.2);
+                        dummy.rotation.set((Math.random() - 0.5) * 0.2, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.2);
                         dummy.scale.setScalar(0.8 + Math.random() * 0.5);
                         dummy.updateMatrix();
                         treeInstances.push(dummy.matrix.clone());
                         treePositions.push(new THREE.Vector3(x, h, z));
-                    } 
+                    }
                     // Rocks/Boulders
                     else if (Math.random() < 0.08) {
                         dummy.position.set(x, h, z);
-                        dummy.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+                        dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
                         dummy.scale.setScalar(0.5 + Math.random() * 0.6);
                         dummy.updateMatrix();
                         rockInstances.push(dummy.matrix.clone());
@@ -1661,7 +1661,7 @@ function generateFloorCA() {
         treeGeo.translate(0, 0.75, 0); // Pivot at bottom
         const treeMat = new THREE.MeshStandardMaterial({ color: 0x2a1d15, roughness: 1.0 });
         const treeMesh = new THREE.InstancedMesh(treeGeo, treeMat, treeInstances.length);
-        
+
         for (let i = 0; i < treeInstances.length; i++) {
             treeMesh.setMatrixAt(i, treeInstances[i]);
         }
@@ -1676,7 +1676,7 @@ function generateFloorCA() {
         rockGeo.translate(0, 0.15, 0); // Pivot at bottom
         const rockMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.8 });
         const rockMesh = new THREE.InstancedMesh(rockGeo, rockMat, rockInstances.length);
-        
+
         for (let i = 0; i < rockInstances.length; i++) {
             rockMesh.setMatrixAt(i, rockInstances[i]);
         }
@@ -1711,7 +1711,7 @@ function clear3DScene() {
     scene.add(amb);
 
     roomMeshes.clear(); waypointMeshes.clear(); corridorMeshes.clear(); doorMeshes.clear();
-    
+
     // Cleanup decorations
     decorationMeshes.forEach(m => {
         if (m.parent) m.parent.remove(m);
@@ -1835,7 +1835,7 @@ function startIntermission() {
     overlay.style.display = 'flex';
     document.getElementById('combatContainer').style.display = 'flex';
     document.getElementById('bonfireUI').style.display = 'none';
-    
+
     // Setup Shop UI
     document.getElementById('combatMessage').innerText = "The Soul Broker";
     document.getElementById('modalAvoidBtn').style.display = 'none';
@@ -1848,7 +1848,7 @@ function startIntermission() {
     const brokerContainer = document.createElement('div');
     brokerContainer.style.cssText = "width:100%; text-align:center; margin-bottom:15px; display:flex; flex-direction:column; align-items:center;";
     brokerContainer.innerHTML = `
-        <img src="assets/images/merchant_front.png" style="height:120px; margin-bottom:10px; filter: drop-shadow(0 0 10px rgba(255,215,0,0.3));">
+        <img src="assets/images/visualnovel/merchant_front.png" style="height:120px; margin-bottom:10px; filter: drop-shadow(0 0 10px rgba(255,215,0,0.3));">
         <div style="color:#d4af37; font-size:24px; font-weight:bold; text-shadow:0 2px 4px #000;">
             Soul Coins: <span id="shopCoinDisplay" style="color:#fff;">${game.soulCoins}</span>
         </div>
@@ -1858,32 +1858,32 @@ function startIntermission() {
     const itemsContainer = document.createElement('div');
     itemsContainer.style.cssText = "display:flex; justify-content:center; gap:15px; flex-wrap:wrap; width:100%;";
     enemyArea.appendChild(itemsContainer);
-    
+
     // Render Shop Items (Random selection of 4)
     // Mix armor and items
-    const pool = [...ARMOR_DATA.map(a=>({...a, type:'armor'})), ...ITEM_DATA.map(i=>({...i, type:'item'}))];
+    const pool = [...ARMOR_DATA.map(a => ({ ...a, type: 'armor' })), ...ITEM_DATA.map(i => ({ ...i, type: 'item' }))];
     shuffle(pool);
-    
-    for(let i=0; i<4; i++) {
+
+    for (let i = 0; i < 4; i++) {
         const item = pool[i];
         const card = document.createElement('div');
         card.className = 'card shop-item';
-        
+
         const asset = getAssetData(item.type, item.id, null);
-        
+
         card.innerHTML = `
             <div class="card-art-container" style="background-image: url('assets/images/${asset.file}'); background-size: 900% 100%; background-position: ${asset.uv.u * 112.5}% 0%"></div>
             <div class="name" style="bottom: 40px; font-size: 14px;">${item.name}</div>
             <div class="val" style="font-size: 16px; color: #ffd700;">${item.cost}</div>
             <div style="position:absolute; bottom:5px; width:100%; text-align:center; font-size:10px; color:#aaa;">${item.type === 'armor' ? `+${item.ap} AP` : 'Item'}</div>
         `;
-        
+
         card.onclick = () => {
             if (game.soulCoins >= item.cost) {
                 if (game.inventory.length >= 6) {
                     // Enter Swap Mode
                     game.pendingPurchase = { item: item, cardElement: card };
-                    spawnFloatingText("Inventory Full! Click item to discard.", window.innerWidth/2, window.innerHeight/2, '#ffaa00');
+                    spawnFloatingText("Inventory Full! Click item to discard.", window.innerWidth / 2, window.innerHeight / 2, '#ffaa00');
                     // Visual cue for inventory
                     const invEl = document.getElementById('inventorySidebar');
                     if (invEl) invEl.style.boxShadow = "0 0 15px #ffaa00";
@@ -1896,12 +1896,12 @@ function startIntermission() {
                     game.maxAp += item.ap;
                     game.ap += item.ap;
                 }
-                spawnFloatingText("Purchased!", window.innerWidth/2, window.innerHeight/2, '#00ff00');
+                spawnFloatingText("Purchased!", window.innerWidth / 2, window.innerHeight / 2, '#00ff00');
                 card.style.opacity = 0.5;
                 card.style.pointerEvents = 'none';
                 updateUI();
             } else {
-                spawnFloatingText("Not enough coins!", window.innerWidth/2, window.innerHeight/2, '#ff0000');
+                spawnFloatingText("Not enough coins!", window.innerWidth / 2, window.innerHeight / 2, '#ff0000');
             }
         };
 
@@ -1916,7 +1916,7 @@ function startIntermission() {
                 tooltip.style.top = rect.top + 'px';
             }
         };
-        card.onmouseleave = () => { const t = document.getElementById('gameTooltip'); if(t) t.style.display = 'none'; };
+        card.onmouseleave = () => { const t = document.getElementById('gameTooltip'); if (t) t.style.display = 'none'; };
 
         itemsContainer.appendChild(card);
     }
@@ -1939,7 +1939,7 @@ function descendToNextFloor() {
     game.currentRoomIdx = 0; game.lastAvoided = false;
     game.bonfireUsed = false; game.merchantUsed = false;
     game.pendingPurchase = null;
-    
+
     // Map Item Check
     const hasMap = game.inventory.some(i => i.type === 'item' && i.id === 3);
     if (hasMap) {
@@ -2286,7 +2286,7 @@ function pickCard(idx, event) {
                     if (mirrorIdx !== -1) {
                         game.inventory.splice(mirrorIdx, 1);
                         dmg = 0; game.hp = 1;
-                        
+
                         // Mirror Shatter FX
                         spawnAboveModalTexture('spark_01.png', centerX, centerY, 40, { tint: '#ffffff', blend: 'lighter', sizeRange: [10, 40], spread: 60, decay: 0.03 });
                         spawnAboveModalTexture('slash_02.png', centerX, centerY, 8, { tint: '#aaffff', blend: 'lighter', sizeRange: [40, 100], spread: 40, decay: 0.05 });
@@ -2540,25 +2540,25 @@ function gameOver() {
     location.reload();
 }
 
-window.useItem = function(idx) {
+window.useItem = function (idx) {
     const item = game.inventory[idx];
-    
+
     // Handle Swap/Discard for Pending Purchase
     if (game.pendingPurchase) {
         const newItem = game.pendingPurchase.item;
         const oldItem = item;
-        
+
         // Refund 1/4th value
         const refund = Math.floor(oldItem.cost / 4);
         game.soulCoins += refund;
-        
+
         // Remove old item
         game.inventory.splice(idx, 1);
         if (oldItem.type === 'armor') {
             game.maxAp -= oldItem.ap;
             game.ap = Math.min(game.ap, game.maxAp); // Clamp current AP to new max
         }
-        
+
         // Buy new item
         game.soulCoins -= newItem.cost;
         game.inventory.push(newItem);
@@ -2566,15 +2566,15 @@ window.useItem = function(idx) {
             game.maxAp += newItem.ap;
             game.ap += newItem.ap;
         }
-        
-        spawnFloatingText(`Swapped! +${refund} coins`, window.innerWidth/2, window.innerHeight/2, '#00ff00');
-        
+
+        spawnFloatingText(`Swapped! +${refund} coins`, window.innerWidth / 2, window.innerHeight / 2, '#00ff00');
+
         // Update Shop Card Visuals
         if (game.pendingPurchase.cardElement) {
             game.pendingPurchase.cardElement.style.opacity = 0.5;
             game.pendingPurchase.cardElement.style.pointerEvents = 'none';
         }
-        
+
         game.pendingPurchase = null;
         document.getElementById('shopCoinDisplay').innerText = game.soulCoins;
         updateUI();
@@ -2590,7 +2590,7 @@ window.useItem = function(idx) {
                 const target = enemies[Math.floor(Math.random() * enemies.length)];
                 const dmg = game.weapon ? Math.max(2, game.weapon.val - 2) : 2;
                 target.val = Math.max(0, target.val - dmg);
-                spawnFloatingText("BOMB!", window.innerWidth/2, window.innerHeight/2, '#ff0000');
+                spawnFloatingText("BOMB!", window.innerWidth / 2, window.innerHeight / 2, '#ff0000');
                 logMsg(`Bomb hit ${target.name} for ${dmg} dmg.`);
                 game.inventory.splice(idx, 1);
                 updateUI();
@@ -2727,19 +2727,19 @@ function updateUI() {
     }
 
     invContainer.innerHTML = '';
-    for(let i=0; i<6; i++) {
+    for (let i = 0; i < 6; i++) {
         const slot = document.createElement('div');
         slot.style.cssText = "width:100%; aspect-ratio:1; background:rgba(0,0,0,0.5); border:1px solid #444; position:relative; cursor: pointer;";
         if (game.inventory[i]) {
             const item = game.inventory[i];
             const asset = getAssetData(item.type, item.id, null);
-            
+
             // Broken Armor Tint (Red)
             const isBroken = (item.type === 'armor' && game.ap <= 0);
             const filterStyle = isBroken ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
-            
+
             slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:900% 100%; background-position:${asset.uv.u * 112.5}% 0%; ${filterStyle}" onclick="useItem(${i})"></div>`;
-            
+
             // Tooltip Events
             slot.onmouseenter = () => {
                 tooltip.style.display = 'block';
@@ -2769,11 +2769,11 @@ function updateUI() {
 
     if (combatInvContainer) {
         combatInvContainer.innerHTML = '';
-        for(let i=0; i<game.inventory.length; i++) {
+        for (let i = 0; i < game.inventory.length; i++) {
             const item = game.inventory[i];
             const slot = document.createElement('div');
             slot.style.cssText = "width:48px; height:48px; background:rgba(0,0,0,0.5); border:1px solid #666; position:relative; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5);";
-            
+
             const asset = getAssetData(item.type, item.id, null);
             slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:900% 100%; background-position:${asset.uv.u * 112.5}% 0%;" onclick="useItem(${i})"></div>`;
 
