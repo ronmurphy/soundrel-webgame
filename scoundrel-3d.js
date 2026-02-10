@@ -63,6 +63,7 @@ function generateDungeon() {
                     isBonfire: false, // Assigned later
                     restRemaining: 3,
                     isWaypoint: false,
+                    shape: ['rect', 'rect', 'round', 'dome', 'spire'][Math.floor(Math.random() * 5)], // Random shape
                     depth: 1.5 + Math.random() * 3, // 1.5x to 4.5x depth
                     isRevealed: false
                 };
@@ -147,6 +148,9 @@ let terrainMeshes = new Map();
 let waypointMeshes = new Map();
 let corridorMeshes = new Map();
 let doorMeshes = new Map();
+let decorationMeshes = []; // Store instanced meshes for cleanup
+let treePositions = []; // Store tree locations for FX
+let ghosts = []; // Active ghost sprites
 let is3DView = true;
 let playerSprite;
 let walkAnims = {
@@ -964,10 +968,20 @@ function update3DScene() {
                         } else if (r.isSpecial && !r.isFinal) { // Merchant/Special
                             // Octagonal Room
                             const rad = Math.min(rw, rh) * 0.45;
-                            geo = new THREE.CylinderGeometry(rad, rad, rDepth, 8);
+                            geo = new THREE.CylinderGeometry(rad, rad * 0.8, rDepth, 8);
                         } else {
-                            // Standard Box
-                            geo = new THREE.BoxGeometry(rw, rDepth, rh);
+                            // Varied Shapes
+                            if (r.shape === 'round') {
+                                const rad = Math.min(rw, rh) * 0.45;
+                                geo = new THREE.CylinderGeometry(rad, rad, rDepth, 16);
+                            } else if (r.shape === 'dome') {
+                                const rad = Math.min(rw, rh) * 0.65;
+                                geo = new THREE.SphereGeometry(rad, 16, 12); // Full sphere
+                            } else if (r.shape === 'spire') {
+                                geo = new THREE.ConeGeometry(Math.min(rw, rh) * 0.6, rDepth, 4);
+                            } else {
+                                geo = new THREE.BoxGeometry(rw, rDepth, rh);
+                            }
                         }
 
                         const mat = new THREE.MeshStandardMaterial({ color: 0xffffff });
@@ -976,8 +990,10 @@ function update3DScene() {
                         mesh.matrixAutoUpdate = false;
 
                         if (r.isFinal) {
-                            // Extend downwards
+                            // Extend downwards for the pit/tower
                             mesh.position.set(r.gx, -5, r.gy);
+                        } else if (r.shape === 'dome') {
+                            mesh.position.set(r.gx, 0, r.gy); // Sit on ground (half buried)
                         } else {
                             mesh.position.set(r.gx, rDepth / 2, r.gy);
                         }
@@ -1117,6 +1133,21 @@ function animate3D() {
         f.sprite.material.rotation = (t * f.speed) % (Math.PI * 2);
     });
 
+    // Ghost FX Logic
+    if (treePositions.length > 0 && Math.random() < 0.015) {
+        const idx = Math.floor(Math.random() * treePositions.length);
+        spawn3DGhost(treePositions[idx]);
+    }
+    for (let i = ghosts.length - 1; i >= 0; i--) {
+        const g = ghosts[i];
+        g.position.y += 0.015; // Drift up
+        g.material.opacity -= 0.004; // Fade out
+        if (g.material.opacity <= 0) {
+            scene.remove(g);
+            ghosts.splice(i, 1);
+        }
+    }
+
     // Throttle FX updates and rendering to a target of 30 FPS to reduce CPU/GPU pressure on low-end machines
     const now = performance.now();
     if (now - lastFXTime >= FX_INTERVAL) {
@@ -1221,6 +1252,24 @@ function addLocalFog(mesh) {
         s.position.set((Math.random() - 0.5) * 4, localY, (Math.random() - 0.5) * 4);
         mesh.add(s);
     }
+}
+
+function spawn3DGhost(pos) {
+    const tex = loadTexture('assets/images/textures/smoke_01.png');
+    const mat = new THREE.SpriteMaterial({
+        map: tex,
+        color: 0xaaccff, // Ghostly blue-white
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+    });
+    const s = new THREE.Sprite(mat);
+    s.position.copy(pos);
+    s.position.y += 0.8 + Math.random();
+    s.scale.set(1.2, 1.2, 1.2);
+    scene.add(s);
+    ghosts.push(s);
 }
 
 function createEmojiSprite(emoji, size = 1.5) {
@@ -1360,6 +1409,9 @@ function generateFloorCA() {
     const positions = [];
     const uvs = [];
     const indices = [];
+    
+    const treeInstances = [];
+    const rockInstances = [];
     let vertexCount = 0;
 
     // Helper to get height at a specific corner coordinate (world space)
@@ -1441,6 +1493,22 @@ function generateFloorCA() {
 
     // Build the merged floor mesh
     let tileCount = 0;
+    const dummy = new THREE.Object3D(); // Helper for matrix calculation
+
+    // Check if a coordinate is "structural" (reserved for rooms/paths)
+    function isStructuralTile(x, z) {
+        // Check rooms
+        if (game.rooms.some(r => 
+            x >= r.gx - r.w / 2 - 1.5 && x <= r.gx + r.w / 2 + 1.5 &&
+            z >= r.gy - r.h / 2 - 1.5 && z <= r.gy + r.h / 2 + 1.5
+        )) return true;
+        
+        // Check corridors
+        if (Array.from(corridorMeshes.values()).some(m => 
+            Math.abs(x - m.position.x) < 2.5 && Math.abs(z - m.position.z) < 2.5
+        )) return true;
+        return false;
+    }
 
     // Calculate max variation ONCE (not inside the loop!)
     const maxVar = (theme.tile <= 7) ? 3 : 2;
@@ -1456,6 +1524,29 @@ function generateFloorCA() {
                 const tileIndex = Math.min(8, (theme.tile - 1) + variation);
 
                 addSolidPrism(x, z, tileIndex);
+
+                // --- DECORATIONS ---
+                // Only spawn on non-structural tiles
+                if (!isStructuralTile(x, z)) {
+                    const h = getVertexHeight(x, z);
+                    // Trees (Dead/Spooky)
+                    if (Math.random() < 0.05) { 
+                        dummy.position.set(x, h, z);
+                        dummy.rotation.set((Math.random()-0.5)*0.2, Math.random()*Math.PI*2, (Math.random()-0.5)*0.2);
+                        dummy.scale.setScalar(0.8 + Math.random() * 0.5);
+                        dummy.updateMatrix();
+                        treeInstances.push(dummy.matrix.clone());
+                        treePositions.push(new THREE.Vector3(x, h, z));
+                    } 
+                    // Rocks/Boulders
+                    else if (Math.random() < 0.08) {
+                        dummy.position.set(x, h, z);
+                        dummy.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+                        dummy.scale.setScalar(0.5 + Math.random() * 0.6);
+                        dummy.updateMatrix();
+                        rockInstances.push(dummy.matrix.clone());
+                    }
+                }
                 tileCount++;
             }
         }
@@ -1495,6 +1586,39 @@ function generateFloorCA() {
 
     scene.add(floorMesh);
 
+    // ========================================
+    // STEP 5: INSTANCED DECORATIONS (Optimized)
+    // ========================================
+    if (treeInstances.length > 0) {
+        const treeGeo = new THREE.CylinderGeometry(0.05, 0.15, 1.5, 5);
+        treeGeo.translate(0, 0.75, 0); // Pivot at bottom
+        const treeMat = new THREE.MeshStandardMaterial({ color: 0x2a1d15, roughness: 1.0 });
+        const treeMesh = new THREE.InstancedMesh(treeGeo, treeMat, treeInstances.length);
+        
+        for (let i = 0; i < treeInstances.length; i++) {
+            treeMesh.setMatrixAt(i, treeInstances[i]);
+        }
+        treeMesh.castShadow = true;
+        treeMesh.receiveShadow = true;
+        scene.add(treeMesh);
+        decorationMeshes.push(treeMesh);
+    }
+
+    if (rockInstances.length > 0) {
+        const rockGeo = new THREE.DodecahedronGeometry(0.3);
+        rockGeo.translate(0, 0.15, 0); // Pivot at bottom
+        const rockMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.8 });
+        const rockMesh = new THREE.InstancedMesh(rockGeo, rockMat, rockInstances.length);
+        
+        for (let i = 0; i < rockInstances.length; i++) {
+            rockMesh.setMatrixAt(i, rockInstances[i]);
+        }
+        rockMesh.castShadow = false; // Optimization: Small rocks don't need to cast shadows
+        rockMesh.receiveShadow = true;
+        scene.add(rockMesh);
+        decorationMeshes.push(rockMesh);
+    }
+
     console.log(`✅ Floor: ${tileCount} solid tiles in 1 draw call (was ${tileCount} draw calls)`);
 }
 
@@ -1520,6 +1644,19 @@ function clear3DScene() {
     scene.add(amb);
 
     roomMeshes.clear(); waypointMeshes.clear(); corridorMeshes.clear(); doorMeshes.clear();
+    
+    // Cleanup decorations
+    decorationMeshes.forEach(m => {
+        if (m.parent) m.parent.remove(m);
+        if (m.geometry) m.geometry.dispose();
+    });
+    decorationMeshes = [];
+    treePositions = [];
+
+    // Clear ghosts
+    ghosts.forEach(g => scene.remove(g));
+    ghosts = [];
+
     playerSprite = null; torchLight = null;
 }
 
