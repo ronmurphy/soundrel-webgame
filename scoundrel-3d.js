@@ -1270,26 +1270,27 @@ function updateAtmosphere(floor) {
 
 function generateFloorCA() {
     const theme = getThemeForFloor(game.floor);
-    const bounds = 12 + (game.floor * 2); // Expanded from 8 to 12 to catch edge rooms, game.floor *2 to grow with floor (more rooms)
+    const bounds = 12 + (game.floor * 2);
     console.debug(`Generating floor CA with theme ${theme.name} and bounds ${bounds}`);
 
     const size = bounds * 2 + 1;
-    let grid = {}; // Use Object map for negative keys supportise, but ensure room positions are alive
+    let grid = {};
+
+    // ========================================
+    // STEP 1: Initialize grid
+    // ========================================
     for (let x = -bounds; x <= bounds; x++) {
         grid[x] = {};
         for (let z = -bounds; z <= bounds; z++) {
             let alive = Math.random() < 0.45;
 
-            // Check rooms: if (x,z) is inside/near a room, force alive
             const nearRoom = game.rooms.some(r => {
                 return x >= r.gx - r.w / 2 - 1 && x <= r.gx + r.w / 2 + 1 &&
                     z >= r.gy - r.h / 2 - 1 && z <= r.gy + r.h / 2 + 1;
             });
 
-            // Check corridors roughly
             const nearCorr = Array.from(corridorMeshes.values()).some(m => {
                 const p = m.position;
-                // Simple distance check since corridors are rotated lines
                 return Math.abs(x - p.x) < 2 && Math.abs(z - p.z) < 2;
             });
 
@@ -1298,23 +1299,24 @@ function generateFloorCA() {
         }
     }
 
-    // CA Steps
+    // ========================================
+    // STEP 2: CA Steps
+    // ========================================
     for (let step = 0; step < 3; step++) {
         let nextGrid = JSON.parse(JSON.stringify(grid));
         for (let x = -bounds; x <= bounds; x++) {
             for (let z = -bounds; z <= bounds; z++) {
                 let n = countNeighbors(grid, x, z, bounds);
                 if (grid[x] && grid[x][z]) {
-                    if (n < 3) nextGrid[x][z] = false; // Starve
+                    if (n < 3) nextGrid[x][z] = false;
                     else nextGrid[x][z] = true;
                 } else {
                     if (n > 4) {
                         if (!nextGrid[x]) nextGrid[x] = {};
-                        nextGrid[x][z] = true; // Born
+                        nextGrid[x][z] = true;
                     }
                 }
 
-                // Keep rooms protected
                 const protectedCell = game.rooms.some(r =>
                     x >= r.gx - r.w / 2 - 1 && x <= r.gx + r.w / 2 + 1 &&
                     z >= r.gy - r.h / 2 - 1 && z <= r.gy + r.h / 2 + 1
@@ -1328,29 +1330,167 @@ function generateFloorCA() {
         grid = nextGrid;
     }
 
-    // Mesh Generation
-    const floorGeo = new THREE.BoxGeometry(1, 1, 1);
-    // We'll create individual meshes for simplicity as we need texture mapping
-    // Ideally we'd use InstancedMesh but we want to use the existing block texture func
+    // ========================================
+    // STEP 3: MERGED GEOMETRY - CORRECT WINDING
+    // ========================================
 
-    // To optimize, let's create a single geometry merging? 
-    // Actually, for just ~100-200 tiles, individual meshes are ok for now.
+    const positions = [];
+    const uvs = [];
+    const indices = [];
+    let vertexCount = 0;
+
+    function addSolidCube(x, z, tileIndex) {
+        const centerY = -0.5;
+        const halfSize = 0.5;
+
+        // Calculate UV coordinates
+        const tileWidth = 1.0 / 9;
+        const u = (tileIndex % 9) * tileWidth;
+
+        // TOP FACE (y = +0.5 from center, looking DOWN at it)
+        // Vertices in COUNTER-CLOCKWISE order when viewed from above
+        positions.push(
+            x - halfSize, centerY + halfSize, z + halfSize,  // front-left
+            x + halfSize, centerY + halfSize, z + halfSize,  // front-right
+            x + halfSize, centerY + halfSize, z - halfSize,  // back-right
+            x - halfSize, centerY + halfSize, z - halfSize   // back-left
+        );
+        uvs.push(u, 0, u + tileWidth, 0, u + tileWidth, 1, u, 1);
+        indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
+        vertexCount += 4;
+
+        // BOTTOM FACE (y = -0.5 from center, looking UP at it)
+        // Vertices in CLOCKWISE order when viewed from below
+        positions.push(
+            x - halfSize, centerY - halfSize, z - halfSize,  // back-left
+            x + halfSize, centerY - halfSize, z - halfSize,  // back-right
+            x + halfSize, centerY - halfSize, z + halfSize,  // front-right
+            x - halfSize, centerY - halfSize, z + halfSize   // front-left
+        );
+        uvs.push(u, 0, u + tileWidth, 0, u + tileWidth, 1, u, 1);
+        indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
+        vertexCount += 4;
+
+        // FRONT FACE (+Z side)
+        positions.push(
+            x - halfSize, centerY - halfSize, z + halfSize,
+            x + halfSize, centerY - halfSize, z + halfSize,
+            x + halfSize, centerY + halfSize, z + halfSize,
+            x - halfSize, centerY + halfSize, z + halfSize
+        );
+        uvs.push(u, 0, u + tileWidth, 0, u + tileWidth, 1, u, 1);
+        indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
+        vertexCount += 4;
+
+        // BACK FACE (-Z side)
+        positions.push(
+            x + halfSize, centerY - halfSize, z - halfSize,
+            x - halfSize, centerY - halfSize, z - halfSize,
+            x - halfSize, centerY + halfSize, z - halfSize,
+            x + halfSize, centerY + halfSize, z - halfSize
+        );
+        uvs.push(u, 0, u + tileWidth, 0, u + tileWidth, 1, u, 1);
+        indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
+        vertexCount += 4;
+
+        // RIGHT FACE (+X side)
+        positions.push(
+            x + halfSize, centerY - halfSize, z + halfSize,
+            x + halfSize, centerY - halfSize, z - halfSize,
+            x + halfSize, centerY + halfSize, z - halfSize,
+            x + halfSize, centerY + halfSize, z + halfSize
+        );
+        uvs.push(u, 0, u + tileWidth, 0, u + tileWidth, 1, u, 1);
+        indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
+        vertexCount += 4;
+
+        // LEFT FACE (-X side)
+        positions.push(
+            x - halfSize, centerY - halfSize, z - halfSize,
+            x - halfSize, centerY - halfSize, z + halfSize,
+            x - halfSize, centerY + halfSize, z + halfSize,
+            x - halfSize, centerY + halfSize, z - halfSize
+        );
+        uvs.push(u, 0, u + tileWidth, 0, u + tileWidth, 1, u, 1);
+        indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
+        vertexCount += 4;
+    }
+
+    // // Build the merged floor mesh
+    // let tileCount = 0;
+    // for (let x = -bounds; x <= bounds; x++) {
+    //     for (let z = -bounds; z <= bounds; z++) {
+    //         if (grid[x][z]) {
+    //             // old code so it's always the same tile
+    //             // const tileIndex = theme.tile - 1;
+
+    //             // new code so it's always a different tile
+    //             const maxVar = (theme.tile <= 7) ? 3 : 2;
+    //             const tileIndex = Math.min(8, (theme.tile - 1) + ((Math.abs(x) * 3 + Math.abs(z) * 7) % maxVar));
+    //             addSolidCube(x, z, Math.min(8, tileIndex));
+    //             tileCount++;
+    //         }
+    //     }
+    // }
+
+    // Build the merged floor mesh
+    let tileCount = 0;
+
+    // Calculate max variation ONCE (not inside the loop!)
+    const maxVar = (theme.tile <= 7) ? 3 : 2;
 
     for (let x = -bounds; x <= bounds; x++) {
         for (let z = -bounds; z <= bounds; z++) {
             if (grid[x][z]) {
-                const m = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ color: 0xffffff }));
-                m.position.set(x, -0.6, z); // Slightly below rooms (rooms are at y=0, floor needs to be ground level)
-                // Wait, rooms are generated at y = rDepth/2.
-                // Corridors are at h=0.05.
-                // Rooms floor is effectively ~0.
-                // Let's put this floor at y = -0.5
+                // Calculate varied tile index
+                const tileIndex = Math.min(8, (theme.tile - 1) + ((Math.abs(x) * 3 + Math.abs(z) * 7) % maxVar));
 
-                applyTextureToMesh(m, 'block', theme.tile - 1); // 0-indexed
-                scene.add(m);
+                // const tileIndex = Math.floor(Math.random() * 9);  // Random 0-8
+
+                // DEBUG: Log first 5 tiles to see what we're getting
+                // if (tileCount < 5) {
+                //     console.log(`Tile at (${x}, ${z}): index ${tileIndex}, theme ${theme.tile}`);
+                // }
+
+                addSolidCube(x, z, tileIndex);  // <-- NO Math.min here!
+                tileCount++;
             }
         }
     }
+
+    // ========================================
+    // STEP 4: Create the final merged mesh
+    // ========================================
+
+    const mergedGeometry = new THREE.BufferGeometry();
+    mergedGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    mergedGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    mergedGeometry.setIndex(indices);
+    mergedGeometry.computeVertexNormals();
+
+    // Load texture
+    const blockTex = loadTexture('assets/images/block.png');
+    blockTex.wrapS = THREE.RepeatWrapping;
+    blockTex.wrapT = THREE.RepeatWrapping;
+
+    // Create material
+    const floorMaterial = new THREE.MeshStandardMaterial({
+        map: blockTex,
+        color: 0xffffff,
+        roughness: 0.9,
+        metalness: 0.1,
+        side: THREE.FrontSide  // Only render front faces
+    });
+
+    // Create ONE mesh for the entire floor
+    const floorMesh = new THREE.Mesh(mergedGeometry, floorMaterial);
+    floorMesh.receiveShadow = true;
+    floorMesh.matrixAutoUpdate = false;
+    floorMesh.updateMatrix();
+
+    scene.add(floorMesh);
+
+    console.log(`✅ Floor: ${tileCount} solid tiles in 1 draw call (was ${tileCount} draw calls)`);
 }
 
 function countNeighbors(grid, x, z, b) {
@@ -1570,7 +1710,7 @@ function showCombat() {
         if (c.type === 'monster' && c.val >= 1) {
             const suitName = c.suit === '♣' ? 'club' : 'spade';
             // const rankName = { 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[c.val];
-            const rankName = { 1:'1', 2:'1', 3:'1', 4:'2', 5:'2', 6:'3', 7:'3', 8:'4', 9:'4', 10:'5', 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[c.val];
+            const rankName = { 1: '1', 2: '1', 3: '1', 4: '2', 5: '2', 6: '3', 7: '3', 8: '4', 9: '4', 10: '5', 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[c.val];
             bgUrl = `assets/images/animations/${suitName}_${rankName}.png`;
             bgSize = "2500% 100%"; // 25 framing spritesheet
             bgPos = "0% 0%";
