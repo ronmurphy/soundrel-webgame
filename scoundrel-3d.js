@@ -161,6 +161,19 @@ function loadTexture(path) {
     return textureCache.get(path);
 }
 
+function getClonedTexture(path) {
+    const original = loadTexture(path);
+    const clone = original.clone();
+    if (original.image && !original.image.complete) {
+        const onImgLoad = () => {
+            clone.needsUpdate = true;
+            original.image.removeEventListener('load', onImgLoad);
+        };
+        original.image.addEventListener('load', onImgLoad);
+    }
+    return clone;
+}
+
 // FX State
 const fxCanvas = document.getElementById('fxCanvas');
 const fxCtx = fxCanvas.getContext('2d');
@@ -777,6 +790,7 @@ function init3D() {
 
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Cap pixel ratio for performance
         renderer.shadowMap.enabled = true;
         container.appendChild(renderer.domElement);
     }
@@ -803,6 +817,8 @@ function init3D() {
     // Initial Torch
     torchLight = new THREE.PointLight(0xffaa44, 300, 40);
     torchLight.castShadow = true;
+    torchLight.shadow.mapSize.width = 512; // Optimize shadow map size
+    torchLight.shadow.mapSize.height = 512;
     scene.add(torchLight);
 
     // Fog of War
@@ -994,7 +1010,7 @@ function update3DScene() {
                         scene.add(mesh);
                         roomMeshes.set(r.id, mesh);
                         addDoorsToRoom(r, mesh);
-                        addLocalFog(mesh.position.x, mesh.position.z);
+                        addLocalFog(mesh);
                     }
                     const mesh = roomMeshes.get(r.id);
                     mesh.visible = true;
@@ -1002,24 +1018,26 @@ function update3DScene() {
                     let eCol = 0x000000;
                     let eInt = (isVisible ? 1.0 : 0.2);
 
+                    let targetColor = 0x444444;
                     if (r.state === 'cleared' && !r.isWaypoint) {
                         eCol = 0xaaaaaa; // Holy Glow
-                        mesh.material.color.setHex(0xffffff); // White Tint
+                        targetColor = 0xffffff; // White Tint
                         eInt = (isVisible ? 0.8 : 0.4);
                         if (r.isFinal) {
                             eCol = 0x440000; // Bright Red Glow
-                            mesh.material.color.setHex(0xffaaaa);
+                            targetColor = 0xffaaaa;
                             eInt = 1.0;
                         }
                     } else {
-                        mesh.material.color.setHex(0x444444); // Reset to dark
+                        targetColor = 0x444444; // Reset to dark
                         if (r.isFinal) { eCol = 0xff0000; eInt = (isVisible ? 2.5 : 0.5); }
                         else if (r.isBonfire) { eCol = 0xff8800; eInt = (isVisible ? 2.5 : 0.5); }
                         else if (r.isSpecial) { eCol = 0x8800ff; eInt = (isVisible ? 1.5 : 0.3); }
                     }
 
-                    mesh.material.emissive.setHex(eCol);
-                    mesh.material.emissiveIntensity = eInt;
+                    if (mesh.material.color.getHex() !== targetColor) mesh.material.color.setHex(targetColor);
+                    if (mesh.material.emissive.getHex() !== eCol) mesh.material.emissive.setHex(eCol);
+                    if (mesh.material.emissiveIntensity !== eInt) mesh.material.emissiveIntensity = eInt;
                 }
             }
 
@@ -1188,15 +1206,18 @@ function updateRoomVisuals() {
     });
 }
 
-function addLocalFog(x, z) {
+function addLocalFog(mesh) {
     const smoke = loadTexture('assets/images/textures/smoke_01.png');
-    for (let i = 0; i < 3; i++) {
-        const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smoke, transparent: true, opacity: 0.2, color: 0x444444 }));
+    // Reduced count from 3 to 2 for optimization
+    for (let i = 0; i < 2; i++) {
+        const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smoke, transparent: true, opacity: 0.15, color: 0x444444 }));
         s.raycast = () => { };
         const sz = 4 + Math.random() * 4;
         s.scale.set(sz, sz, 1);
-        s.position.set(x + (Math.random() - 0.5) * 4, 1 + Math.random() * 2, z + (Math.random() - 0.5) * 4);
-        scene.add(s);
+        // Local Y relative to mesh center (which is at rDepth/2)
+        const localY = 1.0 - mesh.position.y + (Math.random() * 1.5);
+        s.position.set((Math.random() - 0.5) * 4, localY, (Math.random() - 0.5) * 4);
+        mesh.add(s);
     }
 }
 
@@ -1449,7 +1470,7 @@ function generateFloorCA() {
     mergedGeometry.computeVertexNormals();
 
     // Load texture
-    const blockTex = loadTexture('assets/images/block.png').clone();
+    const blockTex = getClonedTexture('assets/images/block.png');
     blockTex.repeat.set(1, 1);
     blockTex.offset.set(0, 0);
     blockTex.wrapS = THREE.RepeatWrapping;
@@ -2182,7 +2203,7 @@ function getAssetData(type, value, suit, extra) {
 
 function applyTextureToMesh(mesh, type, value, suit) {
     const asset = getAssetData(type, value, suit);
-    const tex = loadTexture(`assets/images/${asset.file}`).clone();
+    const tex = getClonedTexture(`assets/images/${asset.file}`);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
 
