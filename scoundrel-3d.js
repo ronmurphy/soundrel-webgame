@@ -1148,7 +1148,7 @@ function addDoorsToRoom(room, mesh) {
         const door = new THREE.Mesh(new THREE.PlaneGeometry(1, 2), new THREE.MeshStandardMaterial({ map: tex, transparent: true, side: THREE.FrontSide }));
         // Doors are static geometry relative to the room; disable matrix auto updates
         door.matrixAutoUpdate = false;
-        const rw = room.w / 2; const rh = room.h / 2; const margin = 0.05;
+        const rw = room.w / 2; const rh = room.h / 2; const margin = 0.075;
         if (Math.abs(dx) > Math.abs(dy)) {
             door.position.set(dx > 0 ? rw + margin : -rw - margin, -(room.rDepth / 2) + 1, 0);
             door.rotation.y = dx > 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -1415,23 +1415,6 @@ function generateFloorCA() {
         indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
         vertexCount += 4;
     }
-
-    // // Build the merged floor mesh
-    // let tileCount = 0;
-    // for (let x = -bounds; x <= bounds; x++) {
-    //     for (let z = -bounds; z <= bounds; z++) {
-    //         if (grid[x][z]) {
-    //             // old code so it's always the same tile
-    //             // const tileIndex = theme.tile - 1;
-
-    //             // new code so it's always a different tile
-    //             const maxVar = (theme.tile <= 7) ? 3 : 2;
-    //             const tileIndex = Math.min(8, (theme.tile - 1) + ((Math.abs(x) * 3 + Math.abs(z) * 7) % maxVar));
-    //             addSolidCube(x, z, Math.min(8, tileIndex));
-    //             tileCount++;
-    //         }
-    //     }
-    // }
 
     // Build the merged floor mesh
     let tileCount = 0;
