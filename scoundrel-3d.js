@@ -1426,16 +1426,13 @@ function generateFloorCA() {
         for (let z = -bounds; z <= bounds; z++) {
             if (grid[x][z]) {
                 // Calculate varied tile index
-                const tileIndex = Math.min(8, (theme.tile - 1) + ((Math.abs(x) * 3 + Math.abs(z) * 7) % maxVar));
+                // Use primes and offset to prevent row/column striping and symmetry
+                const noise = Math.abs((x + 64) * 17 + (z + 64) * 23);
+                const variation = noise % maxVar;
+                // Ensure we don't exceed the sprite sheet (indices 0-8)
+                const tileIndex = Math.min(8, (theme.tile - 1) + variation);
 
-                // const tileIndex = Math.floor(Math.random() * 9);  // Random 0-8
-
-                // DEBUG: Log first 5 tiles to see what we're getting
-                // if (tileCount < 5) {
-                //     console.log(`Tile at (${x}, ${z}): index ${tileIndex}, theme ${theme.tile}`);
-                // }
-
-                addSolidCube(x, z, tileIndex);  // <-- NO Math.min here!
+                addSolidCube(x, z, tileIndex);
                 tileCount++;
             }
         }
@@ -1452,7 +1449,9 @@ function generateFloorCA() {
     mergedGeometry.computeVertexNormals();
 
     // Load texture
-    const blockTex = loadTexture('assets/images/block.png');
+    const blockTex = loadTexture('assets/images/block.png').clone();
+    blockTex.repeat.set(1, 1);
+    blockTex.offset.set(0, 0);
     blockTex.wrapS = THREE.RepeatWrapping;
     blockTex.wrapT = THREE.RepeatWrapping;
 
@@ -2183,7 +2182,7 @@ function getAssetData(type, value, suit, extra) {
 
 function applyTextureToMesh(mesh, type, value, suit) {
     const asset = getAssetData(type, value, suit);
-    const tex = loadTexture(`assets/images/${asset.file}`);
+    const tex = loadTexture(`assets/images/${asset.file}`).clone();
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
 
