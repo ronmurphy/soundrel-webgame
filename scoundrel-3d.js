@@ -979,6 +979,11 @@ function update3DScene() {
             torchLight.color.setHex(0xffaa44); torchLight.intensity = (is3DView ? 300 : 1000);
             torchLight.distance = 25; vRad = 2.5;
         }
+
+        // Torch Flicker Juice
+        const flicker = 1.0 + (Math.random() - 0.5) * 0.15;
+        torchLight.intensity *= flicker;
+
         torchLight.position.set(playerSprite.position.x, 2.5, playerSprite.position.z);
 
         game.rooms.forEach(r => {
