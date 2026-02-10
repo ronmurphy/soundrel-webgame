@@ -18,7 +18,9 @@ const game = {
     chosenCount: 0,
     combatCards: [],
     slainStack: [],
-    carryCard: null // THE global carry-over card
+    carryCard: null, // THE global carry-over card
+    combatBusy: false, // Prevent double-clicking during animations
+    soulCoins: 0
 };
 
 const SUITS = { HEARTS: '♥', DIAMONDS: '♦', CLUBS: '♣', SPADES: '♠' };
@@ -1360,81 +1362,81 @@ function generateFloorCA() {
     const indices = [];
     let vertexCount = 0;
 
-    function addSolidCube(x, z, tileIndex) {
-        const centerY = -0.5;
-        const halfSize = 0.5;
+    // Helper to get height at a specific corner coordinate (world space)
+    function getVertexHeight(vx, vz) {
+        // 1. Flatten near rooms/corridors
+        for (const r of game.rooms) {
+            // Check if vertex is inside or on edge of room (with small margin)
+            if (vx >= r.gx - r.w / 2 - 0.1 && vx <= r.gx + r.w / 2 + 0.1 &&
+                vz >= r.gy - r.h / 2 - 0.1 && vz <= r.gy + r.h / 2 + 0.1) {
+                return 0;
+            }
+        }
+        for (const m of corridorMeshes.values()) {
+            if (Math.abs(vx - m.position.x) < 0.6 && Math.abs(vz - m.position.z) < 0.6) return 0;
+        }
 
-        // Calculate UV coordinates
+        // 2. Terrain Noise
+        const noise = Math.sin(vx * 0.15) + Math.cos(vz * 0.23);
+        if (noise > 1.2) return 1.5; // Mountain
+        if (noise > 0.5) return 0.75; // Hill
+        return 0;
+    }
+
+    function addSolidPrism(x, z, tileIndex) {
+        // Get heights for 4 corners of this tile
+        // Tile x,z is centered at x,z. Corners are +/- 0.5
+        const h_bl = getVertexHeight(x - 0.5, z + 0.5); // Back-Left
+        const h_br = getVertexHeight(x + 0.5, z + 0.5); // Back-Right
+        const h_fr = getVertexHeight(x + 0.5, z - 0.5); // Front-Right
+        const h_fl = getVertexHeight(x - 0.5, z - 0.5); // Front-Left
+
+        const base = -2.0; // Deep base to prevent floating
+
+        // UVs
         const tileWidth = 1.0 / 9;
         const u = (tileIndex % 9) * tileWidth;
 
-        // TOP FACE (y = +0.5 from center, looking DOWN at it)
-        // Vertices in COUNTER-CLOCKWISE order when viewed from above
-        positions.push(
-            x - halfSize, centerY + halfSize, z + halfSize,  // front-left
-            x + halfSize, centerY + halfSize, z + halfSize,  // front-right
-            x + halfSize, centerY + halfSize, z - halfSize,  // back-right
-            x - halfSize, centerY + halfSize, z - halfSize   // back-left
-        );
-        uvs.push(u, 0, u + tileWidth, 0, u + tileWidth, 1, u, 1);
-        indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
-        vertexCount += 4;
+        // Helper to push quad
+        const pushQuad = (v0, v1, v2, v3, uv0, uv1, uv2, uv3) => {
+            positions.push(...v0, ...v1, ...v2, ...v3);
+            uvs.push(...uv0, ...uv1, ...uv2, ...uv3);
+            indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
+            vertexCount += 4;
+        };
 
-        // BOTTOM FACE (y = -0.5 from center, looking UP at it)
-        // Vertices in CLOCKWISE order when viewed from below
-        positions.push(
-            x - halfSize, centerY - halfSize, z - halfSize,  // back-left
-            x + halfSize, centerY - halfSize, z - halfSize,  // back-right
-            x + halfSize, centerY - halfSize, z + halfSize,  // front-right
-            x - halfSize, centerY - halfSize, z + halfSize   // front-left
+        // TOP FACE (Sloped)
+        pushQuad(
+            [x - 0.5, h_bl, z + 0.5], [x + 0.5, h_br, z + 0.5],
+            [x + 0.5, h_fr, z - 0.5], [x - 0.5, h_fl, z - 0.5],
+            [u, 1], [u + tileWidth, 1], [u + tileWidth, 0], [u, 0]
         );
-        uvs.push(u, 0, u + tileWidth, 0, u + tileWidth, 1, u, 1);
-        indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
-        vertexCount += 4;
 
-        // FRONT FACE (+Z side)
-        positions.push(
-            x - halfSize, centerY - halfSize, z + halfSize,
-            x + halfSize, centerY - halfSize, z + halfSize,
-            x + halfSize, centerY + halfSize, z + halfSize,
-            x - halfSize, centerY + halfSize, z + halfSize
+        // SIDES (Skirts down to base)
+        // Front (z-0.5)
+        pushQuad(
+            [x - 0.5, h_fl, z - 0.5], [x + 0.5, h_fr, z - 0.5],
+            [x + 0.5, base, z - 0.5], [x - 0.5, base, z - 0.5],
+            [u, 1], [u + tileWidth, 1], [u + tileWidth, 0], [u, 0]
         );
-        uvs.push(u, 0, u + tileWidth, 0, u + tileWidth, 1, u, 1);
-        indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
-        vertexCount += 4;
-
-        // BACK FACE (-Z side)
-        positions.push(
-            x + halfSize, centerY - halfSize, z - halfSize,
-            x - halfSize, centerY - halfSize, z - halfSize,
-            x - halfSize, centerY + halfSize, z - halfSize,
-            x + halfSize, centerY + halfSize, z - halfSize
+        // Back (z+0.5)
+        pushQuad(
+            [x + 0.5, h_br, z + 0.5], [x - 0.5, h_bl, z + 0.5],
+            [x - 0.5, base, z + 0.5], [x + 0.5, base, z + 0.5],
+            [u, 1], [u + tileWidth, 1], [u + tileWidth, 0], [u, 0]
         );
-        uvs.push(u, 0, u + tileWidth, 0, u + tileWidth, 1, u, 1);
-        indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
-        vertexCount += 4;
-
-        // RIGHT FACE (+X side)
-        positions.push(
-            x + halfSize, centerY - halfSize, z + halfSize,
-            x + halfSize, centerY - halfSize, z - halfSize,
-            x + halfSize, centerY + halfSize, z - halfSize,
-            x + halfSize, centerY + halfSize, z + halfSize
+        // Left (x-0.5)
+        pushQuad(
+            [x - 0.5, h_bl, z + 0.5], [x - 0.5, h_fl, z - 0.5],
+            [x - 0.5, base, z - 0.5], [x - 0.5, base, z + 0.5],
+            [u, 1], [u + tileWidth, 1], [u + tileWidth, 0], [u, 0]
         );
-        uvs.push(u, 0, u + tileWidth, 0, u + tileWidth, 1, u, 1);
-        indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
-        vertexCount += 4;
-
-        // LEFT FACE (-X side)
-        positions.push(
-            x - halfSize, centerY - halfSize, z - halfSize,
-            x - halfSize, centerY - halfSize, z + halfSize,
-            x - halfSize, centerY + halfSize, z + halfSize,
-            x - halfSize, centerY + halfSize, z - halfSize
+        // Right (x+0.5)
+        pushQuad(
+            [x + 0.5, h_fr, z - 0.5], [x + 0.5, h_br, z + 0.5],
+            [x + 0.5, base, z + 0.5], [x + 0.5, base, z - 0.5],
+            [u, 1], [u + tileWidth, 1], [u + tileWidth, 0], [u, 0]
         );
-        uvs.push(u, 0, u + tileWidth, 0, u + tileWidth, 1, u, 1);
-        indices.push(vertexCount, vertexCount + 1, vertexCount + 2, vertexCount, vertexCount + 2, vertexCount + 3);
-        vertexCount += 4;
     }
 
     // Build the merged floor mesh
@@ -1453,7 +1455,7 @@ function generateFloorCA() {
                 // Ensure we don't exceed the sprite sheet (indices 0-8)
                 const tileIndex = Math.min(8, (theme.tile - 1) + variation);
 
-                addSolidCube(x, z, tileIndex);
+                addSolidPrism(x, z, tileIndex);
                 tileCount++;
             }
         }
@@ -1586,7 +1588,7 @@ window.selectAvatar = (sex) => {
 function finalizeStartDive() {
     game.hp = 20; game.floor = 1; game.deck = createDeck();
     game.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
-    game.rooms = generateDungeon(); game.currentRoomIdx = 0; game.lastAvoided = false;
+    game.soulCoins = 0; game.rooms = generateDungeon(); game.currentRoomIdx = 0; game.lastAvoided = false;
     clear3DScene(); init3D();
     // Preload FX textures for particle effects
     preloadFXTextures();
@@ -1785,8 +1787,60 @@ function getDisplayVal(v) {
     return map[v] || v;
 }
 
+function spawnFloatingText(text, x, y, color) {
+    const el = document.createElement('div');
+    el.innerText = text;
+    el.style.position = 'fixed';
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.transform = 'translate(-50%, -50%)';
+    el.style.color = color || '#fff';
+    el.style.fontSize = '32px';
+    el.style.fontWeight = 'bold';
+    el.style.textShadow = '0 2px 4px #000';
+    el.style.pointerEvents = 'none';
+    el.style.zIndex = '10000';
+    el.style.transition = 'all 1s ease-out';
+    el.style.opacity = '1';
+    document.body.appendChild(el);
+
+    requestAnimationFrame(() => {
+        el.style.top = (y - 80) + 'px';
+        el.style.opacity = '0';
+        el.style.transform = 'translate(-50%, -50%) scale(1.5)';
+    });
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 1000);
+}
+
+// Helper for player attack visuals
+function triggerPlayerAttackAnim(x, y, hasWeapon) {
+    if (hasWeapon) {
+        // Slash
+        spawnAboveModalTexture('slash_02.png', x, y, 1, {
+            size: 280, spread: 0, decay: 0.06,
+            tint: '#ffffff', blend: 'lighter', intensity: 1.5
+        });
+        // Sparks
+        spawnAboveModalTexture('spark_01.png', x, y, 6, {
+            sizeRange: [6, 16], spread: 50, decay: 0.04,
+            tint: '#ffcc88', blend: 'lighter'
+        });
+    } else {
+        // Blunt Impact
+        spawnAboveModalTexture('circle_03.png', x, y, 1, {
+            size: 250, spread: 0, decay: 0.08,
+            tint: '#ffffff', blend: 'lighter', intensity: 1.2
+        });
+        spawnAboveModalTexture('muzzle_02.png', x, y, 3, {
+            sizeRange: [30, 60], spread: 20, decay: 0.08,
+            tint: '#ffaa66', blend: 'lighter'
+        });
+    }
+    triggerShake(6, 12);
+}
+
 function pickCard(idx, event) {
-    if (game.chosenCount >= 3) return;
+    if (game.chosenCount >= 3 || game.combatBusy) return;
 
     const card = game.combatCards[idx];
 
@@ -1812,6 +1866,7 @@ function pickCard(idx, event) {
             logMsg(`Equipped ${card.name}. First kill has no level limit.`);
             break;
         case 'monster':
+            game.combatBusy = true;
             // Compute damage/state but defer applying until animation finishes
             let dmg = card.val;
             const cardRect = event.target.getBoundingClientRect();
@@ -1835,8 +1890,30 @@ function pickCard(idx, event) {
                 logMsg(`Grappled ${card.name} barehanded. Took ${dmg} DMG.`);
             }
 
-            // Play attack animation from this enemy card to the HP UI, then finalize damage/effects
-            enemyAttackAnimation(card, cardEl, centerX, centerY, dmg, {}, () => {
+            // --- CINEMATIC COMBAT SEQUENCE ---
+
+            // 1. Player Attack Phase (Visuals)
+            triggerPlayerAttackAnim(centerX, centerY, !!game.weapon);
+
+            // Animate Card Impact (Recoil)
+            const recoilAnim = cardEl.animate([
+                { transform: 'scale(1)' },
+                { transform: 'scale(0.9) rotate(' + (Math.random() * 6 - 3) + 'deg)' },
+                { transform: 'scale(1.05)' },
+                { transform: 'scale(1)' }
+            ], { duration: 250, easing: 'cubic-bezier(0.175, 0.885, 0.32, 1.275)' });
+
+            recoilAnim.onfinish = () => {
+                // 2. Enemy Retaliation Phase (only if player takes damage)
+                if (dmg > 0) {
+                    enemyAttackAnimation(card, cardEl, centerX, centerY, dmg, {}, finalizeCombat);
+                } else {
+                    // Clean kill - slight pause then death
+                    setTimeout(finalizeCombat, 150);
+                }
+            };
+
+            function finalizeCombat() {
                 if (willBreak) {
                     spawnAboveModalTexture('spark_01.png', centerX, centerY, 30, { tint: '#888', blend: 'lighter', sizeRange: [6, 40], intensity: 2.0, filter: 'brightness(2) saturate(1.1)' });
                     spawnAboveModalTexture('slash_02.png', window.innerWidth / 2, window.innerHeight / 2, 18, { tint: '#8b0000', blend: 'lighter', sizeRange: [40, 120], intensity: 1.9, filter: 'brightness(1.8) contrast(1.2)' });
@@ -1845,6 +1922,11 @@ function pickCard(idx, event) {
                     // slay with weapon: small sparks
                     spawnAboveModalTexture('spark_01.png', centerX, centerY, 12, { tint: '#ccc', blend: 'lighter', sizeRange: [8, 36], intensity: 1.2 });
                     game.slainStack.push(card);
+                }
+
+                game.soulCoins += card.val;
+                if (dmg === 0) {
+                    spawnFloatingText("CRITICAL HIT!", centerX, centerY - 60, '#ffcc00');
                 }
 
                 if (dmg > 0) {
@@ -1857,6 +1939,7 @@ function pickCard(idx, event) {
 
                 // Animate card death (flip) and then remove from combat array
                 animateCardDeath(cardEl, () => {
+                    game.combatBusy = false;
                     game.combatCards.splice(idx, 1);
                     game.chosenCount++;
 
@@ -1866,7 +1949,7 @@ function pickCard(idx, event) {
                     else showCombat();
                     updateUI();
                 });
-            });
+            }
 
             // Return so we don't run the default removal logic below (we handle that in the callback)
             return;
@@ -2098,6 +2181,22 @@ function updateUI() {
     // Update Modal
     document.getElementById('hpValueModal').innerText = game.hp;
     document.getElementById('hpBarModal').style.width = `${(game.hp / game.maxHp) * 100}%`;
+
+    // Inject Soul Coins UI if missing
+    const weaponDurEl = document.getElementById('weaponDurSidebar');
+    if (weaponDurEl && !document.getElementById('soulCoinsContainer')) {
+        const div = document.createElement('div');
+        div.id = 'soulCoinsContainer';
+        div.style.marginTop = '10px';
+        div.style.textAlign = 'center';
+        div.style.color = '#d4af37';
+        div.style.fontWeight = 'bold';
+        div.style.textShadow = '0 1px 2px #000';
+        div.innerHTML = `Soul Coins: <span id="soulCoinsValueSidebar" style="color: #fff;">0</span>`;
+        weaponDurEl.parentNode.appendChild(div);
+    }
+    const coinEl = document.getElementById('soulCoinsValueSidebar');
+    if (coinEl) coinEl.innerText = game.soulCoins;
 
     const floorEl = document.getElementById('floorValue');
     if (floorEl) floorEl.innerText = game.floor;
