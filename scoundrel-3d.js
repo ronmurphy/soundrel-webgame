@@ -20,14 +20,63 @@ const game = {
     slainStack: [],
     carryCard: null, // THE global carry-over card
     combatBusy: false, // Prevent double-clicking during animations
-    soulCoins: 0
+    soulCoins: 0,
+    inventory: [], // Max 6 items
+    ap: 0, // Current Armor Points
+    maxAp: 0, // Max AP based on equipment
+    bonfireUsed: false, // Track for Ascetic bonus
+    merchantUsed: false, // Track for Independent bonus
+    pendingPurchase: null // Track item waiting for inventory space
 };
+
+const ARMOR_DATA = [
+    { id: 0, name: "Studded Gloves", ap: 2, cost: 25, desc: "Light hand protection." },
+    { id: 1, name: "Articulated Gauntlets", ap: 5, cost: 50, desc: "Heavy plated hand protection." },
+    { id: 2, name: "Iron Pot Helm", ap: 5, cost: 45, desc: "Solid iron headgear." },
+    { id: 3, name: "Heavy Greaves", ap: 5, cost: 45, desc: "Thick leg armor." },
+    { id: 4, name: "Padded Gambeson", ap: 1, cost: 25, desc: "Basic cloth armor." },
+    { id: 5, name: "Reinforced Leather", ap: 2, cost: 30, desc: "Hardened leather chestpiece." },
+    { id: 6, name: "Chainmail Hauberk", ap: 3, cost: 40, desc: "Interlinked metal rings." },
+    { id: 7, name: "Steel Breastplate", ap: 4, cost: 55, desc: "Solid steel chest protection." },
+    { id: 8, name: "Gothic Plate", ap: 5, cost: 75, desc: "Masterwork full plate." }
+];
+
+const ITEM_DATA = [
+    { id: 0, name: "Volatile Bomb", cost: 30, type: 'active', desc: "Deal weapon dmg to random enemy." },
+    { id: 1, name: "Spectral Lantern", cost: 50, type: 'passive', desc: "Permanent Gold Light." },
+    { id: 2, name: "Skeleton Key", cost: 35, type: 'active', desc: "Avoid room (even if last avoided)." },
+    { id: 3, name: "Leather Map", cost: 40, type: 'passive', desc: "Reveal all room locations." },
+    { id: 4, name: "Purple Hourglass", cost: 30, type: 'active', desc: "Redraw current room." },
+    { id: 5, name: "Protective Herbs", cost: 25, type: 'passive', desc: "+5 HP from Bonfires." },
+    { id: 6, name: "Silver Mirror", cost: 60, type: 'passive', desc: "Survive fatal blow once." },
+    { id: 7, name: "Music Box", cost: 35, type: 'active', desc: "-2 to all monsters in room." },
+    { id: 8, name: "Iron-Bound Tome", cost: 50, type: 'passive', desc: "+2 Soul Coins per kill." }
+];
 
 const SUITS = { HEARTS: '♥', DIAMONDS: '♦', CLUBS: '♣', SPADES: '♠' };
 
 // --- PROC-GEN DUNGEON (Grid Based) ---
 function generateDungeon() {
-    const numRooms = 12;
+    // Escalation Logic
+    let numRooms = 12;
+    let merchantCount = 0;
+
+    if (game.floor <= 3) {
+        numRooms = 12;
+        merchantCount = 4 - game.floor; // 1->3, 2->2, 3->1
+    } else if (game.floor <= 6) {
+        numRooms = 24;
+        // Levels 4(2), 5(1), 6(0)
+        if (game.floor === 4) merchantCount = 2;
+        else if (game.floor === 5) merchantCount = 1;
+        else merchantCount = 0;
+    } else {
+        numRooms = 36;
+        // Levels 7(1), 8(0), 9(0)
+        if (game.floor === 7) merchantCount = 1;
+        else merchantCount = 0;
+    }
+
     const rooms = [];
     const occupied = new Set(["0,0"]);
 
@@ -105,7 +154,6 @@ function generateDungeon() {
     }
 
     // Assign 1-3 Merchants
-    const merchantCount = 1 + Math.floor(Math.random() * 3); // 1, 2, or 3
     for (let i = 0; i < merchantCount; i++) {
         if (potentialSpecials.length > 0) {
             const m = potentialSpecials.pop();
@@ -913,11 +961,14 @@ function update3DScene() {
 
     if (playerSprite && torchLight) {
         let vRad = 2.5;
+        // Check for Spectral Lantern (ID 1)
+        const hasLantern = game.inventory.some(i => i.type === 'item' && i.id === 1);
+
         if (game.weapon) {
-            if (game.weapon.val >= 8) {
+            if (game.weapon.val >= 8 || hasLantern) {
                 torchLight.color.setHex(0x00ccff); torchLight.intensity = (is3DView ? 800 : 2000);
                 torchLight.distance = 60; vRad = 8.0;
-            } else if (game.weapon.val >= 6) {
+            } else if (game.weapon.val >= 6 || hasLantern) {
                 torchLight.color.setHex(0xd4af37); torchLight.intensity = (is3DView ? 600 : 1500);
                 torchLight.distance = 45; vRad = 5.0;
             } else {
@@ -1286,6 +1337,17 @@ function createEmojiSprite(emoji, size = 1.5) {
     sprite.scale.set(size, size, 1);
     return sprite;
 }
+
+function takeDamage(amount) {
+    let remaining = amount;
+    if (game.ap > 0) {
+        const absorb = Math.min(game.ap, remaining);
+        game.ap -= absorb;
+        remaining -= absorb;
+    }
+    game.hp -= remaining;
+}
+
 const THEMES = [
     { id: 1, name: 'Dirt', tile: 1, color: 0x3d2817, fogDensity: 0.05, hemiIntensity: 0.35 },    // Brown
     { id: 2, name: 'Stone', tile: 2, color: 0x222222, fogDensity: 0.05, hemiIntensity: 0.34 },   // Grey
@@ -1681,24 +1743,32 @@ function shuffle(arr) {
 }
 
 function createDeck() {
+    // Deck Scaling: 1x for 1-3, 2x for 4-6, 3x for 7-9
+    let multiplier = 1;
+    if (game.floor >= 4) multiplier = 2;
+    if (game.floor >= 7) multiplier = 3;
+
     const deck = [];
-    // Monsters: 2-14 Clubs/Spades (2 * 13 = 26)
-    [SUITS.CLUBS, SUITS.SPADES].forEach(suit => {
-        for (let v = 2; v <= 14; v++) {
-            deck.push({ suit, val: v, type: 'monster', name: getMonsterName(v) });
+    for (let i = 0; i < multiplier; i++) {
+        // Monsters: 2-14 Clubs/Spades (2 * 13 = 26)
+        [SUITS.CLUBS, SUITS.SPADES].forEach(suit => {
+            for (let v = 2; v <= 14; v++) {
+                deck.push({ suit, val: v, type: 'monster', name: getMonsterName(v) });
+            }
+        });
+        // Weapons: 2-10 Diamonds (9)
+        for (let v = 2; v <= 10; v++) {
+            deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: `Weapon lv.${v}` });
         }
-    });
-    // Weapons: 2-10 Diamonds (9)
-    for (let v = 2; v <= 10; v++) {
-        deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: `Weapon lv.${v}` });
+        // Potions: 2-10 Hearts (9)
+        for (let v = 2; v <= 10; v++) {
+            deck.push({ suit: SUITS.HEARTS, val: v, type: 'potion', name: `HP Incense ${v}` });
+        }
     }
-    // Potions: 2-10 Hearts (9)
-    for (let v = 2; v <= 10; v++) {
-        deck.push({ suit: SUITS.HEARTS, val: v, type: 'potion', name: `HP Incense ${v}` });
-    }
-    // Total: 44 cards
     return shuffle(deck);
 }
+
+
 
 function getMonsterName(v) {
     if (v <= 3) return 'Shadow Creeper';
@@ -1725,7 +1795,9 @@ window.selectAvatar = (sex) => {
 function finalizeStartDive() {
     game.hp = 20; game.floor = 1; game.deck = createDeck();
     game.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
-    game.soulCoins = 0; game.rooms = generateDungeon(); game.currentRoomIdx = 0; game.lastAvoided = false;
+    game.soulCoins = 0; game.inventory = []; game.ap = 0; game.maxAp = 0;
+    game.rooms = generateDungeon(); game.currentRoomIdx = 0; game.lastAvoided = false;
+    game.bonfireUsed = false; game.merchantUsed = false;
     clear3DScene(); init3D();
     // Preload FX textures for particle effects
     preloadFXTextures();
@@ -1739,10 +1811,136 @@ function finalizeStartDive() {
     enterRoom(0);
 }
 
+function startIntermission() {
+    // Calculate Bonuses
+    let bonusMsg = "";
+    if (!game.bonfireUsed) {
+        game.soulCoins += 50;
+        bonusMsg += "Ascetic Bonus: +50 Coins! ";
+    }
+    if (!game.merchantUsed) {
+        game.maxHp += 2; game.hp += 2;
+        bonusMsg += "Independent Bonus: +2 Max HP! ";
+    }
+    if (bonusMsg) logMsg(bonusMsg);
+
+    // Show Shop
+    const overlay = document.getElementById('combatModal');
+    const enemyArea = document.getElementById('enemyArea');
+    overlay.style.display = 'flex';
+    document.getElementById('combatContainer').style.display = 'flex';
+    document.getElementById('bonfireUI').style.display = 'none';
+    
+    // Setup Shop UI
+    document.getElementById('combatMessage').innerText = "The Soul Broker";
+    document.getElementById('modalAvoidBtn').style.display = 'none';
+    document.getElementById('exitCombatBtn').style.display = 'none';
+    document.getElementById('descendBtn').style.display = 'none';
+
+    enemyArea.innerHTML = '';
+
+    // Soul Broker & Coins UI
+    const brokerContainer = document.createElement('div');
+    brokerContainer.style.cssText = "width:100%; text-align:center; margin-bottom:15px; display:flex; flex-direction:column; align-items:center;";
+    brokerContainer.innerHTML = `
+        <img src="assets/images/merchant_front.png" style="height:120px; margin-bottom:10px; filter: drop-shadow(0 0 10px rgba(255,215,0,0.3));">
+        <div style="color:#d4af37; font-size:24px; font-weight:bold; text-shadow:0 2px 4px #000;">
+            Soul Coins: <span id="shopCoinDisplay" style="color:#fff;">${game.soulCoins}</span>
+        </div>
+    `;
+    enemyArea.appendChild(brokerContainer);
+
+    const itemsContainer = document.createElement('div');
+    itemsContainer.style.cssText = "display:flex; justify-content:center; gap:15px; flex-wrap:wrap; width:100%;";
+    enemyArea.appendChild(itemsContainer);
+    
+    // Render Shop Items (Random selection of 4)
+    // Mix armor and items
+    const pool = [...ARMOR_DATA.map(a=>({...a, type:'armor'})), ...ITEM_DATA.map(i=>({...i, type:'item'}))];
+    shuffle(pool);
+    
+    for(let i=0; i<4; i++) {
+        const item = pool[i];
+        const card = document.createElement('div');
+        card.className = 'card shop-item';
+        
+        const asset = getAssetData(item.type, item.id, null);
+        
+        card.innerHTML = `
+            <div class="card-art-container" style="background-image: url('assets/images/${asset.file}'); background-size: 900% 100%; background-position: ${asset.uv.u * 112.5}% 0%"></div>
+            <div class="name" style="bottom: 40px; font-size: 14px;">${item.name}</div>
+            <div class="val" style="font-size: 16px; color: #ffd700;">${item.cost}</div>
+            <div style="position:absolute; bottom:5px; width:100%; text-align:center; font-size:10px; color:#aaa;">${item.type === 'armor' ? `+${item.ap} AP` : 'Item'}</div>
+        `;
+        
+        card.onclick = () => {
+            if (game.soulCoins >= item.cost) {
+                if (game.inventory.length >= 6) {
+                    // Enter Swap Mode
+                    game.pendingPurchase = { item: item, cardElement: card };
+                    spawnFloatingText("Inventory Full! Click item to discard.", window.innerWidth/2, window.innerHeight/2, '#ffaa00');
+                    // Visual cue for inventory
+                    const invEl = document.getElementById('inventorySidebar');
+                    if (invEl) invEl.style.boxShadow = "0 0 15px #ffaa00";
+                    return;
+                }
+                game.soulCoins -= item.cost;
+                document.getElementById('shopCoinDisplay').innerText = game.soulCoins;
+                game.inventory.push(item);
+                if (item.type === 'armor') {
+                    game.maxAp += item.ap;
+                    game.ap += item.ap;
+                }
+                spawnFloatingText("Purchased!", window.innerWidth/2, window.innerHeight/2, '#00ff00');
+                card.style.opacity = 0.5;
+                card.style.pointerEvents = 'none';
+                updateUI();
+            } else {
+                spawnFloatingText("Not enough coins!", window.innerWidth/2, window.innerHeight/2, '#ff0000');
+            }
+        };
+
+        // Tooltip Events for Shop Items
+        card.onmouseenter = () => {
+            const tooltip = document.getElementById('gameTooltip');
+            if (tooltip) {
+                tooltip.style.display = 'block';
+                tooltip.innerHTML = `<strong style="color:#ffd700; font-size:16px;">${item.name}</strong><br/><span style="color:#aaa; font-size:12px;">${item.type === 'armor' ? `+${item.ap} AP` : 'Item'}</span><br/><div style="margin-top:4px; color:#ddd;">${item.desc || ''}</div>`;
+                const rect = card.getBoundingClientRect();
+                tooltip.style.left = (rect.right + 10) + 'px';
+                tooltip.style.top = rect.top + 'px';
+            }
+        };
+        card.onmouseleave = () => { const t = document.getElementById('gameTooltip'); if(t) t.style.display = 'none'; };
+
+        itemsContainer.appendChild(card);
+    }
+
+    // Add "Next Floor" button to enemyArea or reuse existing buttons?
+    // Let's repurpose the descend button but change its onclick
+    const nextBtn = document.getElementById('descendBtn');
+    nextBtn.innerText = "Enter Next Floor";
+    nextBtn.style.display = 'block';
+    nextBtn.onclick = () => {
+        nextBtn.innerText = "Descend"; // Reset text
+        nextBtn.onclick = startIntermission; // Reset handler to intermission
+        descendToNextFloor();
+    };
+}
+
 function descendToNextFloor() {
     game.floor++; closeCombat();
     game.deck = createDeck(); game.rooms = generateDungeon();
     game.currentRoomIdx = 0; game.lastAvoided = false;
+    game.bonfireUsed = false; game.merchantUsed = false;
+    game.pendingPurchase = null;
+    
+    // Map Item Check
+    const hasMap = game.inventory.some(i => i.type === 'item' && i.id === 3);
+    if (hasMap) {
+        game.rooms.forEach(r => r.isRevealed = true);
+    }
+
     clear3DScene(); init3D();
     // Preload FX textures for particle effects
     preloadFXTextures();
@@ -1877,6 +2075,7 @@ function showCombat() {
             if (allCleared) {
                 msgEl.innerText = "Stairs revealed.";
                 document.getElementById('descendBtn').style.display = 'block';
+                document.getElementById('descendBtn').onclick = startIntermission;
             } else {
                 msgEl.innerText = "Clear all rooms.";
                 document.getElementById('descendBtn').style.display = 'none';
@@ -2010,6 +2209,11 @@ function pickCard(idx, event) {
             const centerX = cardRect.left + cardRect.width / 2;
             const centerY = cardRect.top + cardRect.height / 2;
 
+            // Music Box Check (ID 7)
+            // Actually, music box is active use.
+            // Tome Check (ID 8) - Passive +2 coins
+            const hasTome = game.inventory.some(i => i.type === 'item' && i.id === 8);
+
             let willBreak = false;
             let brokeName = null;
 
@@ -2061,7 +2265,7 @@ function pickCard(idx, event) {
                     game.slainStack.push(card);
                 }
 
-                game.soulCoins += card.val;
+                game.soulCoins += card.val + (hasTome ? 2 : 0);
                 if (dmg === 0) {
                     spawnFloatingText("CRITICAL HIT!", centerX, centerY - 60, '#ffcc00');
                 }
@@ -2071,7 +2275,24 @@ function pickCard(idx, event) {
                     triggerShake(10, 20);
                 }
 
-                game.hp -= dmg;
+                // Mirror Check (ID 6)
+                if (game.hp - dmg <= 0) {
+                    const mirrorIdx = game.inventory.findIndex(i => i.type === 'item' && i.id === 6);
+                    if (mirrorIdx !== -1) {
+                        game.inventory.splice(mirrorIdx, 1);
+                        dmg = 0; game.hp = 1;
+                        
+                        // Mirror Shatter FX
+                        spawnAboveModalTexture('spark_01.png', centerX, centerY, 40, { tint: '#ffffff', blend: 'lighter', sizeRange: [10, 40], spread: 60, decay: 0.03 });
+                        spawnAboveModalTexture('slash_02.png', centerX, centerY, 8, { tint: '#aaffff', blend: 'lighter', sizeRange: [40, 100], spread: 40, decay: 0.05 });
+                        triggerShake(20, 40);
+
+                        spawnFloatingText("MIRROR SHATTERED!", centerX, centerY, '#ffffff');
+                        logMsg("Silver Mirror shattered to save your life!");
+                    }
+                }
+
+                if (dmg > 0) takeDamage(dmg);
                 updateUI();
 
                 // Animate card death (flip) and then remove from combat array
@@ -2111,6 +2332,7 @@ function pickCard(idx, event) {
                 game.weapon = gift;
                 game.weaponDurability = Infinity;
                 game.slainStack = [];
+                game.merchantUsed = true;
                 logMsg(`Merchant's Blessing: Equipped ${gift.name}.`);
             } else if (gift.type === 'potion') {
                 const heal = Math.min(gift.val, game.maxHp - game.hp);
@@ -2121,6 +2343,7 @@ function pickCard(idx, event) {
                 // Resetting durability effectively "cleans" it for a first hit again
                 game.weaponDurability = Infinity;
                 game.slainStack = []; // Clear trophies when cleansed
+                game.merchantUsed = true;
                 logMsg(`Merchant's Repair: ${game.weapon.name} boosted by +${gift.val}!`);
             }
 
@@ -2131,10 +2354,13 @@ function pickCard(idx, event) {
             return;
         case 'bonfire':
             spawnAboveModalTexture('flame_03.png', window.innerWidth / 2, window.innerHeight / 2, 30, { tint: '#ff6600', blend: 'lighter', sizeRange: [48, 160], intensity: 1.45 });
-            const bonfireHeal = Math.min(card.val, game.maxHp - game.hp);
+            // Herbs Check (ID 5)
+            const hasHerbs = game.inventory.some(i => i.type === 'item' && i.id === 5);
+            const bonfireHeal = Math.min(card.val + (hasHerbs ? 5 : 0), game.maxHp - game.hp);
             game.hp += bonfireHeal;
             logMsg(`Rested at bonfire. Vitality +${bonfireHeal}.`);
 
+            game.bonfireUsed = true;
             game.activeRoom.restRemaining--;
             updateUI();
 
@@ -2198,6 +2424,7 @@ function finishRoom() {
             // Update message and show descend button immediately
             document.getElementById('combatMessage').innerText = "Floor Purged! Stairs revealed.";
             document.getElementById('descendBtn').style.display = 'block';
+            document.getElementById('descendBtn').onclick = startIntermission;
             document.getElementById('exitCombatBtn').style.display = 'none';
             logMsg("Floor Purged! Stairs revealed.");
         } else {
@@ -2247,9 +2474,12 @@ window.handleBonfire = function (cost) {
     if (room.restRemaining < cost) return;
 
     room.restRemaining -= cost;
-    const heal = Math.min(5 * cost, game.maxHp - game.hp);
+    // Herbs Check (ID 5)
+    const hasHerbs = game.inventory.some(i => i.type === 'item' && i.id === 5);
+    const heal = Math.min((5 * cost) + (hasHerbs ? 5 : 0), game.maxHp - game.hp);
     game.hp += heal;
 
+    game.bonfireUsed = true;
     spawnAboveModalTexture('flame_03.png', window.innerWidth / 2, window.innerHeight / 2, 30, { tint: '#ff6600', blend: 'lighter', sizeRange: [48, 160], intensity: 1.45 });
     logMsg(`Bonfire Rest: +${heal} Vitality.`);
 
@@ -2305,6 +2535,84 @@ function gameOver() {
     location.reload();
 }
 
+window.useItem = function(idx) {
+    const item = game.inventory[idx];
+    
+    // Handle Swap/Discard for Pending Purchase
+    if (game.pendingPurchase) {
+        const newItem = game.pendingPurchase.item;
+        const oldItem = item;
+        
+        // Refund 1/4th value
+        const refund = Math.floor(oldItem.cost / 4);
+        game.soulCoins += refund;
+        
+        // Remove old item
+        game.inventory.splice(idx, 1);
+        if (oldItem.type === 'armor') {
+            game.maxAp -= oldItem.ap;
+            game.ap = Math.min(game.ap, game.maxAp); // Clamp current AP to new max
+        }
+        
+        // Buy new item
+        game.soulCoins -= newItem.cost;
+        game.inventory.push(newItem);
+        if (newItem.type === 'armor') {
+            game.maxAp += newItem.ap;
+            game.ap += newItem.ap;
+        }
+        
+        spawnFloatingText(`Swapped! +${refund} coins`, window.innerWidth/2, window.innerHeight/2, '#00ff00');
+        
+        // Update Shop Card Visuals
+        if (game.pendingPurchase.cardElement) {
+            game.pendingPurchase.cardElement.style.opacity = 0.5;
+            game.pendingPurchase.cardElement.style.pointerEvents = 'none';
+        }
+        
+        game.pendingPurchase = null;
+        document.getElementById('shopCoinDisplay').innerText = game.soulCoins;
+        updateUI();
+        return;
+    }
+
+    if (!item || item.type !== 'active') return;
+
+    if (item.id === 0) { // Bomb
+        if (game.combatCards.length > 0) {
+            const enemies = game.combatCards.filter(c => c.type === 'monster');
+            if (enemies.length > 0) {
+                const target = enemies[Math.floor(Math.random() * enemies.length)];
+                const dmg = game.weapon ? Math.max(2, game.weapon.val - 2) : 2;
+                target.val = Math.max(0, target.val - dmg);
+                spawnFloatingText("BOMB!", window.innerWidth/2, window.innerHeight/2, '#ff0000');
+                logMsg(`Bomb hit ${target.name} for ${dmg} dmg.`);
+                game.inventory.splice(idx, 1);
+                updateUI();
+                showCombat(); // Refresh cards
+            }
+        }
+    } else if (item.id === 2) { // Skeleton Key
+        if (game.activeRoom && game.activeRoom.state !== 'cleared') {
+            game.lastAvoided = false; // Bypass restriction
+            avoidRoom();
+            game.inventory.splice(idx, 1);
+            updateUI();
+        }
+    } else if (item.id === 4) { // Hourglass
+        // Reshuffle room logic would go here, complex to implement cleanly without deck manipulation
+        // For now, let's make it heal 5 HP as a placeholder or skip
+        logMsg("Time shifts... (Effect pending)");
+    } else if (item.id === 7) { // Music Box
+        game.combatCards.forEach(c => {
+            if (c.type === 'monster') c.val = Math.max(0, c.val - 2);
+        });
+        game.inventory.splice(idx, 1);
+        updateUI();
+        showCombat();
+    }
+};
+
 // --- UI UTILS ---
 function updateUI() {
     // Update Sidebar
@@ -2318,6 +2626,21 @@ function updateUI() {
     // Update Modal
     document.getElementById('hpValueModal').innerText = game.hp;
     document.getElementById('hpBarModal').style.width = `${(game.hp / game.maxHp) * 100}%`;
+
+    // Update AP Bar (Inject if needed)
+    let apBar = document.getElementById('apBarModal');
+    if (!apBar) {
+        const hpContainer = document.getElementById('hpBarModal').parentNode;
+        // FIX: Ensure parent is relative so absolute child is contained
+        if (getComputedStyle(hpContainer).position === 'static') {
+            hpContainer.style.position = 'relative';
+        }
+        apBar = document.createElement('div');
+        apBar.id = 'apBarModal';
+        apBar.style.cssText = "position:absolute; top:0; left:0; height:100%; background:#88aaff; opacity:0.6; transition: width 0.3s;";
+        hpContainer.appendChild(apBar);
+    }
+    apBar.style.width = `${(game.ap / Math.max(1, game.maxAp)) * 100}%`;
 
     // Inject Soul Coins UI if missing
     const weaponDurEl = document.getElementById('weaponDurSidebar');
@@ -2377,6 +2700,98 @@ function updateUI() {
         document.getElementById('weaponDurSidebar').innerText = "No limit";
     }
 
+    // Update Inventory UI
+    let invContainer = document.getElementById('inventorySidebar');
+    if (!invContainer) {
+        invContainer = document.createElement('div');
+        invContainer.id = 'inventorySidebar';
+        invContainer.style.cssText = "display:grid; grid-template-columns:repeat(3, 1fr); gap:4px; margin-top:10px;";
+        document.querySelector('.sidebar').appendChild(invContainer);
+    } else {
+        // Reset style in case it was highlighted for swap
+        invContainer.style.boxShadow = "none";
+    }
+
+    // Create Tooltip Element if missing
+    let tooltip = document.getElementById('gameTooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.id = 'gameTooltip';
+        tooltip.style.cssText = "position:fixed; pointer-events:none; background:rgba(0,0,0,0.95); border:1px solid #666; color:#fff; padding:8px; font-size:12px; z-index:10000; display:none; max-width:200px; border-radius:4px; box-shadow: 0 4px 8px rgba(0,0,0,0.5);";
+        document.body.appendChild(tooltip);
+    }
+
+    invContainer.innerHTML = '';
+    for(let i=0; i<6; i++) {
+        const slot = document.createElement('div');
+        slot.style.cssText = "width:100%; aspect-ratio:1; background:rgba(0,0,0,0.5); border:1px solid #444; position:relative; cursor: pointer;";
+        if (game.inventory[i]) {
+            const item = game.inventory[i];
+            const asset = getAssetData(item.type, item.id, null);
+            
+            // Broken Armor Tint (Red)
+            const isBroken = (item.type === 'armor' && game.ap <= 0);
+            const filterStyle = isBroken ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
+            
+            slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:900% 100%; background-position:${asset.uv.u * 112.5}% 0%; ${filterStyle}" onclick="useItem(${i})"></div>`;
+            
+            // Tooltip Events
+            slot.onmouseenter = () => {
+                tooltip.style.display = 'block';
+                tooltip.innerHTML = `<strong style="color:#ffd700; font-size:13px;">${item.name}</strong><br/><span style="color:#aaa; font-size:11px;">${item.type === 'armor' ? `+${item.ap} AP` : 'Item'}</span><br/><div style="margin-top:4px; color:#ddd;">${item.desc || ''}</div>`;
+                const rect = slot.getBoundingClientRect();
+                tooltip.style.left = (rect.right + 10) + 'px';
+                tooltip.style.top = rect.top + 'px';
+            };
+            slot.onmouseleave = () => {
+                tooltip.style.display = 'none';
+            };
+        }
+        invContainer.appendChild(slot);
+    }
+
+    // Update Combat Modal Inventory (New)
+    let combatInvContainer = document.getElementById('combatInventory');
+    if (!combatInvContainer) {
+        const weaponDetail = document.getElementById('weaponLastDealModal');
+        if (weaponDetail && weaponDetail.parentNode) {
+            combatInvContainer = document.createElement('div');
+            combatInvContainer.id = 'combatInventory';
+            combatInvContainer.style.cssText = "display:flex; gap:6px; margin-top:12px; flex-wrap:wrap;";
+            weaponDetail.parentNode.appendChild(combatInvContainer);
+        }
+    }
+
+    if (combatInvContainer) {
+        combatInvContainer.innerHTML = '';
+        for(let i=0; i<game.inventory.length; i++) {
+            const item = game.inventory[i];
+            const slot = document.createElement('div');
+            slot.style.cssText = "width:48px; height:48px; background:rgba(0,0,0,0.5); border:1px solid #666; position:relative; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5);";
+            
+            const asset = getAssetData(item.type, item.id, null);
+            slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:900% 100%; background-position:${asset.uv.u * 112.5}% 0%;" onclick="useItem(${i})"></div>`;
+
+            // Tooltip Events
+            slot.onmouseenter = () => {
+                const tooltip = document.getElementById('gameTooltip');
+                if (tooltip) {
+                    tooltip.style.display = 'block';
+                    tooltip.innerHTML = `<strong style="color:#ffd700; font-size:13px;">${item.name}</strong><br/><span style="color:#aaa; font-size:11px;">${item.type === 'armor' ? `+${item.ap} AP` : 'Item'}</span><br/><div style="margin-top:4px; color:#ddd;">${item.desc || ''}</div>`;
+                    const rect = slot.getBoundingClientRect();
+                    tooltip.style.left = (rect.right + 10) + 'px';
+                    tooltip.style.top = (rect.top - 40) + 'px';
+                }
+            };
+            slot.onmouseleave = () => {
+                const tooltip = document.getElementById('gameTooltip');
+                if (tooltip) tooltip.style.display = 'none';
+            };
+
+            combatInvContainer.appendChild(slot);
+        }
+    }
+
     // Global buttons
     document.getElementById('modalAvoidBtn').disabled = (game.lastAvoided || game.chosenCount > 0);
 
@@ -2414,12 +2829,22 @@ function getAssetData(type, value, suit, extra) {
         file = extra.type === 'weapon' ? 'diamond.png' : 'heart.png';
         v = extra.val; s = extra.suit;
     }
+    else if (type === 'armor') {
+        file = 'armor.png';
+        v = value;
+    }
+    else if (type === 'item') {
+        file = 'items.png';
+        v = value;
+    }
 
     let cellIdx = 0;
     if (type === 'block') {
         cellIdx = value % 9;
     } else if (type === 'bonfire') {
         cellIdx = 0; // rest_m.png
+    } else if (type === 'armor' || type === 'item') {
+        cellIdx = value; // Direct mapping 0-8
     } else {
         // WEIGHTED MAPPING (Must match getMonsterName)
         if (v <= 3) cellIdx = 0;
@@ -2461,6 +2886,5 @@ function logMsg(m) {
 document.getElementById('newGameBtn').onclick = startDive;
 document.getElementById('modalAvoidBtn').onclick = avoidRoom;
 document.getElementById('exitCombatBtn').onclick = closeCombat;
-document.getElementById('descendBtn').onclick = descendToNextFloor;
+document.getElementById('descendBtn').onclick = startIntermission;
 document.getElementById('bonfireNotNowBtn').onclick = closeCombat;
-{/* </script> */ }
