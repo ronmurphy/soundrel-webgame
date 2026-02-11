@@ -32,15 +32,15 @@ const game = {
 };
 
 const ARMOR_DATA = [
-    { id: 0, name: "Studded Gloves", ap: 2, cost: 25, desc: "Light hand protection." },
-    { id: 1, name: "Articulated Gauntlets", ap: 5, cost: 50, desc: "Heavy plated hand protection." },
-    { id: 2, name: "Iron Pot Helm", ap: 5, cost: 45, desc: "Solid iron headgear." },
-    { id: 3, name: "Heavy Greaves", ap: 5, cost: 45, desc: "Thick leg armor." },
-    { id: 4, name: "Padded Gambeson", ap: 1, cost: 25, desc: "Basic cloth armor." },
-    { id: 5, name: "Reinforced Leather", ap: 2, cost: 30, desc: "Hardened leather chestpiece." },
-    { id: 6, name: "Chainmail Hauberk", ap: 3, cost: 40, desc: "Interlinked metal rings." },
-    { id: 7, name: "Steel Breastplate", ap: 4, cost: 55, desc: "Solid steel chest protection." },
-    { id: 8, name: "Gothic Plate", ap: 5, cost: 75, desc: "Masterwork full plate." }
+    { id: 0, name: "Studded Gloves", ap: 2, cost: 25, slot: "hands", desc: "Light hand protection." },
+    { id: 1, name: "Articulated Gauntlets", ap: 5, cost: 50, slot: "hands", desc: "Heavy plated hand protection." },
+    { id: 2, name: "Iron Pot Helm", ap: 5, cost: 45, slot: "head", desc: "Solid iron headgear." },
+    { id: 3, name: "Heavy Greaves", ap: 5, cost: 45, slot: "legs", desc: "Thick leg armor." },
+    { id: 4, name: "Padded Gambeson", ap: 1, cost: 25, slot: "chest", desc: "Basic cloth armor." },
+    { id: 5, name: "Reinforced Leather", ap: 2, cost: 30, slot: "chest", desc: "Hardened leather chestpiece." },
+    { id: 6, name: "Chainmail Hauberk", ap: 3, cost: 40, slot: "chest", desc: "Interlinked metal rings." },
+    { id: 7, name: "Steel Breastplate", ap: 4, cost: 55, slot: "chest", desc: "Solid steel chest protection." },
+    { id: 8, name: "Gothic Plate", ap: 5, cost: 75, slot: "chest", desc: "Masterwork full plate." }
 ];
 
 const ITEM_DATA = [
@@ -1413,11 +1413,22 @@ function createEmojiSprite(emoji, size = 1.5) {
 
 function takeDamage(amount) {
     let remaining = amount;
-    if (game.ap > 0) {
-        const absorb = Math.min(game.ap, remaining);
-        game.ap -= absorb;
-        remaining -= absorb;
+    const protectionFloor = game.inventory.filter(i => i.type === 'armor').length;
+
+    if (game.ap > protectionFloor) {
+        // We have pool above the floor
+        const availablePool = game.ap - protectionFloor;
+        const absorption = Math.min(availablePool, remaining);
+        game.ap -= absorption;
+        remaining -= absorption;
     }
+
+    // Now subtract the permanent floor block from the remaining damage
+    // Note: The floor blocks damage EVERY hit if there is remaining damage.
+    if (remaining > 0) {
+        remaining = Math.max(0, remaining - protectionFloor);
+    }
+
     game.hp -= remaining;
 }
 
@@ -1958,6 +1969,13 @@ function startIntermission() {
 
         card.onclick = () => {
             if (game.soulCoins >= item.cost) {
+                // Slot Restriction Check
+                const slotTaken = item.type === 'armor' && game.inventory.some(i => i.type === 'armor' && i.slot === item.slot);
+                if (slotTaken) {
+                    spawnFloatingText(`Already wearing a ${item.slot} piece!`, window.innerWidth / 2, window.innerHeight / 2, '#ffaa00');
+                    return;
+                }
+
                 if (game.inventory.length >= 6) {
                     // Enter Swap Mode
                     game.pendingPurchase = { item: item, cardElement: card };
@@ -2379,6 +2397,7 @@ function pickCard(idx, event) {
             game.weaponDurability = Infinity;
             game.slainStack = [];
             logMsg(`Equipped ${card.name}. First kill has no level limit.`);
+            updateUI(); // Ensure immediate feedback
             break;
         case 'monster':
             game.combatBusy = true;
@@ -2847,6 +2866,20 @@ window.useItem = function (idx) {
         const newItem = game.pendingPurchase.item;
         const oldItem = item;
 
+        // Slot Restriction Check: If the old item isn't an armor piece in the same slot, 
+        // and they are swapping an armor for a different slot, it might be weird.
+        // ButScoundrel usually just swaps the specific inventory index.
+        // However, the user wants "only 1 helm, one chest, 1 legs, 1 hand".
+        // If they are buying armor, we should check if they already have that slot.
+        const sameSlotItemIdx = game.inventory.findIndex((invItem, i) =>
+            invItem.type === 'armor' && newItem.type === 'armor' && invItem.slot === newItem.slot && i !== idx
+        );
+
+        if (sameSlotItemIdx !== -1 && newItem.type === 'armor') {
+            spawnFloatingText("Already have armor in this slot!", window.innerWidth / 2, window.innerHeight / 2, '#ffaa00');
+            return;
+        }
+
         // Refund 1/4th value
         const refund = Math.floor(oldItem.cost / 4);
         game.soulCoins += refund;
@@ -2971,22 +3004,30 @@ function updateUI() {
     }
     const coinEl = document.getElementById('soulCoinsValueSidebar');
     if (coinEl) coinEl.innerText = game.soulCoins;
+    const coinModalEl = document.getElementById('soulCoinsValueModal');
+    if (coinModalEl) coinModalEl.innerText = game.soulCoins;
 
     const floorEl = document.getElementById('floorValue');
     if (floorEl) floorEl.innerText = game.floor;
+    const floorModalEl = document.getElementById('floorValueModal');
+    if (floorModalEl) floorModalEl.innerText = game.floor;
+
+    const totalRooms = game.rooms ? game.rooms.filter(r => !r.isWaypoint).length : 0;
+    const clearedRooms = game.rooms ? game.rooms.filter(r => !r.isWaypoint && r.state === 'cleared').length : 0;
 
     const progressEl = document.getElementById('progressValue');
-    if (progressEl && game.rooms) {
-        const total = game.rooms.filter(r => !r.isWaypoint).length;
-        const cleared = game.rooms.filter(r => !r.isWaypoint && r.state === 'cleared').length;
-        progressEl.innerText = `${cleared} / ${total}`;
-    }
+    if (progressEl) progressEl.innerText = `${clearedRooms} / ${totalRooms}`;
+    const progressModalEl = document.getElementById('progressValueModal');
+    if (progressModalEl) progressModalEl.innerText = `${clearedRooms} / ${totalRooms}`;
 
     const deckEl = document.getElementById('deckValue');
     if (deckEl) deckEl.innerText = game.deck.length;
+    const deckModalEl = document.getElementById('deckValueModal');
+    if (deckModalEl) deckModalEl.innerText = game.deck.length;
 
     const weaponLabel = document.getElementById('weaponNameModal');
     const weaponDetail = document.getElementById('weaponLastDealModal');
+    const weaponArtModal = document.getElementById('weaponArtModal');
 
     if (game.weapon) {
         // Ensure name doesn't already have (X) before adding it
@@ -2995,23 +3036,37 @@ function updateUI() {
         weaponDetail.innerText = game.weaponDurability === Infinity ? "Clean Weapon: No limit" : `Bloody: Next <${game.weaponDurability}`;
         weaponLabel.style.color = 'var(--gold)';
 
-        // Update Sidebar Slot
         const asset = getAssetData('weapon', game.weapon.val, game.weapon.suit);
-        const weaponArt = document.getElementById('weaponArtSidebar');
-        weaponArt.style.backgroundImage = `url('assets/images/${asset.file}')`;
-        weaponArt.style.backgroundPosition = `${asset.uv.u * 112.5}% 0%`;
-        document.getElementById('weaponNameSidebar').innerText = `${cleanName} (${game.weapon.val})`;
-        document.getElementById('weaponDurSidebar').innerText = game.weaponDurability === Infinity ? "Next: Any" : `Next: <${game.weaponDurability}`;
+
+        // Update Modal Art
+        if (weaponArtModal) {
+            weaponArtModal.style.backgroundImage = `url('assets/images/${asset.file}')`;
+            weaponArtModal.style.backgroundPosition = `${asset.uv.u * 112.5}% 0%`;
+        }
+
+        // Update Sidebar Slot
+        const weaponArtSidebar = document.getElementById('weaponArtSidebar');
+        if (weaponArtSidebar) {
+            weaponArtSidebar.style.backgroundImage = `url('assets/images/${asset.file}')`;
+            weaponArtSidebar.style.backgroundPosition = `${asset.uv.u * 112.5}% 0%`;
+        }
+        const nameSidebar = document.getElementById('weaponNameSidebar');
+        if (nameSidebar) nameSidebar.innerText = `${cleanName} (${game.weapon.val})`;
+        const durSidebar = document.getElementById('weaponDurSidebar');
+        if (durSidebar) durSidebar.innerText = game.weaponDurability === Infinity ? "Next: Any" : `Next: <${game.weaponDurability}`;
     } else {
         weaponLabel.innerText = "BARE HANDS";
         weaponDetail.innerText = "No protection";
         weaponLabel.style.color = '#fff';
+        if (weaponArtModal) weaponArtModal.style.backgroundImage = "none";
 
         // Update Sidebar Slot
-        const weaponArt = document.getElementById('weaponArtSidebar');
-        weaponArt.style.backgroundImage = "none";
-        document.getElementById('weaponNameSidebar').innerText = "UNARMED";
-        document.getElementById('weaponDurSidebar').innerText = "No limit";
+        const weaponArtSidebar = document.getElementById('weaponArtSidebar');
+        if (weaponArtSidebar) weaponArtSidebar.style.backgroundImage = "none";
+        const nameSidebar = document.getElementById('weaponNameSidebar');
+        if (nameSidebar) nameSidebar.innerText = "UNARMED";
+        const durSidebar = document.getElementById('weaponDurSidebar');
+        if (durSidebar) durSidebar.innerText = "No limit";
     }
 
     // Update Inventory UI
@@ -3035,77 +3090,69 @@ function updateUI() {
         document.body.appendChild(tooltip);
     }
 
+    const protectionFloor = game.inventory.filter(i => i.type === 'armor').length;
+    const isArmorBroken = game.ap <= protectionFloor;
+
     invContainer.innerHTML = '';
     for (let i = 0; i < 6; i++) {
         const slot = document.createElement('div');
         slot.style.cssText = "width:100%; aspect-ratio:1; background:rgba(0,0,0,0.5); border:1px solid #444; position:relative; cursor: pointer;";
         if (game.inventory[i]) {
             const item = game.inventory[i];
-            // For potions, use val. For items/armor, use id.
             const val = item.type === 'potion' ? item.val : item.id;
             const asset = getAssetData(item.type, val, item.suit);
 
-            // Broken Armor Tint (Red)
-            const isBroken = (item.type === 'armor' && game.ap <= 0);
-            const filterStyle = isBroken ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
+            // Broken Armor Tint (Red) - only if it's armor and we are at the floor
+            const tint = (item.type === 'armor' && isArmorBroken) ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
 
-            slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:900% 100%; background-position:${asset.uv.u * 112.5}% 0%; ${filterStyle}" onclick="useItem(${i})"></div>`;
+            slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:900% 100%; background-position:${asset.uv.u * 112.5}% 0%; ${tint}" onclick="useItem(${i})"></div>`;
 
             // Tooltip Events
             slot.onmouseenter = () => {
                 tooltip.style.display = 'block';
-                tooltip.innerHTML = `<strong style="color:#ffd700; font-size:13px;">${item.name}</strong><br/><span style="color:#aaa; font-size:11px;">${item.type === 'armor' ? `+${item.ap} AP` : 'Item'}</span><br/><div style="margin-top:4px; color:#ddd;">${item.desc || ''}</div>`;
+                tooltip.innerHTML = `<strong style="color:#ffd700; font-size:13px;">${item.name}</strong><br/><span style="color:#aaa; font-size:11px;">${item.type === 'armor' ? `+${item.ap} AP (${item.slot})` : 'Item'}</span><br/><div style="margin-top:4px; color:#ddd;">${item.desc || ''}</div>`;
                 const rect = slot.getBoundingClientRect();
                 tooltip.style.left = (rect.right + 10) + 'px';
                 tooltip.style.top = rect.top + 'px';
             };
-            slot.onmouseleave = () => {
-                tooltip.style.display = 'none';
-            };
+            slot.onmouseleave = () => { tooltip.style.display = 'none'; };
         }
         invContainer.appendChild(slot);
     }
 
-    // Update Combat Modal Inventory (New)
+    // Update Combat Modal Inventory (Segment 2)
     let combatInvContainer = document.getElementById('combatInventory');
-    if (!combatInvContainer) {
-        const weaponDetail = document.getElementById('weaponLastDealModal');
-        if (weaponDetail && weaponDetail.parentNode) {
-            combatInvContainer = document.createElement('div');
-            combatInvContainer.id = 'combatInventory';
-            combatInvContainer.style.cssText = "display:flex; gap:6px; margin-top:12px; flex-wrap:wrap;";
-            weaponDetail.parentNode.appendChild(combatInvContainer);
-        }
-    }
-
     if (combatInvContainer) {
         combatInvContainer.innerHTML = '';
-        for (let i = 0; i < game.inventory.length; i++) {
-            const item = game.inventory[i];
+        for (let i = 0; i < 6; i++) {
             const slot = document.createElement('div');
-            slot.style.cssText = "width:48px; height:48px; background:rgba(0,0,0,0.5); border:1px solid #666; position:relative; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.5);";
+            // Size and border now handled by CSS .combat-inventory-grid > div
+            slot.style.position = "relative";
+            slot.style.cursor = "pointer";
+            slot.style.transition = "background 0.2s, transform 0.1s";
 
-            // For potions, use val. For items/armor, use id.
-            const val = item.type === 'potion' ? item.val : item.id;
-            const asset = getAssetData(item.type, val, item.suit);
-            slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:900% 100%; background-position:${asset.uv.u * 112.5}% 0%;" onclick="useItem(${i})"></div>`;
+            if (game.inventory[i]) {
+                const item = game.inventory[i];
+                const val = item.type === 'potion' ? item.val : item.id;
+                const asset = getAssetData(item.type, val, item.suit);
+                const tint = (item.type === 'armor' && isArmorBroken) ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
 
-            // Tooltip Events
-            slot.onmouseenter = () => {
-                const tooltip = document.getElementById('gameTooltip');
-                if (tooltip) {
+                slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:900% 100%; background-position:${asset.uv.u * 112.5}% 0%; ${tint}" onclick="useItem(${i})"></div>`;
+
+                // Tooltip Events
+                slot.onmouseenter = () => {
                     tooltip.style.display = 'block';
-                    tooltip.innerHTML = `<strong style="color:#ffd700; font-size:13px;">${item.name}</strong><br/><span style="color:#aaa; font-size:11px;">${item.type === 'armor' ? `+${item.ap} AP` : 'Item'}</span><br/><div style="margin-top:4px; color:#ddd;">${item.desc || ''}</div>`;
+                    tooltip.innerHTML = `<strong style="color:#ffd700; font-size:13px;">${item.name}</strong><br/><span style="color:#aaa; font-size:11px;">${item.type === 'armor' ? `+${item.ap} AP (${item.slot})` : 'Item'}</span><br/><div style="margin-top:4px; color:#ddd;">${item.desc || ''}</div>`;
                     const rect = slot.getBoundingClientRect();
-                    tooltip.style.left = (rect.right + 10) + 'px';
-                    tooltip.style.top = (rect.top - 40) + 'px';
-                }
-            };
-            slot.onmouseleave = () => {
-                const tooltip = document.getElementById('gameTooltip');
-                if (tooltip) tooltip.style.display = 'none';
-            };
-
+                    tooltip.style.left = (rect.left) + 'px';
+                    tooltip.style.top = (rect.top - 80) + 'px';
+                    slot.style.background = "rgba(255,255,255,0.15)";
+                };
+                slot.onmouseleave = () => {
+                    tooltip.style.display = 'none';
+                    slot.style.background = "rgba(255,255,255,0.05)";
+                };
+            }
             combatInvContainer.appendChild(slot);
         }
     }
@@ -3125,6 +3172,9 @@ function updateUI() {
             shelf.appendChild(t);
         });
     }
+
+    // Call portrait update to ensure it stays snapped to the bar if it shifts
+    updateMerchantPortraitPosition();
 }
 
 function ensureMerchantPortrait() {
@@ -3152,8 +3202,8 @@ function updateMerchantPortraitPosition() {
         const rect = combatArea.getBoundingClientRect();
 
         // Calculate distance from bottom of screen to top of combat area
-        // This ensures the merchant stands ON TOP of the UI, regardless of padding
-        const bottomOffset = (window.innerHeight - rect.top) + 8;
+        // We use exactly the top to sit him flush on the border
+        const bottomOffset = (window.innerHeight - rect.top);
 
         mp.style.bottom = `${bottomOffset}px`;
         mp.style.top = 'auto';
