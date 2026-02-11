@@ -251,6 +251,32 @@ h1 {
     justify-content: flex-end;
 }
 
+/* Boss Fight Grid Layout */
+.enemy-area.boss-grid {
+    display: grid;
+    grid-template-columns: 160px 220px 160px;
+    grid-template-rows: 220px 140px 140px;
+    gap: 20px;
+    justify-content: center;
+    align-content: center;
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.card.boss-guardian {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+    border-color: #ff0000;
+    box-shadow: 0 0 30px #8b0000;
+}
+.card.boss-weapon { grid-column: 1; grid-row: 2; }
+.card.boss-potion { grid-column: 3; grid-row: 2; }
+.card.boss-armor { grid-column: 2; grid-row: 3; }
+
 /* Bottom Left: Player Combat Info */
 .player-combat-area {
     align-self: flex-start;
