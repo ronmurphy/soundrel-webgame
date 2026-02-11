@@ -1,6 +1,7 @@
 // <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { SoundManager } from './sound-manager.js';
 
 // --- CORE GAME STATE ---
 const game = {
@@ -198,6 +199,25 @@ let corridorMeshes = new Map();
 let doorMeshes = new Map();
 let decorationMeshes = []; // Store instanced meshes for cleanup
 let treePositions = []; // Store tree locations for FX
+
+// Audio State
+const audio = new SoundManager();
+
+function preloadSounds() {
+    // Placeholders - You will need to add these files to assets/sounds/
+    audio.load('torch_loop', 'assets/sounds/torch.ogg');
+    audio.load('bonfire_loop', 'assets/sounds/campfire.ogg');
+    audio.load('card_flip', 'assets/sounds/card_flip.ogg');
+    audio.load('attack_slash', 'assets/sounds/attack_slash.ogg');
+    audio.load('attack_blunt', 'assets/sounds/attack_blunt.ogg');
+    audio.load('bgm_dungeon', 'assets/sounds/bgm_dungeon.ogg');
+    audio.load('footstep', 'assets/sounds/footstep.ogg');
+    audio.load('card_shuffle', 'assets/sounds/card_shuffle.ogg');
+
+    // Use code-generated sounds for missing files (like torch/bonfire):
+    // audio.loadPlaceholders();
+}
+
 let ghosts = []; // Active ghost sprites
 let is3DView = true;
 let playerSprite;
@@ -821,6 +841,38 @@ function updateWisps(ctx) {
     });
 }
 
+function updateSpatialAudio() {
+    if (!audio.initialized) return;
+
+    // 1. Torch Loop (Based on Zoom)
+    // Louder when zoomed in (camera.zoom higher)
+    // camera.zoom ranges from 0.5 (far) to 2.0 (close)
+    if (torchLight) {
+        // Map zoom 0.5->2.0 to volume 0.1->0.6
+        const zoomFactor = (camera.zoom - 0.5) / 1.5;
+        const torchVol = 0.05 + (zoomFactor * 0.25); // Reduced volume for OGG file
+        audio.setLoopVolume('torch', torchVol);
+    }
+
+    // 2. Bonfire Loops (Based on Distance to Center of Screen)
+    game.rooms.forEach(r => {
+        if (r.isBonfire && r.state !== 'cleared') {
+            const loopId = `bonfire_${r.id}`;
+            // Calculate distance from room center to camera target (center of screen)
+            const roomPos = new THREE.Vector3(r.gx, 0, r.gy);
+            const dist = roomPos.distanceTo(controls.target);
+
+            // Attenuate volume: Full volume at 0 dist, 0 volume at 15 units
+            const maxDist = 15;
+            let vol = Math.max(0, 1 - (dist / maxDist));
+            // Also scale by zoom so it gets louder when we look closely
+            vol *= (camera.zoom * 0.4); // Reduced volume scaling
+
+            audio.setLoopVolume(loopId, vol);
+        }
+    });
+}
+
 function resizeFXCanvas() {
     fxCanvas.width = window.innerWidth;
     fxCanvas.height = window.innerHeight;
@@ -903,6 +955,9 @@ function init3D() {
     window.addEventListener('click', on3DClick);
 }
 
+// Initialize Audio on first interaction
+window.addEventListener('click', () => audio.init(), { once: true });
+
 function createFogRings() {
     // Remove existing rings
     clearFogRings();
@@ -983,6 +1038,10 @@ function update3DScene() {
         // Torch Flicker Juice
         const flicker = 1.0 + (Math.random() - 0.5) * 0.15;
         torchLight.intensity *= flicker;
+
+        // Start torch sound if not playing
+        // Note: This check is cheap in the loop map
+        if (audio.initialized) audio.startLoop('torch', 'torch_loop', { volume: 0 });
 
         torchLight.position.set(playerSprite.position.x, 2.5, playerSprite.position.z);
 
@@ -1074,6 +1133,10 @@ function update3DScene() {
                             // Fire should be at rDepth + 1.
                             fire.position.set(0, rDepth / 2 + 1, 0);
                             mesh.add(fire);
+
+                            // Start spatial sound for this bonfire
+                            if (audio.initialized)
+                                audio.startLoop(`bonfire_${r.id}`, 'bonfire_loop', { volume: 0 });
                         }
 
                         mesh.receiveShadow = true;
@@ -1158,6 +1221,7 @@ function animate3D() {
     updateFX();
     // Update UI FX canvas (draw on top of modal as needed)
     updateUIFX();
+    updateSpatialAudio();
 
     // Animate Player Marker
     if (playerMarker && playerSprite) {
@@ -1242,6 +1306,9 @@ function movePlayerSprite(oldId, newId) {
     const r1 = game.rooms.find(r => r.id === oldId);
     const r2 = game.rooms.find(r => r.id === newId);
     if (!r1 || !r2) return;
+
+    audio.play('footstep', { volume: 0.4, rate: 0.9 + Math.random() * 0.2 });
+
     playerSprite.material.map = (r2.gy > r1.gy) ? walkAnims[game.sex].up : walkAnims[game.sex].down;
     new TWEEN.Tween(playerSprite.position).to({ x: r2.gx, z: r2.gy }, 600).easing(TWEEN.Easing.Quadratic.Out).start();
 }
@@ -1806,6 +1873,7 @@ function finalizeStartDive() {
     clear3DScene(); init3D();
     // Preload FX textures for particle effects
     preloadFXTextures();
+    preloadSounds();
     generateFloorCA(); // Generate Atmosphere and Floor
     updateAtmosphere(game.floor);
 
@@ -1813,6 +1881,9 @@ function finalizeStartDive() {
     updateUI();
     logMsg("The descent begins. Room 0 explored.");
     playerSprite.material.map = walkAnims[game.sex].up;
+
+    // Start BGM
+    audio.startLoop('bgm', 'bgm_dungeon', { volume: 0.4, isMusic: true });
     enterRoom(0);
 }
 
@@ -1848,12 +1919,18 @@ function startIntermission() {
     const brokerContainer = document.createElement('div');
     brokerContainer.style.cssText = "width:100%; text-align:center; margin-bottom:15px; display:flex; flex-direction:column; align-items:center;";
     brokerContainer.innerHTML = `
-        <img src="assets/images/visualnovel/merchant_front.png" style="height:120px; margin-bottom:10px; filter: drop-shadow(0 0 10px rgba(255,215,0,0.3));">
         <div style="color:#d4af37; font-size:24px; font-weight:bold; text-shadow:0 2px 4px #000;">
             Soul Coins: <span id="shopCoinDisplay" style="color:#fff;">${game.soulCoins}</span>
         </div>
     `;
     enemyArea.appendChild(brokerContainer);
+
+    // Show Soul Broker Portrait
+    const mp = ensureMerchantPortrait();
+    mp.innerHTML = `<img src="assets/images/visualnovel/soulbroker.png">`;
+    mp.style.display = 'flex';
+    // Defer update slightly to ensure layout is settled
+    requestAnimationFrame(updateMerchantPortraitPosition);
 
     const itemsContainer = document.createElement('div');
     itemsContainer.style.cssText = "display:flex; justify-content:center; gap:15px; flex-wrap:wrap; width:100%;";
@@ -1949,6 +2026,7 @@ function descendToNextFloor() {
     clear3DScene(); init3D();
     // Preload FX textures for particle effects
     preloadFXTextures();
+    preloadSounds();
     generateFloorCA();
     updateAtmosphere(game.floor);
 
@@ -2036,7 +2114,9 @@ function showCombat() {
     const overlay = document.getElementById('combatModal');
     const enemyArea = document.getElementById('enemyArea');
     overlay.style.display = 'flex';
+    audio.setMusicMuffled(true); // Muffle music during combat
     enemyArea.innerHTML = '';
+    // audio.play('card_shuffle', { volume: 0.5, rate: 0.95 + Math.random() * 0.1 });
 
     game.combatCards.forEach((c, idx) => {
         const card = document.createElement('div');
@@ -2105,18 +2185,13 @@ function showCombat() {
 
     // Merchant portrait and 'Not Now' button for special rooms (merchant)
     const isMerchant = (game.combatCards[0] && game.combatCards[0].type === 'gift');
-    const mp = document.getElementById('merchantPortrait');
-    if (mp) {
-        if (isMerchant) {
-            // Calculate left based on sidebar width so the portrait doesn't get hidden under the panel
-            const sidebar = document.querySelector('.sidebar');
-            const leftOffset = (sidebar && sidebar.getBoundingClientRect) ? (Math.round(sidebar.getBoundingClientRect().width) + 32) : 32;
-            mp.style.left = `${leftOffset}px`;
-            mp.style.display = 'block';
-            mp.style.pointerEvents = 'none';
-        } else {
-            mp.style.display = 'none';
-        }
+    const mp = ensureMerchantPortrait();
+    if (isMerchant) {
+        mp.innerHTML = `<img src="assets/images/visualnovel/merchant_front.png">`;
+        mp.style.display = 'flex';
+        requestAnimationFrame(updateMerchantPortraitPosition);
+    } else {
+        mp.style.display = 'none';
     }
     document.getElementById('bonfireNotNowBtn').style.display = (game.activeRoom && (game.activeRoom.isBonfire || (game.activeRoom.isSpecial && isMerchant)) && game.activeRoom.state !== 'cleared') ? 'inline-block' : 'none';
 
@@ -2189,6 +2264,7 @@ function pickCard(idx, event) {
     const cardEl = event.target.closest('.card');
     cardEl.style.pointerEvents = 'none';
     if (card.type !== 'monster') {
+        audio.play('card_flip', { volume: 0.6 });
         cardEl.style.transform = 'scale(0) rotate(15deg)';
         cardEl.style.opacity = '0';
         cardEl.style.transition = 'all 0.4s cubic-bezier(0.4, 0, 1, 1)';
@@ -2240,6 +2316,7 @@ function pickCard(idx, event) {
 
             // 1. Player Attack Phase (Visuals)
             triggerPlayerAttackAnim(centerX, centerY, !!game.weapon);
+            audio.play(game.weapon ? 'attack_slash' : 'attack_blunt', { volume: 0.8, rate: 0.9 + Math.random() * 0.2 });
 
             // Animate Card Impact (Recoil)
             const recoilAnim = cardEl.animate([
@@ -2368,6 +2445,7 @@ function pickCard(idx, event) {
             game.bonfireUsed = true;
             game.activeRoom.restRemaining--;
             updateUI();
+            audio.stopLoop(`bonfire_${game.activeRoom.id}`); // Stop sound if cleared
 
             // Special exit for bonfire: don't call finishRoom unless out of rests
             document.getElementById('exitCombatBtn').style.display = 'block';
@@ -2458,6 +2536,7 @@ function closeCombat() {
     document.getElementById('combatContainer').style.display = 'flex';
     document.getElementById('bonfireUI').style.display = 'none';
     // Hide merchant portrait when modal is closed
+    audio.setMusicMuffled(false); // Unmuffle music
     const mp = document.getElementById('merchantPortrait');
     if (mp) mp.style.display = 'none';
 }
@@ -2491,6 +2570,7 @@ window.handleBonfire = function (cost) {
     if (room.restRemaining <= 0) {
         room.state = 'cleared';
         logMsg("The fire fades.");
+        audio.stopLoop(`bonfire_${room.id}`);
         updateUI(); // Update HP display before closing
         closeCombat();
     } else {
@@ -2504,7 +2584,7 @@ function updateBonfireUI() {
     document.getElementById('bonfireStatus').innerText = `${room.restRemaining} kindle remaining.`;
 
     // Set Avatar Image
-    const bgUrl = `assets/images/rest_${game.sex}.png`;
+    const bgUrl = `assets/images/rest_${game.sex}_large.png`;
     document.getElementById('bonfireImage').style.backgroundImage = `url('${bgUrl}')`;
 
     // Dim/Disable Buttons
@@ -2814,6 +2894,61 @@ function updateUI() {
     }
 }
 
+function ensureMerchantPortrait() {
+    let mp = document.getElementById('merchantPortrait');
+    if (!mp) {
+        mp = document.createElement('div');
+        mp.id = 'merchantPortrait';
+        document.body.appendChild(mp);
+    }
+
+    // Safety check: ensure no duplicates exist from old versions or weird states
+    const all = document.querySelectorAll('#merchantPortrait');
+    if (all.length > 1) {
+        for (let i = 1; i < all.length; i++) all[i].remove();
+        mp = all[0];
+    }
+
+    return mp;
+}
+
+function updateMerchantPortraitPosition() {
+    const mp = document.getElementById('merchantPortrait');
+    if (!mp || mp.style.display === 'none') return;
+
+    const combatArea = document.querySelector('.player-combat-area');
+    const sidebar = document.querySelector('.sidebar');
+
+    if (combatArea) {
+        const rect = combatArea.getBoundingClientRect();
+
+        // Calculate distance from bottom of screen to top of combat area
+        // Stand the merchant exactly on top of the combat info bar
+        const bottomOffset = (window.innerHeight - rect.top);
+        mp.style.bottom = `${bottomOffset}px`;
+        mp.style.top = 'auto';
+
+        // Dynamic Height Scaling & Clamping
+        // Available space is from top of screen to top of combat area, minus some breathing room
+        const topMargin = 40;
+        const availableHeight = rect.top - topMargin;
+
+        // Clamping: Max height to prevent oversized merchant on large screens (like high-res 1080p)
+        // Min height to ensure visibility on small screens.
+        const maxHeight = Math.min(availableHeight, 700);
+        const clampedHeight = Math.max(200, maxHeight);
+
+        mp.style.height = `${clampedHeight}px`;
+
+        // Position Left: Offset from sidebar
+        const leftOffset = sidebar ? (sidebar.offsetWidth + 40) : 40;
+        mp.style.left = `${leftOffset}px`;
+
+        // Visual polish: Ensure it's visible if we just set style
+        mp.style.display = 'flex';
+    }
+}
+
 // --- ASSET HELPERS ---
 function getUVForCell(cellIdx) {
     // cellIdx is 0-8 for 1x9 horizontal strip
@@ -2829,7 +2964,7 @@ function getAssetData(type, value, suit, extra) {
     else if (type === 'weapon') file = 'diamond.png';
     else if (type === 'potion') file = 'heart.png';
     else if (type === 'block') file = 'block.png';
-    else if (type === 'bonfire') file = 'rest_m.png';
+    else if (type === 'bonfire') file = 'rest_m_large.png';
     else if (type === 'gift' && extra) {
         file = extra.type === 'weapon' ? 'diamond.png' : 'heart.png';
         v = extra.val; s = extra.suit;

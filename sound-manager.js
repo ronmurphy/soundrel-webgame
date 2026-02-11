@@ -1,0 +1,161 @@
+export class SoundManager {
+    constructor() {
+        this.ctx = null;
+        this.buffers = new Map();
+        this.activeLoops = new Map(); // key -> { source, gain }
+        this.masterGain = null;
+        this.musicFilter = null;
+        this.initialized = false;
+    }
+
+    // Must be called after a user gesture (click)
+    init() {
+        if (!this.initialized || !this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            this.masterGain = this.ctx.createGain();
+            this.masterGain.connect(this.ctx.destination);
+            this.masterGain.gain.value = 0.4; // Default master volume
+
+            // Music Filter (Low Pass for "Muffled" effect)
+            this.musicFilter = this.ctx.createBiquadFilter();
+            this.musicFilter.type = 'lowpass';
+            this.musicFilter.frequency.value = 22000; // Start fully open (clear)
+            this.musicFilter.connect(this.masterGain);
+
+            if (this.ctx.state === 'suspended') {
+                this.ctx.resume();
+            }
+            this.initialized = true;
+        }
+    }
+
+    async load(name, url) {
+        if (!this.ctx) this.init();
+        try {
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
+            this.buffers.set(name, audioBuffer);
+            console.log(`Sound loaded: ${name}`);
+        } catch (error) {
+            console.warn(`SoundManager: Could not load ${name} from ${url}`, error);
+        }
+    }
+
+    play(name, opts = {}) {
+        if (!this.ctx || !this.buffers.has(name)) return null;
+        
+        const source = this.ctx.createBufferSource();
+        source.buffer = this.buffers.get(name);
+        
+        const gain = this.ctx.createGain();
+        gain.gain.value = opts.volume !== undefined ? opts.volume : 1.0;
+        
+        source.connect(gain);
+        
+        if (opts.isMusic) {
+            gain.connect(this.musicFilter);
+        } else {
+            gain.connect(this.masterGain);
+        }
+        
+        source.loop = opts.loop || false;
+        if (opts.rate) source.playbackRate.value = opts.rate;
+        
+        source.start(0);
+        return { source, gain };
+    }
+
+    startLoop(id, name, opts = {}) {
+        if (this.activeLoops.has(id)) return; // Already playing
+        const sound = this.play(name, { ...opts, loop: true });
+        if (sound) this.activeLoops.set(id, sound);
+    }
+
+    stopLoop(id, fadeDuration = 0.5) {
+        if (this.activeLoops.has(id) && this.ctx) {
+            const { source, gain } = this.activeLoops.get(id);
+            const now = this.ctx.currentTime;
+            gain.gain.setValueAtTime(gain.gain.value, now);
+            gain.gain.linearRampToValueAtTime(0, now + fadeDuration);
+            source.stop(now + fadeDuration);
+            this.activeLoops.delete(id);
+        }
+    }
+
+    setLoopVolume(id, vol) {
+        if (this.activeLoops.has(id) && this.ctx) {
+            const { gain } = this.activeLoops.get(id);
+            // Smooth transition to new volume
+            gain.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.1);
+        }
+    }
+
+    setMusicMuffled(isMuffled) {
+        if (this.musicFilter && this.ctx) {
+            const freq = isMuffled ? 600 : 22000;
+            this.musicFilter.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.3);
+        }
+    }
+
+    // Generate simple synthesized sounds so no files are needed
+    loadPlaceholders() {
+        if (!this.ctx) this.init();
+
+        const createBuffer = (seconds, fn) => {
+            const rate = this.ctx.sampleRate;
+            const buf = this.ctx.createBuffer(1, rate * seconds, rate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < data.length; i++) {
+                data[i] = fn(i, i / rate);
+            }
+            return buf;
+        };
+
+        // 1. Torch/Bonfire (Brown Noise Loop)
+        if (!this.buffers.has('torch_loop')) {
+            let lastOut = 0;
+            const buf = createBuffer(2.0, () => {
+                const white = Math.random() * 2 - 1;
+                lastOut = (lastOut + (0.02 * white)) / 1.02;
+                return lastOut * 3.5; 
+            });
+            this.buffers.set('torch_loop', buf);
+            this.buffers.set('bonfire_loop', buf);
+        }
+
+        // 2. Card Flip (Short high-pitch slide)
+        if (!this.buffers.has('card_flip')) {
+            this.buffers.set('card_flip', createBuffer(0.1, (i, t) => {
+                return (Math.random() * 2 - 1) * (1 - t/0.1) * 0.5;
+            }));
+        }
+
+        // 3. Attacks (Noise bursts)
+        if (!this.buffers.has('attack_slash')) {
+            this.buffers.set('attack_slash', createBuffer(0.3, (i, t) => {
+                return (Math.random() * 2 - 1) * Math.pow(1 - t/0.3, 2);
+            }));
+        }
+        if (!this.buffers.has('attack_blunt')) {
+            this.buffers.set('attack_blunt', createBuffer(0.2, (i, t) => {
+                // Lower pitch noise
+                return (Math.random() > 0.5 ? 0.5 : -0.5) * Math.pow(1 - t/0.2, 2);
+            }));
+        }
+
+        // 4. Footstep (Short thud)
+        if (!this.buffers.has('footstep')) {
+            this.buffers.set('footstep', createBuffer(0.05, (i, t) => {
+                return (Math.random() * 2 - 1) * (1 - t/0.05);
+            }));
+        }
+        
+        // 5. BGM (Dark Drone)
+        if (!this.buffers.has('bgm_dungeon')) {
+             this.buffers.set('bgm_dungeon', createBuffer(5.0, (i, t) => {
+                return Math.sin(t * 55 * Math.PI * 2) * 0.05 + Math.sin(t * 58 * Math.PI * 2) * 0.05;
+            }));
+        }
+    }
+}
