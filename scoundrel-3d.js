@@ -214,7 +214,7 @@ function preloadSounds() {
     audio.load('bgm_dungeon', 'assets/sounds/bgm_dungeon.ogg');
     audio.load('footstep', 'assets/sounds/footstep.ogg');
     audio.load('card_shuffle', 'assets/sounds/card_shuffle.ogg');
-    
+
     // Use code-generated sounds for missing files (like torch/bonfire):
     // audio.loadPlaceholders();
 }
@@ -850,7 +850,7 @@ function updateSpatialAudio() {
     // camera.zoom ranges from 0.5 (far) to 2.0 (close)
     if (torchLight) {
         // Map zoom 0.5->2.0 to volume 0.1->0.6
-        const zoomFactor = (camera.zoom - 0.5) / 1.5; 
+        const zoomFactor = (camera.zoom - 0.5) / 1.5;
         const torchVol = 0.05 + (zoomFactor * 0.25); // Reduced volume for OGG file
         audio.setLoopVolume('torch', torchVol);
     }
@@ -862,13 +862,13 @@ function updateSpatialAudio() {
             // Calculate distance from room center to camera target (center of screen)
             const roomPos = new THREE.Vector3(r.gx, 0, r.gy);
             const dist = roomPos.distanceTo(controls.target);
-            
+
             // Attenuate volume: Full volume at 0 dist, 0 volume at 15 units
             const maxDist = 15;
             let vol = Math.max(0, 1 - (dist / maxDist));
             // Also scale by zoom so it gets louder when we look closely
             vol *= (camera.zoom * 0.4); // Reduced volume scaling
-            
+
             audio.setLoopVolume(loopId, vol);
         }
     });
@@ -1039,7 +1039,7 @@ function update3DScene() {
         // Torch Flicker Juice
         const flicker = 1.0 + (Math.random() - 0.5) * 0.15;
         torchLight.intensity *= flicker;
-        
+
         // Start torch sound if not playing
         // Note: This check is cheap in the loop map
         if (audio.initialized) audio.startLoop('torch', 'torch_loop', { volume: 0 });
@@ -1134,9 +1134,9 @@ function update3DScene() {
                             // Fire should be at rDepth + 1.
                             fire.position.set(0, rDepth / 2 + 1, 0);
                             mesh.add(fire);
-                            
+
                             // Start spatial sound for this bonfire
-                            if (audio.initialized) 
+                            if (audio.initialized)
                                 audio.startLoop(`bonfire_${r.id}`, 'bonfire_loop', { volume: 0 });
                         }
 
@@ -1882,7 +1882,7 @@ function finalizeStartDive() {
     updateUI();
     logMsg("The descent begins. Room 0 explored.");
     playerSprite.material.map = walkAnims[game.sex].up;
-    
+
     // Start BGM
     audio.startLoop('bgm', 'bgm_dungeon', { volume: 0.4, isMusic: true });
     enterRoom(0);
@@ -2164,7 +2164,7 @@ function startBossFight() {
     game.combatCards = plan.minions.map(m => ({
         type: 'monster', val: m.val, suit: '💀', name: `Guardian's ${m.name}`, bossSlot: m.slot, customAsset: m.asset, customUV: m.uv, bossRole: m.role
     }));
-    
+
     // Add the Guardian itself
     game.combatCards.push({ type: 'monster', val: 15 + (game.floor * 2), suit: '💀', name: "The Guardian", bossSlot: 'boss-guardian', customAnim: selectedGuardian });
 
@@ -2187,7 +2187,7 @@ function showCombat() {
 
     game.combatCards.forEach((c, idx) => {
         const card = document.createElement('div');
-        card.className = `card ${c.type} dealing`;
+        card.className = `card ${c.type} dealing ${c.bossSlot || ''}`;
         card.style.animationDelay = `${idx * 0.1}s`;
 
         let asset = getAssetData(c.type, c.val, c.suit, c.type === 'gift' ? c.actualGift : null);
@@ -2214,12 +2214,12 @@ function showCombat() {
             bgSize = "2500% 100%"; // 25 framing spritesheet
             bgPos = "0% 0%";
             animClass = "animated-card-art";
-            
+
             // Special override for the Guardian Boss Card
             if (c.bossSlot === 'boss-guardian') {
                 // Use a specific boss sprite if available, or fallback to King/Ace
                 // Assuming animations are in the same folder
-                bgUrl = `assets/images/animations/${c.customAnim || 'spade_king'}.png`; 
+                bgUrl = `assets/images/animations/${c.customAnim || 'spade_king'}.png`;
             }
         }
 
@@ -2257,12 +2257,12 @@ function showCombat() {
     } else {
         if (game.isBossFight) {
             msgEl.innerText = "THE GUARDIAN AWAKENS!";
-        } else 
-        if (game.combatCards[0] && game.combatCards[0].type === 'gift') {
-            msgEl.innerText = "Choose your blessing...";
-        } else {
-            msgEl.innerText = game.chosenCount === 0 ? "Room Encounter! Pick 3 cards..." : `Battle in progress! Pick ${3 - game.chosenCount} more cards...`;
-        }
+        } else
+            if (game.combatCards[0] && game.combatCards[0].type === 'gift') {
+                msgEl.innerText = "Choose your blessing...";
+            } else {
+                msgEl.innerText = game.chosenCount === 0 ? "Room Encounter! Pick 3 cards..." : `Battle in progress! Pick ${3 - game.chosenCount} more cards...`;
+            }
         document.getElementById('exitCombatBtn').style.display = 'none';
         document.getElementById('modalAvoidBtn').style.display = (game.combatCards[0] && game.combatCards[0].type === 'gift' ? 'none' : 'inline-block');
         document.getElementById('descendBtn').style.display = 'none';
@@ -2352,7 +2352,7 @@ function pickCard(idx, event) {
         if (loyalistIdx !== -1 && Math.random() < 0.35) {
             // Intercept!
             logMsg("The Loyalist throws themselves in front of the blow!");
-            spawnFloatingText("INTERCEPTED!", window.innerWidth/2, window.innerHeight/2, '#ffffff');
+            spawnFloatingText("INTERCEPTED!", window.innerWidth / 2, window.innerHeight / 2, '#ffffff');
             idx = loyalistIdx;
             card = game.combatCards[idx];
             cardEl = document.querySelectorAll('.card')[idx]; // Re-fetch DOM element
@@ -2404,7 +2404,7 @@ function pickCard(idx, event) {
             if (game.isBossFight && card.bossSlot === 'boss-guardian') {
                 game.combatCards.forEach(c => {
                     if (c === card) return; // Skip self
-                    
+
                     // Vanguard/Bulwark: Add direct damage
                     if (c.bossRole === 'vanguard' || c.bossRole === 'bulwark') {
                         bossBuffDmg += c.val;
@@ -2559,7 +2559,7 @@ function pickCard(idx, event) {
         case 'potion':
             // Spawn both canvas FX (for background) and DOM UI FX (so they appear above the modal)
             spawnAboveModalTexture('circle_03.png', window.innerWidth / 2, window.innerHeight / 2, 20, { tint: '#00cc00', blend: 'lighter', sizeRange: [24, 64], intensity: 1.35 });
-            
+
             if (game.inventory.length < 6) {
                 game.inventory.push({ type: 'potion', val: card.val, name: card.name, suit: card.suit });
                 logMsg(`Stored ${card.name} in inventory.`);
@@ -2620,7 +2620,7 @@ function pickCard(idx, event) {
                     game.ap += gift.ap;
                     logMsg(`Merchant's Blessing: Equipped ${gift.name}.`);
                 } else {
-                    spawnFloatingText("Inventory Full!", window.innerWidth/2, window.innerHeight/2, '#ff0000');
+                    spawnFloatingText("Inventory Full!", window.innerWidth / 2, window.innerHeight / 2, '#ff0000');
                     return; // Don't finish room if we couldn't take it
                 }
             }
@@ -2685,9 +2685,9 @@ function finishRoom() {
         document.getElementById('descendBtn').style.display = 'none';
         document.getElementById('exitCombatBtn').style.display = 'none';
         document.getElementById('modalAvoidBtn').style.display = 'none';
-        
+
         updateUI(); // Update coins etc
-        
+
         setTimeout(startIntermission, 2000);
         return;
     }
@@ -2883,7 +2883,7 @@ window.useItem = function (idx) {
     if (item.type === 'potion') {
         const heal = Math.min(item.val, game.maxHp - game.hp);
         game.hp += heal;
-        spawnFloatingText(`+${heal} HP`, window.innerWidth/2, window.innerHeight/2, '#00ff00');
+        spawnFloatingText(`+${heal} HP`, window.innerWidth / 2, window.innerHeight / 2, '#00ff00');
         logMsg(`Used ${item.name}.`);
         game.inventory.splice(idx, 1);
         updateUI();
@@ -3133,7 +3133,7 @@ function ensureMerchantPortrait() {
     if (all.length > 1) {
         for (let i = 1; i < all.length; i++) all[i].remove();
     }
-    
+
     let mp = all[0];
     if (!mp) {
         mp = document.createElement('div');
@@ -3150,19 +3150,19 @@ function updateMerchantPortraitPosition() {
     const combatArea = document.querySelector('.player-combat-area');
     if (combatArea) {
         const rect = combatArea.getBoundingClientRect();
-        
+
         // Calculate distance from bottom of screen to top of combat area
         // This ensures the merchant stands ON TOP of the UI, regardless of padding
         const bottomOffset = (window.innerHeight - rect.top) + 8;
-        
+
         mp.style.bottom = `${bottomOffset}px`;
         mp.style.top = 'auto';
-        
+
         // Calculate available space above the UI (rect.top) minus top margin (40px)
         const availableHeight = rect.top - 40;
-        
+
         mp.style.height = `${Math.min(availableHeight, 600)}px`; // Max 600px or available space
-        
+
         // Position Left
         const sidebar = document.querySelector('.sidebar');
         const leftOffset = (sidebar && sidebar.getBoundingClientRect) ? (Math.round(sidebar.getBoundingClientRect().width) + 32) : 32;

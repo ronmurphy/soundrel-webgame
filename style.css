@@ -273,9 +273,31 @@ h1 {
     border-color: #ff0000;
     box-shadow: 0 0 30px #8b0000;
 }
-.card.boss-weapon { grid-column: 1; grid-row: 2; }
-.card.boss-potion { grid-column: 3; grid-row: 2; }
-.card.boss-armor { grid-column: 2; grid-row: 3; }
+
+.card.boss-weapon,
+.card.boss-potion,
+.card.boss-armor {
+    border-color: #8b0000;
+    box-shadow: 0 0 15px rgba(139, 0, 0, 0.6);
+}
+
+.card.boss-weapon {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: end;
+}
+
+.card.boss-potion {
+    grid-column: 3;
+    grid-row: 2;
+    justify-self: start;
+}
+
+.card.boss-armor {
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: center;
+}
 
 /* Bottom Left: Player Combat Info */
 .player-combat-area {
