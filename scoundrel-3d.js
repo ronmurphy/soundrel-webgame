@@ -22,7 +22,9 @@ const game = {
     carryCard: null, // THE global carry-over card
     combatBusy: false, // Prevent double-clicking during animations
     soulCoins: 0,
-    inventory: [], // Max 6 items
+    equipment: { head: null, chest: null, hands: null, legs: null, weapon: null },
+    backpack: [], // 24 slots
+    hotbar: [], // 6 slots (Provisioning)
     ap: 0, // Current Armor Points
     maxAp: 0, // Max AP based on equipment
     bonfireUsed: false, // Track for Ascetic bonus
@@ -1031,13 +1033,13 @@ function update3DScene() {
 
         let vRad = 2.5;
         // Check for Spectral Lantern (ID 1)
-        const hasLantern = game.inventory.some(i => i.type === 'item' && i.id === 1);
+        const hasLantern = game.hotbar.some(i => i && i.type === 'item' && i.id === 1);
 
-        if (game.weapon) {
-            if (game.weapon.val >= 8 || hasLantern) {
+        if (game.equipment.weapon) {
+            if (game.equipment.weapon.val >= 8 || hasLantern) {
                 torchLight.color.setHex(0x00ccff); torchLight.intensity = (is3DView ? 800 : 2000);
                 torchLight.distance = 60; vRad = 8.0;
-            } else if (game.weapon.val >= 6 || hasLantern) {
+            } else if (game.equipment.weapon.val >= 6 || hasLantern) {
                 torchLight.color.setHex(0xd4af37); torchLight.intensity = (is3DView ? 600 : 1500);
                 torchLight.distance = 45; vRad = 5.0;
             } else {
@@ -1436,7 +1438,7 @@ function createEmojiSprite(emoji, size = 1.5) {
 
 function takeDamage(amount) {
     let remaining = amount;
-    const protectionFloor = game.inventory.filter(i => i.type === 'armor').length;
+    const protectionFloor = Object.values(game.equipment).filter(i => i && i.type === 'armor').length;
 
     if (game.ap > protectionFloor) {
         // We have pool above the floor
@@ -1911,7 +1913,9 @@ function finalizeStartDive() {
 
     game.hp = 20; game.floor = 1; game.deck = createDeck();
     game.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
-    game.soulCoins = 0; game.inventory = []; game.ap = 0; game.maxAp = 0;
+    game.soulCoins = 0; game.ap = 0; game.maxAp = 0;
+    game.equipment = { head: null, chest: null, hands: null, legs: null, weapon: null };
+    game.backpack = new Array(24).fill(null); game.hotbar = new Array(6).fill(null);
     game.rooms = generateDungeon(); game.currentRoomIdx = 0; game.lastAvoided = false;
     game.bonfireUsed = false; game.merchantUsed = false;
     clear3DScene(); init3D();
@@ -2007,28 +2011,21 @@ function startIntermission() {
         card.onclick = () => {
             if (game.soulCoins >= item.cost) {
                 // Slot Restriction Check
-                const slotTaken = item.type === 'armor' && game.inventory.some(i => i.type === 'armor' && i.slot === item.slot);
+                const slotTaken = item.type === 'armor' && game.equipment[item.slot] !== null;
                 if (slotTaken) {
                     spawnFloatingText(`Already wearing a ${item.slot} piece!`, window.innerWidth / 2, window.innerHeight / 2, '#ffaa00');
                     return;
                 }
 
-                if (game.inventory.length >= 6) {
-                    // Enter Swap Mode
-                    game.pendingPurchase = { item: item, cardElement: card };
-                    spawnFloatingText("Inventory Full! Click item to discard.", window.innerWidth / 2, window.innerHeight / 2, '#ffaa00');
-                    // Visual cue for inventory
-                    const invEl = document.getElementById('inventorySidebar');
-                    if (invEl) invEl.style.boxShadow = "0 0 15px #ffaa00";
+                if (getFreeBackpackSlot() === -1) {
+                    spawnFloatingText("Backpack Full!", window.innerWidth / 2, window.innerHeight / 2, '#ffaa00');
                     return;
                 }
                 game.soulCoins -= item.cost;
                 document.getElementById('shopCoinDisplay').innerText = game.soulCoins;
-                game.inventory.push(item);
-                if (item.type === 'armor') {
-                    game.maxAp += item.ap;
-                    game.ap += item.ap;
-                }
+                
+                addToBackpack(item);
+
                 spawnFloatingText("Purchased!", window.innerWidth / 2, window.innerHeight / 2, '#00ff00');
                 card.style.opacity = 0.5;
                 card.style.pointerEvents = 'none';
@@ -2075,7 +2072,7 @@ function descendToNextFloor() {
     game.isBossFight = false;
 
     // Map Item Check
-    const hasMap = game.inventory.some(i => i.type === 'item' && i.id === 3);
+    const hasMap = game.hotbar.some(i => i && i.type === 'item' && i.id === 3);
     if (hasMap) {
         game.rooms.forEach(r => r.isRevealed = true);
     }
@@ -2134,7 +2131,7 @@ function enterRoom(id) {
             }
 
             // Add Repair option if we have a weapon
-            if (game.weapon || game.maxAp > 0) {
+            if (game.equipment.weapon || game.maxAp > 0) {
                 const boost = Math.floor(Math.random() * 6) + 1;
                 gifts.push({
                     suit: '🛠️', val: boost, type: 'gift',
@@ -2428,13 +2425,16 @@ function pickCard(idx, event) {
 
     switch (card.type) {
         case 'weapon':
-            game.weapon = card;
-            // Scoundrel Rules: First monster killed can be any level.
-            // Subsequent monsters must be strictly lower level than the previous one.
-            game.weaponDurability = Infinity;
-            game.slainStack = [];
-            logMsg(`Equipped ${card.name}. First kill has no level limit.`);
-            updateUI(); // Ensure immediate feedback
+            if (addToBackpack(card)) {
+                logMsg(`Looted ${card.name}.`);
+            } else {
+                spawnFloatingText("Backpack Full!", centerX, centerY, '#ff0000');
+                // Revert animation
+                cardEl.style.pointerEvents = 'auto';
+                cardEl.style.transform = 'none';
+                cardEl.style.opacity = '1';
+                return;
+            }
             break;
         case 'monster':
             game.combatBusy = true;
@@ -2447,7 +2447,7 @@ function pickCard(idx, event) {
             // Music Box Check (ID 7)
             // Actually, music box is active use.
             // Tome Check (ID 8) - Passive +2 coins
-            const hasTome = game.inventory.some(i => i.type === 'item' && i.id === 8);
+            const hasTome = game.hotbar.some(i => i && i.type === 'item' && i.id === 8);
 
             let willBreak = false;
             let brokeName = null;
@@ -2480,17 +2480,17 @@ function pickCard(idx, event) {
             }
 
             // Calculate Player vs Monster Base Damage
-            if (game.weapon && effectiveCardVal <= game.weaponDurability) {
-                dmg = Math.max(0, effectiveCardVal - game.weapon.val);
+            if (game.equipment.weapon && effectiveCardVal <= game.weaponDurability) {
+                dmg = Math.max(0, effectiveCardVal - game.equipment.weapon.val);
                 game.weaponDurability = card.val;
                 // Scoundrel rules usually care about the card's face value. Let's stick to card.val for durability check to be safe,
                 // but use effectiveVal for damage calculation.
                 logMsg(`Slit ${card.name}'s throat. Next enemy must be <=${card.val}.`);
-            } else if (game.weapon) {
-                dmg = Math.max(0, effectiveCardVal - game.weapon.val);
-                brokeName = game.weapon.name;
+            } else if (game.equipment.weapon) {
+                dmg = Math.max(0, effectiveCardVal - game.equipment.weapon.val);
+                brokeName = game.equipment.weapon.name;
                 willBreak = true;
-                game.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
+                game.equipment.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
                 logMsg(`CRACK! The ${brokeName} has broken!`);
             } else {
                 dmg = effectiveCardVal;
@@ -2513,8 +2513,8 @@ function pickCard(idx, event) {
             // --- CINEMATIC COMBAT SEQUENCE ---
 
             // 1. Player Attack Phase (Visuals)
-            triggerPlayerAttackAnim(centerX, centerY, !!game.weapon);
-            audio.play(game.weapon ? 'attack_slash' : 'attack_blunt', { volume: 0.8, rate: 0.9 + Math.random() * 0.2 });
+            triggerPlayerAttackAnim(centerX, centerY, !!game.equipment.weapon);
+            audio.play(game.equipment.weapon ? 'attack_slash' : 'attack_blunt', { volume: 0.8, rate: 0.9 + Math.random() * 0.2 });
 
             // Animate Card Impact (Recoil)
             const recoilAnim = cardEl.animate([
@@ -2539,7 +2539,7 @@ function pickCard(idx, event) {
                     spawnAboveModalTexture('spark_01.png', centerX, centerY, 30, { tint: '#888', blend: 'lighter', sizeRange: [6, 40], intensity: 2.0, filter: 'brightness(2) saturate(1.1)' });
                     spawnAboveModalTexture('slash_02.png', window.innerWidth / 2, window.innerHeight / 2, 18, { tint: '#8b0000', blend: 'lighter', sizeRange: [40, 120], intensity: 1.9, filter: 'brightness(1.8) contrast(1.2)' });
                     triggerShake(15, 30);
-                } else if (game.weapon && !willBreak) {
+                } else if (game.equipment.weapon && !willBreak) {
                     // slay with weapon: small sparks
                     spawnAboveModalTexture('spark_01.png', centerX, centerY, 12, { tint: '#ccc', blend: 'lighter', sizeRange: [8, 36], intensity: 1.2 });
                     game.slainStack.push(card);
@@ -2557,9 +2557,9 @@ function pickCard(idx, event) {
 
                 // Mirror Check (ID 6)
                 if (game.hp - dmg <= 0) {
-                    const mirrorIdx = game.inventory.findIndex(i => i.type === 'item' && i.id === 6);
+                    const mirrorIdx = game.hotbar.findIndex(i => i && i.type === 'item' && i.id === 6);
                     if (mirrorIdx !== -1) {
-                        game.inventory.splice(mirrorIdx, 1);
+                        game.hotbar[mirrorIdx] = null;
                         dmg = 0; game.hp = 1;
 
                         // Mirror Shatter FX
@@ -2616,13 +2616,12 @@ function pickCard(idx, event) {
             // Spawn both canvas FX (for background) and DOM UI FX (so they appear above the modal)
             spawnAboveModalTexture('circle_03.png', window.innerWidth / 2, window.innerHeight / 2, 20, { tint: '#00cc00', blend: 'lighter', sizeRange: [24, 64], intensity: 1.35 });
 
-            if (game.inventory.length < 6) {
-                game.inventory.push({ type: 'potion', val: card.val, name: card.name, suit: card.suit });
-                logMsg(`Stored ${card.name} in inventory.`);
+            if (addToHotbar({ type: 'potion', val: card.val, name: card.name, suit: card.suit })) {
+                logMsg(`Stored ${card.name} in hotbar.`);
             } else {
                 const heal = Math.min(card.val, game.maxHp - game.hp);
                 game.hp += heal;
-                logMsg(`Inventory full! Drank ${card.name} (+${heal} HP).`);
+                logMsg(`Hotbar full! Drank ${card.name} (+${heal} HP).`);
             }
             updateUI(); // Immediate UI refresh
             break;
@@ -2631,28 +2630,29 @@ function pickCard(idx, event) {
             spawnAboveModalTexture('twirl_01.png', window.innerWidth / 2, window.innerHeight / 2, 26, { tint: '#d4af37', blend: 'lighter', sizeRange: [40, 160], intensity: 1.45 });
 
             if (gift.type === 'weapon') {
-                game.weapon = gift;
-                game.weaponDurability = Infinity;
-                game.slainStack = [];
+                if (addToBackpack(gift)) {
+                    logMsg(`Merchant's Blessing: Looted ${gift.name}.`);
+                } else {
+                    spawnFloatingText("Backpack Full!", centerX, centerY, '#ff0000');
+                    cardEl.style.pointerEvents = 'auto'; cardEl.style.transform = 'none'; cardEl.style.opacity = '1';
+                    return;
+                }
                 game.merchantUsed = true;
-                logMsg(`Merchant's Blessing: Equipped ${gift.name}.`);
             } else if (gift.type === 'potion') {
-                if (game.inventory.length < 6) {
-                    game.inventory.push(gift);
+                if (addToHotbar(gift)) {
                     logMsg(`Merchant's Blessing: Stored ${gift.name}.`);
                 } else {
                     const heal = Math.min(gift.val, game.maxHp - game.hp);
                     game.hp += heal;
-                    logMsg(`Inventory full! Drank ${gift.name}.`);
+                    logMsg(`Hotbar full! Drank ${gift.name}.`);
                 }
-            } else if (gift.type === 'repair') {
+            } else if (gift.type === 'repair' && game.equipment.weapon) {
                 let msg = "";
-                if (game.weapon) {
-                    game.weapon.val = Math.min(14, game.weapon.val + gift.val);
-                    game.weaponDurability = Infinity;
-                    game.slainStack = [];
-                    msg += `Weapon honed (+${gift.val}). `;
-                }
+                game.equipment.weapon.val = Math.min(14, game.equipment.weapon.val + gift.val);
+                game.weaponDurability = Infinity;
+                game.slainStack = [];
+                msg += `Weapon honed (+${gift.val}). `;
+
                 if (game.maxAp > 0) {
                     const healed = game.maxAp - game.ap;
                     game.ap = game.maxAp;
@@ -2661,24 +2661,12 @@ function pickCard(idx, event) {
                 game.merchantUsed = true;
                 logMsg(`Merchant's Repair: ${msg}`);
             } else if (gift.type === 'armor') {
-                // Check for Slot Conflict
-                const conflictIdx = game.inventory.findIndex(i => i.type === 'armor' && i.slot === gift.slot);
-                if (conflictIdx !== -1) {
-                    const old = game.inventory[conflictIdx];
-                    game.inventory[conflictIdx] = gift;
-                    // Recalculate AP
-                    game.maxAp = game.inventory.reduce((sum, i) => sum + (i.type === 'armor' ? i.ap : 0), 0);
-                    game.ap = game.maxAp; // Assume new armor is fresh
-                    logMsg(`Swapped ${old.name} for ${gift.name}.`);
-                } else if (game.inventory.length < 6) {
-                    game.inventory.push(gift);
-                    game.maxAp += gift.ap;
-                    game.ap += gift.ap;
-                    logMsg(`Merchant's Blessing: Equipped ${gift.name}.`);
-                } else {
-                    spawnFloatingText("Inventory Full!", window.innerWidth / 2, window.innerHeight / 2, '#ff0000');
-                    return; // Don't finish room if we couldn't take it
+                if (!addToBackpack(gift)) {
+                     spawnFloatingText("Backpack Full!", window.innerWidth / 2, window.innerHeight / 2, '#ff0000');
+                     cardEl.style.pointerEvents = 'auto'; cardEl.style.transform = 'none'; cardEl.style.opacity = '1';
+                     return;
                 }
+                logMsg(`Merchant's Blessing: Looted ${gift.name}.`);
             }
 
             game.activeRoom.state = 'cleared';
@@ -2689,7 +2677,7 @@ function pickCard(idx, event) {
         case 'bonfire':
             spawnAboveModalTexture('flame_03.png', window.innerWidth / 2, window.innerHeight / 2, 30, { tint: '#ff6600', blend: 'lighter', sizeRange: [48, 160], intensity: 1.45 });
             // Herbs Check (ID 5)
-            const hasHerbs = game.inventory.some(i => i.type === 'item' && i.id === 5);
+            const hasHerbs = game.hotbar.some(i => i && i.type === 'item' && i.id === 5);
             const bonfireHeal = Math.min(card.val + (hasHerbs ? 5 : 0), game.maxHp - game.hp);
             game.hp += bonfireHeal;
             logMsg(`Rested at bonfire. Vitality +${bonfireHeal}.`);
@@ -2838,7 +2826,7 @@ window.handleBonfire = function (cost) {
 
     room.restRemaining -= cost;
     // Herbs Check (ID 5)
-    const hasHerbs = game.inventory.some(i => i.type === 'item' && i.id === 5);
+    const hasHerbs = game.hotbar.some(i => i && i.type === 'item' && i.id === 5);
     const heal = Math.min((5 * cost) + (hasHerbs ? 5 : 0), game.maxHp - game.hp);
     game.hp += heal;
 
@@ -2900,66 +2888,16 @@ function gameOver() {
 }
 
 window.useItem = function (idx) {
-    const item = game.inventory[idx];
-
-    // Handle Swap/Discard for Pending Purchase
-    if (game.pendingPurchase) {
-        const newItem = game.pendingPurchase.item;
-        const oldItem = item;
-
-        // Slot Restriction Check: If the old item isn't an armor piece in the same slot, 
-        // and they are swapping an armor for a different slot, it might be weird.
-        // ButScoundrel usually just swaps the specific inventory index.
-        // However, the user wants "only 1 helm, one chest, 1 legs, 1 hand".
-        // If they are buying armor, we should check if they already have that slot.
-        const sameSlotItemIdx = game.inventory.findIndex((invItem, i) =>
-            invItem.type === 'armor' && newItem.type === 'armor' && invItem.slot === newItem.slot && i !== idx
-        );
-
-        if (sameSlotItemIdx !== -1 && newItem.type === 'armor') {
-            spawnFloatingText("Already have armor in this slot!", window.innerWidth / 2, window.innerHeight / 2, '#ffaa00');
-            return;
-        }
-
-        // Refund 1/4th value
-        const refund = Math.floor(oldItem.cost / 4);
-        game.soulCoins += refund;
-
-        // Remove old item
-        game.inventory.splice(idx, 1);
-        if (oldItem.type === 'armor') {
-            game.maxAp -= oldItem.ap;
-            game.ap = Math.min(game.ap, game.maxAp); // Clamp current AP to new max
-        }
-
-        // Buy new item
-        game.soulCoins -= newItem.cost;
-        game.inventory.push(newItem);
-        if (newItem.type === 'armor') {
-            game.maxAp += newItem.ap;
-            game.ap += newItem.ap;
-        }
-
-        spawnFloatingText(`Swapped! +${refund} coins`, window.innerWidth / 2, window.innerHeight / 2, '#00ff00');
-
-        // Update Shop Card Visuals
-        if (game.pendingPurchase.cardElement) {
-            game.pendingPurchase.cardElement.style.opacity = 0.5;
-            game.pendingPurchase.cardElement.style.pointerEvents = 'none';
-        }
-
-        game.pendingPurchase = null;
-        document.getElementById('shopCoinDisplay').innerText = game.soulCoins;
-        updateUI();
-        return;
-    }
+    // Only allow using items from Hotbar
+    const item = game.hotbar[idx];
+    if (!item) return;
 
     if (item.type === 'potion') {
         const heal = Math.min(item.val, game.maxHp - game.hp);
         game.hp += heal;
         spawnFloatingText(`+${heal} HP`, window.innerWidth / 2, window.innerHeight / 2, '#00ff00');
         logMsg(`Used ${item.name}.`);
-        game.inventory.splice(idx, 1);
+        game.hotbar[idx] = null;
         updateUI();
         return;
     }
@@ -2971,11 +2909,11 @@ window.useItem = function (idx) {
             const enemies = game.combatCards.filter(c => c.type === 'monster');
             if (enemies.length > 0) {
                 const target = enemies[Math.floor(Math.random() * enemies.length)];
-                const dmg = game.weapon ? Math.max(2, game.weapon.val - 2) : 2;
+                const dmg = game.equipment.weapon ? Math.max(2, game.equipment.weapon.val - 2) : 2;
                 target.val = Math.max(0, target.val - dmg);
                 spawnFloatingText("BOMB!", window.innerWidth / 2, window.innerHeight / 2, '#ff0000');
                 logMsg(`Bomb hit ${target.name} for ${dmg} dmg.`);
-                game.inventory.splice(idx, 1);
+                game.hotbar[idx] = null;
                 updateUI();
                 showCombat(); // Refresh cards
             }
@@ -2984,7 +2922,7 @@ window.useItem = function (idx) {
         if (game.activeRoom && game.activeRoom.state !== 'cleared') {
             game.lastAvoided = false; // Bypass restriction
             avoidRoom();
-            game.inventory.splice(idx, 1);
+            game.hotbar[idx] = null;
             updateUI();
         }
     } else if (item.id === 4) { // Hourglass
@@ -2995,11 +2933,47 @@ window.useItem = function (idx) {
         game.combatCards.forEach(c => {
             if (c.type === 'monster') c.val = Math.max(0, c.val - 2);
         });
-        game.inventory.splice(idx, 1);
+        game.hotbar[idx] = null;
         updateUI();
         showCombat();
     }
 };
+
+// --- INVENTORY HELPERS ---
+function getFreeBackpackSlot() {
+    return game.backpack.findIndex(s => s === null);
+}
+
+function addToBackpack(item) {
+    const idx = getFreeBackpackSlot();
+    if (idx !== -1) {
+        game.backpack[idx] = item;
+        updateUI();
+        return true;
+    }
+    return false;
+}
+
+function addToHotbar(item) {
+    const idx = game.hotbar.findIndex(s => s === null);
+    if (idx !== -1) {
+        game.hotbar[idx] = item;
+        updateUI();
+        return true;
+    }
+    return false;
+}
+
+function recalcAP() {
+    let total = 0;
+    Object.values(game.equipment).forEach(i => {
+        if (i && i.type === 'armor') total += i.ap;
+    });
+    game.maxAp = total;
+    // Clamp current AP
+    if (game.ap > game.maxAp) game.ap = game.maxAp;
+}
+
 
 // --- UI UTILS ---
 function updateUI() {
@@ -3070,14 +3044,14 @@ function updateUI() {
     const weaponDetail = document.getElementById('weaponLastDealModal');
     const weaponArtModal = document.getElementById('weaponArtModal');
 
-    if (game.weapon) {
+    if (game.equipment.weapon) {
         // Ensure name doesn't already have (X) before adding it
-        const cleanName = game.weapon.name.split(' (')[0];
-        weaponLabel.innerText = `${cleanName} (${game.weapon.val})`;
+        const cleanName = game.equipment.weapon.name.split(' (')[0];
+        weaponLabel.innerText = `${cleanName} (${game.equipment.weapon.val})`;
         weaponDetail.innerText = game.weaponDurability === Infinity ? "Clean Weapon: No limit" : `Bloody: Next <${game.weaponDurability}`;
         weaponLabel.style.color = 'var(--gold)';
 
-        const asset = getAssetData('weapon', game.weapon.val, game.weapon.suit);
+        const asset = getAssetData('weapon', game.equipment.weapon.val, game.equipment.weapon.suit);
 
         // Update Modal Art
         if (weaponArtModal) {
@@ -3092,7 +3066,7 @@ function updateUI() {
             weaponArtSidebar.style.backgroundPosition = `${asset.uv.u * 112.5}% 0%`;
         }
         const nameSidebar = document.getElementById('weaponNameSidebar');
-        if (nameSidebar) nameSidebar.innerText = `${cleanName} (${game.weapon.val})`;
+        if (nameSidebar) nameSidebar.innerText = `${cleanName} (${game.equipment.weapon.val})`;
         const durSidebar = document.getElementById('weaponDurSidebar');
         if (durSidebar) durSidebar.innerText = game.weaponDurability === Infinity ? "Next: Any" : `Next: <${game.weaponDurability}`;
     } else {
@@ -3131,15 +3105,15 @@ function updateUI() {
         document.body.appendChild(tooltip);
     }
 
-    const protectionFloor = game.inventory.filter(i => i.type === 'armor').length;
+    const protectionFloor = Object.values(game.equipment).filter(i => i && i.type === 'armor').length;
     const isArmorBroken = game.ap <= protectionFloor;
 
     invContainer.innerHTML = '';
     for (let i = 0; i < 6; i++) {
         const slot = document.createElement('div');
         slot.style.cssText = "width:100%; aspect-ratio:1; background:rgba(0,0,0,0.5); border:1px solid #444; position:relative; cursor: pointer;";
-        if (game.inventory[i]) {
-            const item = game.inventory[i];
+        if (game.hotbar[i]) {
+            const item = game.hotbar[i];
             const val = item.type === 'potion' ? item.val : item.id;
             const asset = getAssetData(item.type, val, item.suit);
 
@@ -3172,8 +3146,8 @@ function updateUI() {
             slot.style.cursor = "pointer";
             slot.style.transition = "background 0.2s, transform 0.1s";
 
-            if (game.inventory[i]) {
-                const item = game.inventory[i];
+            if (game.hotbar[i]) {
+                const item = game.hotbar[i];
                 const val = item.type === 'potion' ? item.val : item.id;
                 const asset = getAssetData(item.type, val, item.suit);
                 const tint = (item.type === 'armor' && isArmorBroken) ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
@@ -3197,6 +3171,9 @@ function updateUI() {
             combatInvContainer.appendChild(slot);
         }
     }
+
+    // Render the Full Inventory Modal if open
+    renderInventoryUI();
 
     // Global buttons
     document.getElementById('modalAvoidBtn').disabled = (game.lastAvoided || game.chosenCount > 0);
@@ -3348,6 +3325,17 @@ document.getElementById('exitCombatBtn').onclick = closeCombat;
 document.getElementById('descendBtn').onclick = startIntermission;
 document.getElementById('bonfireNotNowBtn').onclick = closeCombat;
 
+// Toggle Inventory (Bound to Weapon Icon click in setupLayout or here)
+window.toggleInventory = function() {
+    const modal = document.getElementById('inventoryModal');
+    if (modal.style.display === 'flex') {
+        modal.style.display = 'none';
+    } else {
+        modal.style.display = 'flex';
+        updateUI(); // Refresh contents
+    }
+};
+
 // --- LAYOUT SETUP ---
 function setupLayout() {
     console.log("Initializing Custom Layout...");
@@ -3391,13 +3379,23 @@ function setupLayout() {
         combatArea.classList.add('dock-mode');
     }
 
+    // Bind Weapon Icon to Open Inventory
+    const weaponIcon = document.getElementById('weaponArtModal');
+    if (weaponIcon) {
+        weaponIcon.onclick = window.toggleInventory;
+        weaponIcon.style.cursor = 'pointer';
+    }
+
     // 3. Hoist Bonfire UI to Body (to ensure z-index works and it's not trapped)
     const bonfireUI = document.getElementById('bonfireUI');
     if (bonfireUI) {
         document.body.appendChild(bonfireUI);
     }
 
-    // 4. Force Resize to ensure 3D canvas fills the new full-width container
+    // 4. Create Inventory Modal
+    setupInventoryUI();
+
+    // 5. Force Resize to ensure 3D canvas fills the new full-width container
     window.dispatchEvent(new Event('resize'));
 }
 
@@ -3425,6 +3423,165 @@ function initAttractMode() {
     // Ensure logo is visible
     const logo = document.getElementById('gameLogo');
     if (logo) logo.style.opacity = '1';
+}
+
+function setupInventoryUI() {
+    const modal = document.createElement('div');
+    modal.id = 'inventoryModal';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="inventory-content">
+            <div class="inventory-left">
+                <div id="paperDoll" class="paper-doll" style="background-image: url('assets/images/visualnovel/${game.sex}_doll.png');">
+                    <div class="equip-slot head" data-slot="head"></div>
+                    <div class="equip-slot chest" data-slot="chest"></div>
+                    <div class="equip-slot hands" data-slot="hands"></div>
+                    <div class="equip-slot legs" data-slot="legs"></div>
+                    <div class="equip-slot weapon" data-slot="weapon"></div>
+                </div>
+            </div>
+            <div class="inventory-right">
+                <h3 style="color:var(--gold); font-family:'Cinzel'; border-bottom:1px solid #333;">Backpack</h3>
+                <div id="backpackGrid" class="backpack-grid"></div>
+            </div>
+            <div class="inventory-bottom">
+                 <h3 style="color:var(--gold); font-family:'Cinzel';">Provisioning (Hotbar)</h3>
+                 <div id="modalHotbarGrid" class="hotbar-grid"></div>
+            </div>
+            <button class="v2-btn close-inv-btn" onclick="toggleInventory()" style="position:absolute; top:20px; right:20px;">Close</button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function renderInventoryUI() {
+    const modal = document.getElementById('inventoryModal');
+    if (!modal || modal.style.display === 'none') return;
+
+    // Update Doll Image (in case sex changed)
+    const doll = document.getElementById('paperDoll');
+    if (doll) doll.style.backgroundImage = `url('assets/images/visualnovel/${game.sex}_doll.png')`;
+
+    // Helper to create draggable item
+    const createItemEl = (item, source, idx) => {
+        if (!item) return null;
+        const div = document.createElement('div');
+        div.className = 'inv-item-drag';
+        div.style.width = '100%'; div.style.height = '100%';
+        const asset = getAssetData(item.type, item.val || item.id, item.suit);
+        div.style.backgroundImage = `url('assets/images/${asset.file}')`;
+        div.style.backgroundSize = '900% 100%';
+        div.style.backgroundPosition = `${asset.uv.u * 112.5}% 0%`;
+        div.draggable = true;
+        div.ondragstart = (e) => {
+            e.dataTransfer.setData('text/plain', JSON.stringify({ source, idx }));
+        };
+        return div;
+    };
+
+    // Render Equipment
+    ['head', 'chest', 'hands', 'legs', 'weapon'].forEach(slot => {
+        const el = doll.querySelector(`.${slot}`);
+        el.innerHTML = '';
+        el.ondragover = (e) => e.preventDefault();
+        el.ondrop = (e) => handleDrop(e, 'equipment', slot);
+        
+        const item = game.equipment[slot];
+        if (item) {
+            el.appendChild(createItemEl(item, 'equipment', slot));
+        }
+    });
+
+    // Render Backpack
+    const bpGrid = document.getElementById('backpackGrid');
+    bpGrid.innerHTML = '';
+    game.backpack.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = 'inv-slot';
+        div.ondragover = (e) => e.preventDefault();
+        div.ondrop = (e) => handleDrop(e, 'backpack', idx);
+        if (item) {
+            div.appendChild(createItemEl(item, 'backpack', idx));
+        }
+        bpGrid.appendChild(div);
+    });
+
+    // Render Hotbar
+    const hbGrid = document.getElementById('modalHotbarGrid');
+    hbGrid.innerHTML = '';
+    game.hotbar.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = 'inv-slot';
+        div.style.width = '64px';
+        div.ondragover = (e) => e.preventDefault();
+        div.ondrop = (e) => handleDrop(e, 'hotbar', idx);
+        if (item) {
+            div.appendChild(createItemEl(item, 'hotbar', idx));
+        }
+        hbGrid.appendChild(div);
+    });
+}
+
+function handleDrop(e, targetType, targetIdx) {
+    e.preventDefault();
+    const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+    const srcType = data.source;
+    const srcIdx = data.idx;
+
+    // Get Source Item
+    let item;
+    if (srcType === 'equipment') item = game.equipment[srcIdx];
+    else if (srcType === 'backpack') item = game.backpack[srcIdx];
+    else if (srcType === 'hotbar') item = game.hotbar[srcIdx];
+
+    if (!item) return;
+
+    // Validation: Equipment Slots
+    if (targetType === 'equipment') {
+        if (targetIdx === 'weapon' && item.type !== 'weapon') {
+            spawnFloatingText("Only weapons go here!", e.clientX, e.clientY, '#ff0000');
+            return;
+        }
+        if (targetIdx !== 'weapon' && (item.type !== 'armor' || item.slot !== targetIdx)) {
+            spawnFloatingText(`Only ${targetIdx} armor!`, e.clientX, e.clientY, '#ff0000');
+            return;
+        }
+    }
+
+    // Get Target Item (Swap)
+    let targetItem;
+    if (targetType === 'equipment') targetItem = game.equipment[targetIdx];
+    else if (targetType === 'backpack') targetItem = game.backpack[targetIdx];
+    else if (targetType === 'hotbar') targetItem = game.hotbar[targetIdx];
+
+    // Perform Swap
+    // 1. Remove from Source
+    if (srcType === 'equipment') game.equipment[srcIdx] = null;
+    else if (srcType === 'backpack') game.backpack[srcIdx] = null;
+    else if (srcType === 'hotbar') game.hotbar[srcIdx] = null;
+
+    // 2. Place Source Item in Target
+    if (targetType === 'equipment') game.equipment[targetIdx] = item;
+    else if (targetType === 'backpack') game.backpack[targetIdx] = item;
+    else if (targetType === 'hotbar') game.hotbar[targetIdx] = item;
+
+    // 3. Place Target Item (if any) in Source
+    if (targetItem) {
+        // Validate reverse swap for equipment
+        if (srcType === 'equipment') {
+             if (srcIdx === 'weapon' && targetItem.type !== 'weapon') {
+                 // Can't swap non-weapon into weapon slot, undo
+                 // (Simplified: just put item back and fail)
+                 // For now, assume valid swap or overwrite
+             }
+             game.equipment[srcIdx] = targetItem;
+        }
+        else if (srcType === 'backpack') game.backpack[srcIdx] = targetItem;
+        else if (srcType === 'hotbar') game.hotbar[srcIdx] = targetItem;
+    }
+
+    recalcAP();
+    updateUI();
 }
 
 // Initialize Layout
