@@ -1052,10 +1052,100 @@ h1 {
     grid-row: 2;
     border-top: 1px solid #333;
     padding-top: 10px;
+    display: flex;
+    gap: 20px;
 }
 
 .hotbar-grid {
     display: flex;
     gap: 10px;
     margin-top: 10px;
+}
+
+.inventory-hotbar-section {
+    flex: 0 0 auto;
+}
+
+.inventory-desc-section {
+    flex: 1;
+    border-left: 1px solid #333;
+    padding-left: 20px;
+    color: #ccc;
+    font-family: 'Special Elite', cursive;
+    font-size: 0.9rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.desc-title {
+    color: var(--gold);
+    font-family: 'Cinzel', serif;
+    font-size: 1.2rem;
+    margin-bottom: 5px;
+}
+
+/* --- Class & Mode Selection --- */
+.class-selection-container {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    margin-bottom: 30px;
+}
+
+.class-card {
+    width: 220px;
+    background: rgba(0, 0, 0, 0.8);
+    border: 2px solid #444;
+    padding: 15px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+}
+
+.class-card:hover, .class-card.selected {
+    border-color: var(--gold);
+    background: rgba(212, 175, 55, 0.1);
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(212, 175, 55, 0.2);
+}
+
+.class-name {
+    font-family: 'Cinzel', serif;
+    font-size: 1.4rem;
+    color: var(--gold);
+    margin-bottom: 10px;
+}
+
+.class-desc {
+    font-size: 0.9rem;
+    color: #ccc;
+    line-height: 1.4;
+}
+
+.mode-selection {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    margin-bottom: 30px;
+    font-family: 'Cinzel', serif;
+}
+
+.mode-option label {
+    cursor: pointer;
+    color: var(--parchment);
+    font-size: 1.1rem;
+}
+
+.class-icon-display {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    width: 48px;
+    height: 48px;
+    background-size: 900% 100%;
+    border: 2px solid var(--gold);
+    background-color: rgba(0,0,0,0.5);
+    box-shadow: 0 0 15px rgba(212, 175, 55, 0.3);
+    z-index: 10;
 }

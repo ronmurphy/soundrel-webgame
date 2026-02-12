@@ -13,6 +13,8 @@ const game = {
     lastAvoided: false,
     potionsUsedThisTurn: false,
     sex: 'm', // m or f
+    classId: 'knight', // knight, rogue, occultist
+    mode: 'checkpoint', // checkpoint (standard) or hardcore
 
     // Encounter State
     activeRoom: null,
@@ -57,7 +59,31 @@ const ITEM_DATA = [
     { id: 8, name: "Iron-Bound Tome", cost: 50, type: 'passive', desc: "+2 Soul Coins per kill." }
 ];
 
-const SUITS = { HEARTS: '♥', DIAMONDS: '♦', CLUBS: '♣', SPADES: '♠' };
+const SUITS = { HEARTS: '♥', DIAMONDS: '♦', CLUBS: '♣', SPADES: '♠', SKULLS: '💀', MENACES: '👺' };
+
+const CLASS_DATA = {
+    knight: {
+        name: "Knight",
+        desc: "A stalwart defender. Starts with a Rusty Sword and basic armor.",
+        hp: 20,
+        items: [{ type: 'weapon', id: 'rusty_sword', val: 4, suit: '♦', name: "Rusty Sword" }, { type: 'armor', id: 0 }], // Studded Gloves
+        icon: { type: 'class-icon', val: 0 } // Knight Helm
+    },
+    rogue: {
+        name: "Rogue",
+        desc: "Cunning and greedy. Starts with a Skeleton Key and a Tome for extra coins.",
+        hp: 20,
+        items: [{ type: 'item', id: 2 }, { type: 'item', id: 8 }], // Key, Tome
+        icon: { type: 'class-icon', val: 1 } // Rogue Key
+    },
+    occultist: {
+        name: "Occultist",
+        desc: "Seeker of forbidden knowledge. Starts with the Spectral Lantern but has less health.",
+        hp: 15,
+        items: [{ type: 'item', id: 1 }], // Lantern
+        icon: { type: 'class-icon', val: 2 } // Occultist Book
+    }
+};
 
 // --- PROC-GEN DUNGEON (Grid Based) ---
 function generateDungeon() {
@@ -1857,17 +1883,26 @@ function createDeck() {
     if (game.floor >= 4) multiplier = 2;
     if (game.floor >= 7) multiplier = 3;
 
+    // Biome Logic
+    let monsterSuits = [SUITS.CLUBS, SUITS.MENACES]; // Floors 1-3: Beasts & Humanoids
+    if (game.floor >= 4) monsterSuits = [SUITS.SPADES, SUITS.SKULLS]; // Floors 4-6: Shadows & Undead
+    if (game.floor >= 7) monsterSuits = [SUITS.MENACES, SUITS.SKULLS]; // Floors 7-9: Deep Dark
+
     const deck = [];
     for (let i = 0; i < multiplier; i++) {
-        // Monsters: 2-14 Clubs/Spades (2 * 13 = 26)
-        [SUITS.CLUBS, SUITS.SPADES].forEach(suit => {
+        // Monsters: 2-14 of selected suits
+        monsterSuits.forEach(suit => {
             for (let v = 2; v <= 14; v++) {
-                deck.push({ suit, val: v, type: 'monster', name: getMonsterName(v) });
+                deck.push({ suit, val: v, type: 'monster', name: getMonsterName(v, suit) });
             }
         });
         // Weapons: 2-10 Diamonds (9)
         for (let v = 2; v <= 10; v++) {
-            deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: `Weapon lv.${v}` });
+            if (game.classId === 'occultist') {
+                deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: getSpellName(v), isSpell: true });
+            } else {
+                deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: `Weapon lv.${v}` });
+            }
         }
         // Potions: 2-10 Hearts (9)
         for (let v = 2; v <= 10; v++) {
@@ -1877,18 +1912,48 @@ function createDeck() {
     return shuffle(deck);
 }
 
+function getSpellName(v) {
+    const names = {
+        2: "Fire Bolt", 3: "Ice Dagger", 4: "Poison Dart",
+        5: "Lightning", 6: "Ball Lightning", 7: "Fireball",
+        8: "Abyssal Rift", 9: "Comet Fall", 10: "Eldritch Annihilation"
+    };
+    return names[v] || "Unknown Spell";
+}
 
-
-function getMonsterName(v) {
-    if (v <= 3) return 'Shadow Creeper';
-    if (v <= 5) return 'Graveling';
-    if (v <= 7) return 'Rat-Bat';
-    if (v <= 9) return 'Spined Horror';
-    if (v === 10) return 'Grue';
-    if (v === 11) return 'Jack of Spite';
-    if (v === 12) return 'Queen of Sorrow';
-    if (v === 13) return 'King of Ruin';
-    if (v === 14) return 'Primeval Ace';
+function getMonsterName(v, suit) {
+    if (suit === SUITS.SKULLS) {
+        if (v <= 3) return 'Skeleton';
+        if (v <= 5) return 'Zombie';
+        if (v <= 7) return 'Ghost';
+        if (v <= 9) return 'Skeletal Warrior';
+        if (v === 10) return 'Ghoul';
+        if (v === 11) return 'Wight';
+        if (v === 12) return 'Wraith';
+        if (v === 13) return 'Vampire';
+        if (v === 14) return 'Lich Lord';
+    } else if (suit === SUITS.MENACES) {
+        if (v <= 3) return 'Kobold';
+        if (v <= 5) return 'Goblin';
+        if (v <= 7) return 'Gremlin';
+        if (v <= 9) return 'Hobgoblin';
+        if (v === 10) return 'Orc';
+        if (v === 11) return 'Gnoll';
+        if (v === 12) return 'Lizard-man';
+        if (v === 13) return 'Yuan-ti';
+        if (v === 14) return 'Bugbear Chief';
+    } else {
+        // Default / Spades / Clubs (Beasts/Shadows)
+        if (v <= 3) return 'Shadow Creeper';
+        if (v <= 5) return 'Graveling';
+        if (v <= 7) return 'Rat-Bat';
+        if (v <= 9) return 'Spined Horror';
+        if (v === 10) return 'Grue';
+        if (v === 11) return 'Jack of Spite';
+        if (v === 12) return 'Queen of Sorrow';
+        if (v === 13) return 'King of Ruin';
+        if (v === 14) return 'Primeval Ace';
+    }
     return `Monster (${v})`;
 }
 
@@ -1902,8 +1967,71 @@ function startDive() {
 window.selectAvatar = (sex) => {
     game.sex = sex;
     document.getElementById('avatarModal').style.display = 'none';
-    finalizeStartDive();
+    showClassSelection();
 };
+
+function showClassSelection() {
+    // Create modal for class/mode
+    const modal = document.createElement('div');
+    modal.id = 'classModal';
+    modal.className = 'modal-overlay';
+    modal.style.display = 'flex';
+    modal.style.flexDirection = 'column';
+    modal.style.alignItems = 'center';
+    modal.style.justifyContent = 'center';
+    
+    let selectedClass = 'knight';
+    let selectedMode = 'checkpoint';
+
+    modal.innerHTML = `
+        <h2 style="font-family:'Cinzel'; font-size:2.5rem; color:var(--gold); margin-bottom:20px;">Select Class</h2>
+        <div class="class-selection-container">
+            <div class="class-card selected" data-id="knight" onclick="selectClassUI('knight')">
+                <div class="class-name">Knight</div>
+                <div class="class-desc">Starts with Rusty Sword (4) and Studded Gloves (+2 AP).</div>
+            </div>
+            <div class="class-card" data-id="rogue" onclick="selectClassUI('rogue')">
+                <div class="class-name">Rogue</div>
+                <div class="class-desc">Starts with Skeleton Key and Iron-Bound Tome (+2 Coins/kill).</div>
+            </div>
+            <div class="class-card" data-id="occultist" onclick="selectClassUI('occultist')">
+                <div class="class-name">Occultist</div>
+                <div class="class-desc">Starts with Spectral Lantern (Perm. Light). <br><span style="color:#d00">-5 Max HP.</span></div>
+            </div>
+        </div>
+
+        <h2 style="font-family:'Cinzel'; font-size:2rem; color:var(--gold); margin:20px 0;">Game Mode</h2>
+        <div class="mode-selection">
+            <div class="mode-option">
+                <input type="radio" name="gmode" id="m_check" value="checkpoint" checked onchange="selectModeUI('checkpoint')">
+                <label for="m_check">Standard (Checkpoint)<br><span style="font-size:0.8rem; color:#888;">Save at start of floor. Retry floor on death.</span></label>
+            </div>
+            <div class="mode-option">
+                <input type="radio" name="gmode" id="m_hard" value="hardcore" onchange="selectModeUI('hardcore')">
+                <label for="m_hard">Hardcore (Suspend)<br><span style="font-size:0.8rem; color:#888;">Save anywhere. Death deletes save.</span></label>
+            </div>
+        </div>
+
+        <button class="v2-btn" id="confirmStartBtn">Begin Dive</button>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Helpers attached to window for the inline onclicks
+    window.selectClassUI = (id) => {
+        selectedClass = id;
+        document.querySelectorAll('.class-card').forEach(c => c.classList.remove('selected'));
+        document.querySelector(`.class-card[data-id="${id}"]`).classList.add('selected');
+    };
+    window.selectModeUI = (id) => { selectedMode = id; };
+
+    document.getElementById('confirmStartBtn').onclick = () => {
+        game.classId = selectedClass;
+        game.mode = selectedMode;
+        document.body.removeChild(modal);
+        finalizeStartDive();
+    };
+}
 
 function finalizeStartDive() {
     isAttractMode = false;
@@ -1911,13 +2039,45 @@ function finalizeStartDive() {
     const combatArea = document.querySelector('.player-combat-area');
     if (combatArea) combatArea.style.display = 'flex';
 
-    game.hp = 20; game.floor = 1; game.deck = createDeck();
+    // Update Control Box Buttons
+    const viewBtn = document.getElementById('viewToggleBtn');
+    if (viewBtn) viewBtn.style.display = 'inline-block';
+    const contBtn = document.getElementById('continueGameBtn');
+    if (contBtn) contBtn.style.display = 'none';
+
+    // Apply Class Stats
+    const cData = CLASS_DATA[game.classId];
+    game.hp = cData.hp; 
+    game.maxHp = cData.hp;
+    
+    game.floor = 1; game.deck = createDeck();
     game.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
     game.soulCoins = 0; game.ap = 0; game.maxAp = 0;
     game.equipment = { head: null, chest: null, hands: null, legs: null, weapon: null };
     game.backpack = new Array(24).fill(null); game.hotbar = new Array(6).fill(null);
     game.rooms = generateDungeon(); game.currentRoomIdx = 0; game.lastAvoided = false;
     game.bonfireUsed = false; game.merchantUsed = false;
+
+    // Grant Starting Items
+    cData.items.forEach(i => {
+        let item = i;
+        // Resolve ID to full object if it's a reference
+        if (i.type === 'armor' && typeof i.id === 'number') item = { ...ARMOR_DATA[i.id], type: 'armor' };
+        else if (i.type === 'item' && typeof i.id === 'number') item = { ...ITEM_DATA[i.id], type: 'item' };
+        
+        // Auto-equip if possible, else backpack
+        if (item.type === 'weapon') {
+            game.equipment.weapon = item;
+        } else if (item.type === 'armor') {
+            game.equipment[item.slot] = item;
+        } else {
+            // Try hotbar first for items
+            if (!addToHotbar(item)) addToBackpack(item);
+        }
+    });
+    recalcAP();
+    game.ap = game.maxAp; // Fill AP
+
     clear3DScene(); init3D();
     // Preload FX textures for particle effects
     preloadFXTextures();
@@ -1937,6 +2097,9 @@ function finalizeStartDive() {
 
     // Start BGM
     audio.startLoop('bgm', 'bgm_dungeon', { volume: 0.4, isMusic: true });
+    
+    // Initial Save
+    saveGame();
     enterRoom(0);
 }
 
@@ -2059,6 +2222,9 @@ function startIntermission() {
     nextBtn.onclick = () => {
         nextBtn.innerText = "Descend"; // Reset text
         nextBtn.onclick = startIntermission; // Reset handler to intermission
+        
+        // Checkpoint Save on Floor Transition
+        if (game.mode === 'checkpoint') saveGame();
         descendToNextFloor();
     };
 }
@@ -2095,6 +2261,10 @@ function enterRoom(id) {
     const oldId = game.currentRoomIdx; game.currentRoomIdx = id;
     const room = game.rooms.find(r => r.id === id);
     movePlayerSprite(oldId, id);
+
+    // Hardcore Auto-Save on Room Entry
+    if (game.mode === 'hardcore') saveGame();
+
     if (room.isWaypoint) { logMsg("Traversing corridors..."); return; }
 
     if (room.state === 'cleared' && !room.isFinal) { logMsg("Safe passage."); return; }
@@ -2214,11 +2384,11 @@ function startBossFight() {
     logMsg(`The Guardian employs ${plan.name}!`);
 
     game.combatCards = plan.minions.map(m => ({
-        type: 'monster', val: m.val, suit: '💀', name: `Guardian's ${m.name}`, bossSlot: m.slot, customAsset: m.asset, customUV: m.uv, bossRole: m.role
+        type: 'monster', val: m.val, suit: SUITS.SKULLS, name: `Guardian's ${m.name}`, bossSlot: m.slot, customAsset: m.asset, customUV: m.uv, bossRole: m.role
     }));
 
     // Add the Guardian itself
-    game.combatCards.push({ type: 'monster', val: 15 + (game.floor * 2), suit: '💀', name: "The Guardian", bossSlot: 'boss-guardian', customAnim: selectedGuardian });
+    game.combatCards.push({ type: 'monster', val: 15 + (game.floor * 2), suit: SUITS.SKULLS, name: "The Guardian", bossSlot: 'boss-guardian', customAnim: selectedGuardian });
 
     showCombat();
 }
@@ -2259,7 +2429,11 @@ function showCombat() {
         // if (c.type === 'monster' && c.val >= 11) {
         // all monster cards now have sprite sheet animations. 
         if (c.type === 'monster' && c.val >= 1) {
-            const suitName = c.suit === '♣' ? 'club' : 'spade';
+            let suitName = 'club';
+            if (c.suit === SUITS.SPADES) suitName = 'spade';
+            else if (c.suit === SUITS.SKULLS) suitName = 'skull';
+            else if (c.suit === SUITS.MENACES) suitName = 'menace';
+
             // const rankName = { 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[c.val];
             const rankName = { 1: '1', 2: '1', 3: '1', 4: '2', 5: '2', 6: '3', 7: '3', 8: '4', 9: '4', 10: '5', 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[c.val];
             bgUrl = `assets/images/animations/${suitName}_${rankName}.png`;
@@ -2883,6 +3057,9 @@ function gameOver() {
     // Rules say subtract remaining monsters from life
     const score = game.hp - monsterSum;
 
+    // Delete save on death if Hardcore
+    if (game.mode === 'hardcore') deleteSave();
+
     alert(`Game Over! Your vitality reached 0.\n\nFinal Score: ${score}\n(Life: ${game.hp}, Monsters remaining: ${monsterSum})`);
     location.reload();
 }
@@ -3249,8 +3426,18 @@ function getAssetData(type, value, suit, extra) {
     let v = value;
     let s = suit;
 
-    if (type === 'monster') file = (suit === '♣' ? 'club.png' : 'spade.png');
-    else if (type === 'weapon') file = 'diamond.png';
+    if (type === 'monster') {
+        if (suit === SUITS.CLUBS) file = 'club.png';
+        else if (suit === SUITS.SPADES) file = 'spade.png';
+        else if (suit === SUITS.SKULLS) file = 'skull.png';
+        else if (suit === SUITS.MENACES) file = 'menace.png';
+        else file = 'club.png';
+    }
+    else if (type === 'weapon') {
+        if (game.classId === 'occultist') file = 'occultist.png';
+        else file = 'diamond.png';
+    }
+    else if (type === 'class-icon') file = 'classes.png';
     else if (type === 'potion') file = 'heart.png';
     else if (type === 'block') file = 'block.png';
     else if (type === 'bonfire') file = 'rest_m_large.png';
@@ -3279,6 +3466,8 @@ function getAssetData(type, value, suit, extra) {
         cellIdx = 0; // rest_m.png
     } else if (type === 'armor' || type === 'item') {
         cellIdx = value; // Direct mapping 0-8
+    } else if (type === 'weapon' || type === 'class-icon') {
+        cellIdx = Math.max(0, value - (type === 'weapon' ? 2 : 0)); // Weapons 2-10 -> 0-8, Class 0-8 -> 0-8
     } else if (type === 'gift' && extra && extra.type === 'armor') {
         cellIdx = v; // v is extra.id
     } else {
@@ -3365,9 +3554,21 @@ function setupLayout() {
     // Move Buttons
     const newGameBtn = document.getElementById('newGameBtn');
     const viewBtn = document.getElementById('viewToggleBtn');
+    if (viewBtn) viewBtn.style.display = 'none'; // Hide initially
     const btnContainer = document.createElement('div');
     btnContainer.className = 'btn-group';
     btnContainer.style.marginTop = '10px';
+    
+    // Add Continue Button if save exists
+    if (hasSave()) {
+        const contBtn = document.createElement('button');
+        contBtn.id = 'continueGameBtn';
+        contBtn.className = 'v2-btn';
+        contBtn.innerText = "Continue";
+        contBtn.onclick = loadGame;
+        btnContainer.appendChild(contBtn);
+    }
+
     if (newGameBtn) btnContainer.appendChild(newGameBtn);
     if (viewBtn) btnContainer.appendChild(viewBtn);
     controlBox.appendChild(btnContainer);
@@ -3432,6 +3633,7 @@ function setupInventoryUI() {
     modal.innerHTML = `
         <div class="inventory-content">
             <div class="inventory-left">
+                <div id="classIconDisplay" class="class-icon-display"></div>
                 <div id="paperDoll" class="paper-doll" style="background-image: url('assets/images/visualnovel/${game.sex}_doll.png');">
                     <div class="equip-slot head" data-slot="head"></div>
                     <div class="equip-slot chest" data-slot="chest"></div>
@@ -3445,8 +3647,13 @@ function setupInventoryUI() {
                 <div id="backpackGrid" class="backpack-grid"></div>
             </div>
             <div class="inventory-bottom">
-                 <h3 style="color:var(--gold); font-family:'Cinzel';">Provisioning (Hotbar)</h3>
-                 <div id="modalHotbarGrid" class="hotbar-grid"></div>
+                <div class="inventory-hotbar-section">
+                     <h3 style="color:var(--gold); font-family:'Cinzel';">Provisioning (Hotbar)</h3>
+                     <div id="modalHotbarGrid" class="hotbar-grid"></div>
+                </div>
+                <div id="invDescription" class="inventory-desc-section">
+                    <div style="opacity:0.5; font-style:italic;">Select an item to view details...</div>
+                </div>
             </div>
             <button class="v2-btn close-inv-btn" onclick="toggleInventory()" style="position:absolute; top:20px; right:20px;">Close</button>
         </div>
@@ -3462,6 +3669,16 @@ function renderInventoryUI() {
     const doll = document.getElementById('paperDoll');
     if (doll) doll.style.backgroundImage = `url('assets/images/visualnovel/${game.sex}_doll.png')`;
 
+    // Update Class Icon
+    const classIcon = document.getElementById('classIconDisplay');
+    const cData = CLASS_DATA[game.classId];
+    if (classIcon && cData && cData.icon) {
+        const asset = getAssetData(cData.icon.type, cData.icon.val, null);
+        classIcon.style.backgroundImage = `url('assets/images/${asset.file}')`;
+        classIcon.style.backgroundPosition = `${asset.uv.u * 112.5}% 0%`;
+        classIcon.title = cData.name;
+    }
+
     // Helper to create draggable item
     const createItemEl = (item, source, idx) => {
         if (!item) return null;
@@ -3475,6 +3692,10 @@ function renderInventoryUI() {
         div.draggable = true;
         div.ondragstart = (e) => {
             e.dataTransfer.setData('text/plain', JSON.stringify({ source, idx }));
+        };
+        div.onclick = (e) => {
+            e.stopPropagation();
+            updateItemDescription(item);
         };
         return div;
     };
@@ -3520,6 +3741,25 @@ function renderInventoryUI() {
         }
         hbGrid.appendChild(div);
     });
+}
+
+function updateItemDescription(item) {
+    const container = document.getElementById('invDescription');
+    if (!container || !item) return;
+
+    let desc = item.desc;
+    if (!desc) {
+        // Generate generic description if missing
+        if (item.type === 'weapon') desc = `Deals ${item.val} damage.`;
+        else if (item.type === 'potion') desc = `Restores up to ${item.val} Health.`;
+        else desc = "No details available.";
+    }
+
+    container.innerHTML = `
+        <div class="desc-title">${item.name}</div>
+        <div>${desc}</div>
+        <div style="margin-top:5px; font-size:0.8rem; color:#888;">Type: ${item.type.toUpperCase()} | Value: ${item.val || '-'}</div>
+    `;
 }
 
 function handleDrop(e, targetType, targetIdx) {
@@ -3582,6 +3822,93 @@ function handleDrop(e, targetType, targetIdx) {
 
     recalcAP();
     updateUI();
+}
+
+// --- SAVE SYSTEM ---
+function hasSave() {
+    return !!localStorage.getItem('scoundrelSave');
+}
+
+function saveGame() {
+    const data = {
+        hp: game.hp, maxHp: game.maxHp, floor: game.floor,
+        soulCoins: game.soulCoins, ap: game.ap, maxAp: game.maxAp,
+        sex: game.sex, classId: game.classId, mode: game.mode,
+        currentRoomIdx: game.currentRoomIdx,
+        bonfireUsed: game.bonfireUsed, merchantUsed: game.merchantUsed,
+        slainStack: game.slainStack,
+        equipment: game.equipment,
+        backpack: game.backpack,
+        hotbar: game.hotbar,
+        deck: game.deck,
+        // Serialize Rooms (strip meshes)
+        rooms: game.rooms.map(r => {
+            const copy = { ...r };
+            delete copy.mesh; // Remove Three.js object
+            return copy;
+        })
+    };
+    localStorage.setItem('scoundrelSave', JSON.stringify(data));
+    console.log("Game Saved.");
+}
+
+function loadGame() {
+    const json = localStorage.getItem('scoundrelSave');
+    if (!json) return;
+    
+    const data = JSON.parse(json);
+    
+    // Restore State
+    Object.assign(game, data);
+    
+    // Hide Attract Mode
+    isAttractMode = false;
+    const logo = document.getElementById('gameLogo');
+    if (logo) logo.style.opacity = '0';
+    const combatArea = document.querySelector('.player-combat-area');
+    if (combatArea) combatArea.style.display = 'flex';
+
+    // Update Control Box Buttons
+    const viewBtn = document.getElementById('viewToggleBtn');
+    if (viewBtn) viewBtn.style.display = 'inline-block';
+    const contBtn = document.getElementById('continueGameBtn');
+    if (contBtn) contBtn.style.display = 'none';
+
+    // Re-Initialize 3D
+    clear3DScene();
+    init3D();
+    preloadFXTextures();
+    preloadSounds();
+    
+    // Re-Generate Floor Visuals (using loaded room data)
+    // Note: generateFloorCA uses game.rooms, which we just loaded
+    generateFloorCA();
+    updateAtmosphere(game.floor);
+
+    // Restore Player Position
+    const currentRoom = game.rooms.find(r => r.id === game.currentRoomIdx);
+    if (currentRoom && playerSprite) {
+        playerSprite.position.set(currentRoom.gx, 0.75, currentRoom.gy);
+        playerSprite.material.map = walkAnims[game.sex].up;
+        
+        // Snap Camera
+        camera.position.set(20, 20, 20);
+        camera.lookAt(0, 0, 0);
+        controls.target.set(currentRoom.gx, 0, currentRoom.gy);
+    }
+
+    // Start Audio
+    audio.startLoop('bgm', 'bgm_dungeon', { volume: 0.4, isMusic: true });
+
+    updateUI();
+    logMsg("Game Loaded.");
+    
+    // If loaded into a room that isn't cleared, trigger it
+    enterRoom(game.currentRoomIdx);
+}
+
+function deleteSave() {
+    localStorage.removeItem('scoundrelSave');
 }
 
 // Initialize Layout
