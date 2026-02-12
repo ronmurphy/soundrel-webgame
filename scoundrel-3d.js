@@ -35,6 +35,14 @@ const game = {
     isBossFight: false // Flag for boss state
 };
 
+const ITEMS_SHEET_COUNT = 10; // Change to 10 when you add the ring graphic!
+const WEAPON_SHEET_COUNT = 10; // Updated for Cursed Blade
+
+const CURSED_ITEMS = [
+    { id: 'cursed_blade', name: "Bloodthirst Blade", cost: 66, type: 'weapon', val: 12, suit: '♦', desc: "12 DMG. Drains 1 HP per room.", isCursed: true },
+    { id: 'cursed_ring', name: "Ring of Burden", cost: 66, type: 'passive', desc: "+10 Max HP. Cannot Flee.", isCursed: true }
+];
+
 const ARMOR_DATA = [
     { id: 0, name: "Studded Gloves", ap: 2, cost: 25, slot: "hands", desc: "Light hand protection." },
     { id: 1, name: "Articulated Gauntlets", ap: 5, cost: 50, slot: "hands", desc: "Heavy plated hand protection." },
@@ -972,14 +980,24 @@ function updateSpatialAudio() {
     });
 }
 
-function resizeFXCanvas() {
+function handleWindowResize() {
     fxCanvas.width = window.innerWidth;
     fxCanvas.height = window.innerHeight;
-    // Also size UI FX canvas
     if (uiFxCanvas) { uiFxCanvas.width = window.innerWidth; uiFxCanvas.height = window.innerHeight; }
+
+    const container = document.getElementById('v3-container');
+    if (container && camera && renderer) {
+        const aspect = container.clientWidth / container.clientHeight;
+        const d = 10;
+        camera.left = -d * aspect;
+        camera.right = d * aspect;
+        camera.top = d;
+        camera.bottom = -d;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+    }
 }
-window.addEventListener('resize', resizeFXCanvas);
-resizeFXCanvas();
+window.addEventListener('resize', handleWindowResize);
 
 function init3D() {
     const container = document.getElementById('v3-container');
@@ -2295,7 +2313,7 @@ function startIntermission() {
 
     // Render Shop Items (Random selection of 4)
     // Mix armor and items
-    const pool = [...ARMOR_DATA.map(a => ({ ...a, type: 'armor' })), ...ITEM_DATA.map(i => ({ ...i, type: 'item' }))];
+    const pool = [...ARMOR_DATA.map(a => ({ ...a, type: 'armor' })), ...ITEM_DATA.map(i => ({ ...i, type: 'item' })), ...CURSED_ITEMS];
     shuffle(pool);
 
     for (let i = 0; i < 4; i++) {
@@ -2303,13 +2321,18 @@ function startIntermission() {
         const card = document.createElement('div');
         card.className = 'card shop-item';
 
-        const asset = getAssetData(item.type, item.id, null);
+        const asset = getAssetData(item.type, item.id || item.val, null);
+        
+        const tint = item.isCursed ? 'filter: sepia(1) hue-rotate(60deg) saturate(3) contrast(1.2);' : '';
+        const sheetCount = asset.sheetCount || 9;
+        const bgSize = `${sheetCount * 100}% 100%`;
+        const bgPos = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
 
         card.innerHTML = `
-            <div class="card-art-container" style="background-image: url('assets/images/${asset.file}'); background-size: 900% 100%; background-position: ${asset.uv.u * 112.5}% 0%"></div>
-            <div class="name" style="bottom: 40px; font-size: 14px;">${item.name}</div>
+            <div class="card-art-container" style="background-image: url('assets/images/${asset.file}'); background-size: ${bgSize}; background-position: ${bgPos}; ${tint}"></div>
+            <div class="name" style="bottom: 40px; font-size: 14px; ${item.isCursed ? 'color:#adff2f;' : ''}">${item.name}</div>
             <div class="val" style="font-size: 16px; color: #ffd700;">${item.cost}</div>
-            <div style="position:absolute; bottom:5px; width:100%; text-align:center; font-size:10px; color:#aaa;">${item.type === 'armor' ? `+${item.ap} AP` : 'Item'}</div>
+            <div style="position:absolute; bottom:5px; width:100%; text-align:center; font-size:10px; color:#aaa;">${item.type === 'armor' ? `+${item.ap} AP` : (item.isCursed ? 'Cursed' : 'Item')}</div>
         `;
 
         card.onclick = () => {
@@ -2321,6 +2344,12 @@ function startIntermission() {
                 game.soulCoins -= item.cost;
                 document.getElementById('shopCoinDisplay').innerText = game.soulCoins;
                 
+                // Handle Cursed Ring Passive immediately if bought
+                if (item.id === 'cursed_ring') {
+                    game.maxHp += 10; game.hp += 10;
+                    logMsg("The Ring of Burden binds to you. (+10 Max HP)");
+                }
+
                 addToBackpack(item);
 
                 spawnFloatingText("Purchased!", window.innerWidth / 2, window.innerHeight / 2, '#00ff00');
@@ -2337,7 +2366,7 @@ function startIntermission() {
             const tooltip = document.getElementById('gameTooltip');
             if (tooltip) {
                 tooltip.style.display = 'block';
-                tooltip.innerHTML = `<strong style="color:#ffd700; font-size:16px;">${item.name}</strong><br/><span style="color:#aaa; font-size:12px;">${item.type === 'armor' ? `+${item.ap} AP` : 'Item'}</span><br/><div style="margin-top:4px; color:#ddd;">${item.desc || ''}</div>`;
+                tooltip.innerHTML = `<strong style="color:${item.isCursed ? '#adff2f' : '#ffd700'}; font-size:16px;">${item.name}</strong><br/><span style="color:#aaa; font-size:12px;">${item.type === 'armor' ? `+${item.ap} AP` : 'Item'}</span><br/><div style="margin-top:4px; color:#ddd;">${item.desc || ''}</div>`;
                 const rect = card.getBoundingClientRect();
                 tooltip.style.left = (rect.right + 10) + 'px';
                 tooltip.style.top = rect.top + 'px';
@@ -2395,6 +2424,14 @@ function enterRoom(id) {
     const oldId = game.currentRoomIdx; game.currentRoomIdx = id;
     const room = game.rooms.find(r => r.id === id);
     movePlayerSprite(oldId, id);
+
+    // --- CURSED ITEM EFFECTS ---
+    // Bloodthirst Blade: Drains 1 HP on room entry (except waypoints)
+    if (game.equipment.weapon && game.equipment.weapon.id === 'cursed_blade' && !room.isWaypoint && id !== 0) {
+        takeDamage(1);
+        logMsg("The Bloodthirst Blade drinks your vitality... (-1 HP)");
+        updateUI();
+    }
 
     // Hardcore Auto-Save on Room Entry
     if (game.mode === 'hardcore') saveGame();
@@ -2548,6 +2585,33 @@ function startBossFight() {
     showCombat();
 }
 
+function startSoulBrokerEncounter() {
+    game.isBossFight = true;
+    game.activeRoom.state = 'boss_active';
+    game.chosenCount = 0;
+
+    logMsg("The Soul Broker reveals his true form!");
+    
+    // Narrative Popup (Optional, using log for now)
+    spawnFloatingText("THE FINAL DEBT", window.innerWidth/2, window.innerHeight/2 - 100, '#d4af37');
+
+    // The Soul Broker Boss
+    // He uses the merchant visual but is now a monster
+    game.combatCards = [
+        { type: 'monster', val: 10, suit: '💀', name: "Debt Collector", bossSlot: 'boss-weapon' },
+        { type: 'monster', val: 10, suit: '💀', name: "Debt Collector", bossSlot: 'boss-armor' },
+        { type: 'monster', val: 10, suit: '💀', name: "Debt Collector", bossSlot: 'boss-potion' },
+        { 
+            type: 'monster', val: 30, suit: '👺', name: "The Soul Broker", 
+            bossSlot: 'boss-guardian', 
+            customAsset: 'visualnovel/soulbroker.png', // Uses the image you have
+            isBroker: true 
+        }
+    ];
+
+    showCombat();
+}
+
 function showCombat() {
     const overlay = document.getElementById('combatModal');
     const enemyArea = document.getElementById('enemyArea');
@@ -2569,8 +2633,9 @@ function showCombat() {
 
         let asset = getAssetData(c.type, c.val, c.suit, c.type === 'gift' ? c.actualGift : null);
         let bgUrl = `assets/images/${asset.file}`;
-        let bgSize = asset.isStrip ? '900% 100%' : 'cover';
-        let bgPos = `${asset.uv.u * 112.5}% 0%`;
+        const sheetCount = asset.sheetCount || 9;
+        let bgSize = asset.isStrip ? `${sheetCount * 100}% 100%` : 'cover';
+        let bgPos = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
         let animClass = "";
 
         // Custom Asset Overrides (for Boss Parts)
@@ -2600,6 +2665,11 @@ function showCombat() {
             if (c.bossSlot === 'boss-guardian') {
                 // Use a specific boss sprite if available, or fallback to King/Ace
                 // Assuming animations are in the same folder
+                if (c.isBroker) {
+                    bgUrl = `assets/images/visualnovel/soulbroker.png`;
+                    bgSize = "cover";
+                    animClass = "";
+                } else
                 bgUrl = `assets/images/animations/${c.customAnim || 'spade_king'}.png`;
             }
         }
@@ -2607,7 +2677,7 @@ function showCombat() {
         card.innerHTML = `
                     <div class="card-art-container ${animClass}" style="background-image: url('${bgUrl}'); background-size: ${bgSize}; background-position: ${bgPos}"></div>
                     <div class="suit" style="background: rgba(0,0,0,0.5); border-radius: 50%; width: 40px; text-align: center;">${c.suit}</div>
-                    <div class="val" style="color: #fff; text-shadow: 2px 2px 0 #000;">${getDisplayVal(c.val)}</div>
+                    <div class="val" style="color: ${c.isCursed ? '#adff2f' : '#fff'}; text-shadow: 2px 2px 0 #000;">${getDisplayVal(c.val)}</div>
                     <div class="name">${c.name}</div>
                 `;
         card.onclick = (e) => pickCard(idx, e);
@@ -2874,6 +2944,11 @@ function pickCard(idx, event) {
                 } else if (game.equipment.weapon && !willBreak) {
                     // slay with weapon: small sparks
                     spawnAboveModalTexture('spark_01.png', centerX, centerY, 12, { tint: '#ccc', blend: 'lighter', sizeRange: [8, 36], intensity: 1.2 });
+                    
+                    // Cursed Blade Effect: Heals on kill? Or just drains? 
+                    // "Bloodthirst" implies healing, but user said "more like a bloodthirst weapon" (drain).
+                    // Let's stick to the drain on entry for now.
+                    
                     game.slainStack.push(card);
                 }
 
@@ -2917,6 +2992,12 @@ function pickCard(idx, event) {
 
                     // Boss Fight Logic: Only finish if Guardian is dead
                     if (game.isBossFight) {
+                        // Soul Broker Logic
+                        const broker = game.combatCards.find(c => c.isBroker);
+                        if (game.combatCards.some(c => c.isBroker) && !broker) {
+                            // Broker died just now
+                        }
+
                         // Shake the Guardian if a minion died
                         const guardianCard = document.querySelector('.card.boss-guardian');
                         if (guardianCard) {
@@ -3001,6 +3082,12 @@ function pickCard(idx, event) {
                 }
                 logMsg(`Merchant's Blessing: Looted ${gift.name}.`);
             }
+            
+            // Handle Cursed Items from Merchant
+            if (gift.isCursed && gift.id === 'cursed_ring') {
+                game.maxHp += 10; game.hp += 10;
+                logMsg("The Ring of Burden binds to you. (+10 Max HP)");
+            }
 
             game.activeRoom.state = 'cleared';
             game.combatCards = []; // Clear other gift options
@@ -3057,11 +3144,18 @@ function finishRoom() {
         spawnAboveModalTexture('scorch_03.png', window.innerWidth / 2, window.innerHeight / 2 - 100, 40, { tint: '#ff4400', blend: 'lighter', sizeRange: [60, 200], spread: 120, decay: 0.02 });
         spawnAboveModalTexture('spark_01.png', window.innerWidth / 2, window.innerHeight / 2 - 100, 60, { tint: '#ffffff', blend: 'lighter', sizeRange: [10, 40], spread: 150, decay: 0.01 });
 
+        const isBroker = game.floor === 9; // Was this the Soul Broker?
+
         // Visuals
-        document.getElementById('combatMessage').innerText = `Guardian Defeated! Descending to Level ${game.floor + 1}...`;
+        document.getElementById('combatMessage').innerText = isBroker ? "SOUL BROKER DEFEATED!" : `Guardian Defeated! Descending to Level ${game.floor + 1}...`;
         document.getElementById('descendBtn').style.display = 'none';
         document.getElementById('exitCombatBtn').style.display = 'none';
         document.getElementById('modalAvoidBtn').style.display = 'none';
+
+        if (isBroker) {
+            setTimeout(() => { alert("YOU HAVE DEFEATED THE SOUL BROKER!\n\nThe curse is lifted. You are free."); location.reload(); }, 4000);
+            return;
+        }
 
         updateUI(); // Update coins etc
 
@@ -3099,6 +3193,13 @@ function finishRoom() {
 
     if (allCleared) {
         if (game.activeRoom.isFinal) {
+            // Check for Final Boss Trigger (Floor 9)
+            if (game.floor === 9) {
+                logMsg("The air grows heavy. The Soul Broker approaches...");
+                startSoulBrokerEncounter();
+                return;
+            }
+
             // Update message and show descend button immediately
             document.getElementById('combatMessage').innerText = "Floor Purged! The Guardian awaits.";
             document.getElementById('descendBtn').style.display = 'block';
@@ -3116,6 +3217,14 @@ function finishRoom() {
 
 function avoidRoom() {
     if (game.lastAvoided || game.chosenCount > 0) return;
+
+    // Cursed Ring Check
+    const hasBurden = game.hotbar.some(i => i && i.id === 'cursed_ring');
+    if (hasBurden) {
+        logMsg("The Ring of Burden prevents your escape!");
+        spawnFloatingText("CANNOT FLEE!", window.innerWidth/2, window.innerHeight/2, '#adff2f');
+        return;
+    }
 
     const room = game.activeRoom;
     game.deck.push(...room.cards);
@@ -3458,18 +3567,23 @@ function updateUI() {
         weaponLabel.style.color = 'var(--gold)';
 
         const asset = getAssetData('weapon', game.equipment.weapon.val, game.equipment.weapon.suit);
+        const sheetCount = asset.sheetCount || 9;
+        const bgSize = `${sheetCount * 100}% 100%`;
+        const bgPos = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
 
         // Update Modal Art
         if (weaponArtModal) {
             weaponArtModal.style.backgroundImage = `url('assets/images/${asset.file}')`;
-            weaponArtModal.style.backgroundPosition = `${asset.uv.u * 112.5}% 0%`;
+            weaponArtModal.style.backgroundSize = bgSize;
+            weaponArtModal.style.backgroundPosition = bgPos;
         }
 
         // Update Sidebar Slot
         const weaponArtSidebar = document.getElementById('weaponArtSidebar');
         if (weaponArtSidebar) {
             weaponArtSidebar.style.backgroundImage = `url('assets/images/${asset.file}')`;
-            weaponArtSidebar.style.backgroundPosition = `${asset.uv.u * 112.5}% 0%`;
+            weaponArtSidebar.style.backgroundSize = bgSize;
+            weaponArtSidebar.style.backgroundPosition = bgPos;
         }
         const nameSidebar = document.getElementById('weaponNameSidebar');
         if (nameSidebar) nameSidebar.innerText = `${cleanName} (${game.equipment.weapon.val})`;
@@ -3524,9 +3638,18 @@ function updateUI() {
             const asset = getAssetData(item.type, val, item.suit);
 
             // Broken Armor Tint (Red) - only if it's armor and we are at the floor
-            const tint = (item.type === 'armor' && isArmorBroken) ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
+            let tint = (item.type === 'armor' && isArmorBroken) ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
+            
+            const sheetCount = asset.sheetCount || 9;
+            const bgSize = `${sheetCount * 100}% 100%`;
+            const bgPos = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
 
-            slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:900% 100%; background-position:${asset.uv.u * 112.5}% 0%; ${tint}" onclick="useItem(${i})"></div>`;
+            // Cursed Item Tint (Sickly Green/Yellow)
+            if (item.isCursed) {
+                tint = 'filter: sepia(1) hue-rotate(60deg) saturate(3) contrast(1.2);';
+            }
+
+            slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:${bgSize}; background-position:${bgPos}; ${tint}" onclick="useItem(${i})"></div>`;
 
             // Durability Label
             if (item.type === 'weapon' && item.durability !== undefined && item.durability !== Infinity) {
@@ -3561,9 +3684,16 @@ function updateUI() {
                 const item = game.hotbar[i];
                 const val = item.type === 'potion' ? item.val : item.id;
                 const asset = getAssetData(item.type, val, item.suit);
-                const tint = (item.type === 'armor' && isArmorBroken) ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
+                const sheetCount = asset.sheetCount || 9;
+                const bgSize = `${sheetCount * 100}% 100%`;
+                const bgPos = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
+                let tint = (item.type === 'armor' && isArmorBroken) ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
+                
+                if (item.isCursed) {
+                    tint = 'filter: sepia(1) hue-rotate(60deg) saturate(3) contrast(1.2);';
+                }
 
-                slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:900% 100%; background-position:${asset.uv.u * 112.5}% 0%; ${tint}" onclick="useItem(${i})"></div>`;
+                slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:${bgSize}; background-position:${bgPos}; ${tint}" onclick="useItem(${i})"></div>`;
 
                 // Durability Label
                 if (item.type === 'weapon' && item.durability !== undefined && item.durability !== Infinity) {
@@ -3655,9 +3785,9 @@ function updateMerchantPortraitPosition() {
 }
 
 // --- ASSET HELPERS ---
-function getUVForCell(cellIdx) {
-    // cellIdx is 0-8 for 1x9 horizontal strip
-    return { u: cellIdx / 9, v: 0 };
+function getUVForCell(cellIdx, totalCells = 9) {
+    // cellIdx is 0-based index
+    return { u: cellIdx / totalCells, v: 0 };
 }
 
 function getAssetData(type, value, suit, extra) {
@@ -3665,6 +3795,7 @@ function getAssetData(type, value, suit, extra) {
     let v = value;
     let s = suit;
 
+    // Basic Types
     if (type === 'monster') {
         if (suit === SUITS.CLUBS) file = 'club.png';
         else if (suit === SUITS.SPADES) file = 'spade.png';
@@ -3672,9 +3803,14 @@ function getAssetData(type, value, suit, extra) {
         else if (suit === SUITS.MENACES) file = 'menace.png';
         else file = 'club.png';
     }
-    else if (type === 'weapon') {
-        if (game.classId === 'occultist') file = 'occultist.png';
-        else file = 'diamond.png';
+    else if (type === 'weapon' || type === 'passive') {
+        // Handle Cursed Items
+        if (value === 'cursed_blade') file = 'diamond.png';
+        else if (value === 'cursed_ring') file = 'items.png';
+        else {
+            if (game.classId === 'occultist' && type === 'weapon') file = 'occultist.png';
+            else file = 'diamond.png';
+        }
     }
     else if (type === 'class-icon') file = 'classes.png';
     else if (type === 'potion') file = 'heart.png';
@@ -3686,6 +3822,8 @@ function getAssetData(type, value, suit, extra) {
             v = extra.id;
         } else {
                 if (extra.type === 'weapon') {
+                    if (extra.id === 'cursed_blade') file = 'diamond.png';
+                    else
                     file = (game.classId === 'occultist') ? 'occultist.png' : 'diamond.png';
                 } else {
                     file = 'heart.png';
@@ -3703,14 +3841,28 @@ function getAssetData(type, value, suit, extra) {
     }
 
     let cellIdx = 0;
+    let sheetCount = 9;
+    if (file === 'items.png') sheetCount = ITEMS_SHEET_COUNT;
+    if (file === 'diamond.png') sheetCount = WEAPON_SHEET_COUNT;
+
     if (type === 'block') {
         cellIdx = value % 9;
     } else if (type === 'bonfire') {
         cellIdx = 0; // rest_m.png
     } else if (type === 'armor' || type === 'item') {
+        if (file === 'items.png') sheetCount = ITEMS_SHEET_COUNT;
         cellIdx = value; // Direct mapping 0-8
+        
+        // Special mapping for Cursed Ring if it's in items.png
+        if (value === 'cursed_ring') {
+            // If you add the ring as the 10th item (index 9)
+            cellIdx = 9; 
+        }
     } else if (type === 'weapon' || type === 'class-icon') {
-        if (type === 'weapon' && game.classId === 'occultist' && value > 10) {
+        if (value === 'cursed_blade') {
+            cellIdx = 9; // Index 9 is the 10th sprite
+        }
+        else if (type === 'weapon' && game.classId === 'occultist' && value > 10) {
             // Map 11->5 (J), 12->6 (Q), 13->7 (K), 14->8 (A) to match high tier spells
             // 11 - 6 = 5
             cellIdx = value - 6;
@@ -3721,7 +3873,10 @@ function getAssetData(type, value, suit, extra) {
         cellIdx = v; // v is extra.id
     } else if (type === 'gift' && extra && extra.type === 'weapon') {
         // Handle weapon gifts (Merchant)
-        if (game.classId === 'occultist' && v > 10) {
+        if (extra.id === 'cursed_blade') {
+            cellIdx = 9;
+        }
+        else if (game.classId === 'occultist' && v > 10) {
             cellIdx = v - 6; // Map 11->5, 12->6, etc.
         } else {
             cellIdx = Math.max(0, v - 2);
@@ -3740,7 +3895,7 @@ function getAssetData(type, value, suit, extra) {
         else cellIdx = 0;
     }
     const isStrip = !file.includes('rest');
-    return { file, uv: getUVForCell(cellIdx), isStrip };
+    return { file, uv: getUVForCell(cellIdx, sheetCount), isStrip, sheetCount };
 }
 
 function applyTextureToMesh(mesh, type, value, suit) {
@@ -3750,7 +3905,7 @@ function applyTextureToMesh(mesh, type, value, suit) {
     tex.wrapT = THREE.RepeatWrapping;
 
     const isStrip = !asset.file.includes('rest');
-    tex.repeat.set(isStrip ? 1 / 9 : 1, 1);
+    tex.repeat.set(isStrip ? 1 / (asset.sheetCount || 9) : 1, 1);
     tex.offset.set(asset.uv.u, 0);
 
     mesh.material.map = tex;
@@ -3781,6 +3936,16 @@ window.toggleInventory = function() {
     }
 };
 
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+            console.log(`Error attempting to enable fullscreen: ${err.message}`);
+        });
+    } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+    }
+}
+
 // --- LAYOUT SETUP ---
 function setupLayout() {
     console.log("Initializing Custom Layout...");
@@ -3788,6 +3953,15 @@ function setupLayout() {
     const controlBox = document.createElement('div');
     controlBox.className = 'control-box';
     document.body.appendChild(controlBox);
+
+    // Add Fullscreen Button (Top Right Corner)
+    const fsBtn = document.createElement('button');
+    fsBtn.className = 'v2-btn';
+    fsBtn.innerText = "⛶"; 
+    fsBtn.title = "Toggle Fullscreen";
+    fsBtn.onclick = toggleFullscreen;
+    fsBtn.style.cssText = "position: absolute; top: 5px; right: 5px; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: none; z-index: 10;";
+    controlBox.appendChild(fsBtn);
 
     // Move Title/Label
     const title = document.querySelector('.title-area');
@@ -3827,6 +4001,7 @@ function setupLayout() {
 
     if (newGameBtn) btnContainer.appendChild(newGameBtn);
     if (viewBtn) btnContainer.appendChild(viewBtn);
+    
     controlBox.appendChild(btnContainer);
 
     // 2. Transform Player Combat Area into Always-Visible Dock
@@ -3930,8 +4105,10 @@ function renderInventoryUI() {
     const cData = CLASS_DATA[game.classId];
     if (classIcon && cData && cData.icon) {
         const asset = getAssetData(cData.icon.type, cData.icon.val, null);
+        const sheetCount = asset.sheetCount || 9;
         classIcon.style.backgroundImage = `url('assets/images/${asset.file}')`;
-        classIcon.style.backgroundPosition = `${asset.uv.u * 112.5}% 0%`;
+        classIcon.style.backgroundSize = `${sheetCount * 100}% 100%`;
+        classIcon.style.backgroundPosition = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
         classIcon.title = cData.name;
     }
 
@@ -3942,9 +4119,10 @@ function renderInventoryUI() {
         div.className = 'inv-item-drag';
         div.style.width = '100%'; div.style.height = '100%';
         const asset = getAssetData(item.type, item.val || item.id, item.suit);
+        const sheetCount = asset.sheetCount || 9;
         div.style.backgroundImage = `url('assets/images/${asset.file}')`;
-        div.style.backgroundSize = '900% 100%';
-        div.style.backgroundPosition = `${asset.uv.u * 112.5}% 0%`;
+        div.style.backgroundSize = `${sheetCount * 100}% 100%`;
+        div.style.backgroundPosition = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
         
         if (item.type === 'weapon' && item.durability !== undefined && item.durability !== Infinity) {
             div.innerHTML = `<div class="item-durability">${item.durability}</div>`;
