@@ -221,6 +221,7 @@ function preloadSounds() {
 
 let ghosts = []; // Active ghost sprites
 let is3DView = true;
+let isAttractMode = false; // Title screen mode
 let playerSprite;
 let walkAnims = {
     m: { up: null, down: null },
@@ -917,9 +918,9 @@ function init3D() {
     mouse = new THREE.Vector2();
 
     // Lights
-    scene.add(new THREE.AmbientLight(0xffffff, 0.15));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
     // Hemisphere light — soft global fill to keep scenes readable under heavy fog
-    hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x222222, 0.35);
+    hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x222222, 0.6);
     scene.add(hemisphereLight);
     // Initial Torch
     torchLight = new THREE.PointLight(0xffaa44, 300, 40);
@@ -1016,6 +1017,18 @@ function update3DScene() {
     const currentRoom = game.rooms.find(room => room.id === game.currentRoomIdx);
 
     if (playerSprite && torchLight) {
+        // --- Attract Mode Overrides ---
+        if (isAttractMode) {
+            // Force full visibility
+            game.rooms.forEach(r => {
+                r.isRevealed = true;
+                if (!r.correveals) r.correveals = {};
+                r.connections.forEach(cid => r.correveals[`cor_${r.id}_${cid}`] = true);
+            });
+            torchLight.intensity = 1200;
+            torchLight.distance = 100;
+        }
+
         let vRad = 2.5;
         // Check for Spectral Lantern (ID 1)
         const hasLantern = game.inventory.some(i => i.type === 'item' && i.id === 1);
@@ -1048,7 +1061,7 @@ function update3DScene() {
 
         game.rooms.forEach(r => {
             const dist = Math.sqrt(Math.pow(r.gx - playerSprite.position.x, 2) + Math.pow(r.gy - playerSprite.position.z, 2));
-            const isVisible = dist < vRad;
+            const isVisible = isAttractMode || (dist < vRad);
             if (isVisible) r.isRevealed = true;
 
             if (r.isRevealed) {
@@ -1209,7 +1222,7 @@ function update3DScene() {
             });
         });
 
-        if (currentRoom) {
+        if (currentRoom && !isAttractMode) {
             const targetPos = new THREE.Vector3(currentRoom.gx, 0, currentRoom.gy);
             controls.target.lerp(targetPos, 0.05);
         }
@@ -1225,7 +1238,7 @@ function animate3D() {
     updateSpatialAudio();
 
     // Animate Player Marker
-    if (playerMarker && playerSprite) {
+    if (playerMarker && playerSprite && !isAttractMode) {
         const currentRoom = game.rooms.find(r => r.id === game.currentRoomIdx);
 
         if (currentRoom && currentRoom.isWaypoint) {
@@ -1245,7 +1258,17 @@ function animate3D() {
         }
     }
 
-    controls.update();
+    if (isAttractMode) {
+        // Rotate camera around center
+        const time = Date.now() * 0.0002;
+        const dist = 35;
+        camera.position.x = Math.sin(time) * dist;
+        camera.position.z = Math.cos(time) * dist;
+        camera.position.y = 12; // Low angle (~20 degrees)
+        camera.lookAt(0, 0, 0);
+    } else {
+        controls.update();
+    }
 
     // Rotate fog rings slowly for subtle motion
     const t = Date.now();
@@ -1453,7 +1476,7 @@ function getThemeForFloor(floor) {
 
 function updateAtmosphere(floor) {
     const theme = getThemeForFloor(floor);
-    const dimColor = new THREE.Color(theme.color).multiplyScalar(0.5);
+    const dimColor = new THREE.Color(theme.color).multiplyScalar(0.75); // Brightened background
     scene.background = dimColor;
     // Use per-theme fog density when available
     scene.fog = new THREE.FogExp2(dimColor, theme.fogDensity || 0.05);
@@ -1474,7 +1497,7 @@ function updateAtmosphere(floor) {
     const amb = scene.children.find(c => c.isAmbientLight);
     if (amb) {
         amb.color.setHex(theme.color).lerp(new THREE.Color(0xffffff), 0.1);
-        amb.intensity = theme.ambientIntensity || 0.15;
+        amb.intensity = (theme.ambientIntensity || 0.15) + 0.35; // Significant boost
     }
 
     if (typeof hemisphereLight !== 'undefined' && hemisphereLight) {
@@ -1482,7 +1505,7 @@ function updateAtmosphere(floor) {
         const ground = new THREE.Color(theme.color).multiplyScalar(0.25);
         hemisphereLight.color.copy(sky);
         hemisphereLight.groundColor.copy(ground);
-        hemisphereLight.intensity = theme.hemiIntensity || 0.35;
+        hemisphereLight.intensity = (theme.hemiIntensity || 0.35) + 0.25; // Significant boost
     }
 }
 
@@ -1786,7 +1809,7 @@ function clear3DScene() {
     while (scene.children.length > 0) scene.remove(scene.children[0]);
 
     // New Ambient Light handling in updateAtmosphere, but need base
-    const amb = new THREE.AmbientLight(0xffffff, 0.15);
+    const amb = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(amb);
 
     roomMeshes.clear(); waypointMeshes.clear(); corridorMeshes.clear(); doorMeshes.clear();
@@ -1868,6 +1891,10 @@ function getMonsterName(v) {
 }
 
 function startDive() {
+    // Hide Logo
+    const logo = document.getElementById('gameLogo');
+    if (logo) logo.style.opacity = '0';
+
     document.getElementById('avatarModal').style.display = 'flex';
 }
 window.selectAvatar = (sex) => {
@@ -1877,6 +1904,11 @@ window.selectAvatar = (sex) => {
 };
 
 function finalizeStartDive() {
+    isAttractMode = false;
+    // Show Dock when game starts
+    const combatArea = document.querySelector('.player-combat-area');
+    if (combatArea) combatArea.style.display = 'flex';
+
     game.hp = 20; game.floor = 1; game.deck = createDeck();
     game.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
     game.soulCoins = 0; game.inventory = []; game.ap = 0; game.maxAp = 0;
@@ -1893,6 +1925,11 @@ function finalizeStartDive() {
     updateUI();
     logMsg("The descent begins. Room 0 explored.");
     playerSprite.material.map = walkAnims[game.sex].up;
+
+    // Reset Camera for Gameplay
+    camera.position.set(20, 20, 20);
+    camera.lookAt(0, 0, 0);
+    controls.target.set(0, 0, 0);
 
     // Start BGM
     audio.startLoop('bgm', 'bgm_dungeon', { volume: 0.4, isMusic: true });
@@ -3323,6 +3360,13 @@ function setupLayout() {
     const title = document.querySelector('.title-area');
     if (title) controlBox.appendChild(title);
 
+    // Add Logo (Hidden by default, shown in Attract Mode)
+    const logo = document.createElement('img');
+    logo.id = 'gameLogo';
+    logo.src = 'assets/images/logo.png';
+    document.body.appendChild(logo);
+
+
     // Move Log
     const logContainer = document.querySelector('.log-container');
     if (logContainer) {
@@ -3357,5 +3401,32 @@ function setupLayout() {
     window.dispatchEvent(new Event('resize'));
 }
 
+// --- ATTRACT MODE ---
+function initAttractMode() {
+    console.log("Initializing Attract Mode...");
+    isAttractMode = true;
+    // Hide Dock during attract mode
+    const combatArea = document.querySelector('.player-combat-area');
+    if (combatArea) combatArea.style.display = 'none';
+
+    game.floor = 1;
+    game.rooms = generateDungeon();
+    
+    // Initialize 3D engine
+    init3D();
+    
+    // Generate floor and atmosphere
+    generateFloorCA();
+    updateAtmosphere(1);
+
+    // Center player/torch for lighting
+    if (playerSprite) playerSprite.position.set(0, 0, 0);
+    
+    // Ensure logo is visible
+    const logo = document.getElementById('gameLogo');
+    if (logo) logo.style.opacity = '1';
+}
+
 // Initialize Layout
 setupLayout();
+initAttractMode();
