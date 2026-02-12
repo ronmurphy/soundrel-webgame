@@ -1916,7 +1916,9 @@ function getSpellName(v) {
     const names = {
         2: "Fire Bolt", 3: "Ice Dagger", 4: "Poison Dart",
         5: "Lightning", 6: "Ball Lightning", 7: "Fireball",
-        8: "Abyssal Rift", 9: "Comet Fall", 10: "Eldritch Annihilation"
+        8: "Abyssal Rift", 9: "Comet Fall", 10: "Eldritch Annihilation",
+        // Merchant/Gift Tiers (Jack-Ace) map to high tier spells
+        11: "Fireball", 12: "Abyssal Rift", 13: "Comet Fall", 14: "Eldritch Annihilation"
     };
     return names[v] || "Unknown Spell";
 }
@@ -2282,9 +2284,17 @@ function enterRoom(id) {
                 if (roll < 0.4) {
                     // Weapon (Diamond 11-14)
                     const val = 11 + Math.floor(Math.random() * 4);
+                    let name = `Divine Weapon (${val})`;
+                    let isSpell = false;
+
+                    if (game.classId === 'occultist') {
+                        name = getSpellName(val);
+                        isSpell = true;
+                    }
+
                     gifts.push({
-                        suit: SUITS.DIAMONDS, val: val, type: 'gift', name: `Divine Weapon (${val})`,
-                        actualGift: { suit: SUITS.DIAMONDS, val: val, type: 'weapon', name: `Divine Weapon (${val})` }
+                        suit: SUITS.DIAMONDS, val: val, type: 'gift', name: name,
+                        actualGift: { suit: SUITS.DIAMONDS, val: val, type: 'weapon', name: name, isSpell: isSpell }
                     });
                 } else if (roll < 0.7) {
                     // Potion (Heart 11-14)
@@ -3467,7 +3477,13 @@ function getAssetData(type, value, suit, extra) {
     } else if (type === 'armor' || type === 'item') {
         cellIdx = value; // Direct mapping 0-8
     } else if (type === 'weapon' || type === 'class-icon') {
-        cellIdx = Math.max(0, value - (type === 'weapon' ? 2 : 0)); // Weapons 2-10 -> 0-8, Class 0-8 -> 0-8
+        if (type === 'weapon' && game.classId === 'occultist' && value > 10) {
+            // Map 11->5 (J), 12->6 (Q), 13->7 (K), 14->8 (A) to match high tier spells
+            // 11 - 6 = 5
+            cellIdx = value - 6;
+        } else {
+            cellIdx = Math.max(0, value - (type === 'weapon' ? 2 : 0)); // Weapons 2-10 -> 0-8, Class 0-8 -> 0-8
+        }
     } else if (type === 'gift' && extra && extra.type === 'armor') {
         cellIdx = v; // v is extra.id
     } else {
@@ -3782,6 +3798,12 @@ function handleDrop(e, targetType, targetIdx) {
             spawnFloatingText("Only weapons go here!", e.clientX, e.clientY, '#ff0000');
             return;
         }
+        // Occultist Restriction: Cannot equip physical weapons > 5
+        if (targetIdx === 'weapon' && game.classId === 'occultist' && !item.isSpell && item.val > 5) {
+            spawnFloatingText("Occultists can't use complex weapons!", e.clientX, e.clientY, '#ff0000');
+            return;
+        }
+
         if (targetIdx !== 'weapon' && (item.type !== 'armor' || item.slot !== targetIdx)) {
             spawnFloatingText(`Only ${targetIdx} armor!`, e.clientX, e.clientY, '#ff0000');
             return;
