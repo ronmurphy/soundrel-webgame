@@ -2549,25 +2549,25 @@ function startBossFight() {
         {
             name: "The Phalanx",
             minions: [
-                { slot: 'boss-weapon', name: "Vanguard", val: 10 + game.floor, asset: 'diamond.png', uv: 8, role: 'vanguard' },
-                { slot: 'boss-potion', name: "Mystic", val: 5, asset: 'heart.png', uv: 8, role: 'mystic' },
-                { slot: 'boss-armor', name: "Bulwark", val: 10 + game.floor, asset: 'armor.png', uv: 8, role: 'bulwark' }
+                { slot: 'boss-weapon', name: "Vanguard", val: 10 + game.floor, role: 'vanguard' },
+                { slot: 'boss-potion', name: "Mystic", val: 5, role: 'mystic' },
+                { slot: 'boss-armor', name: "Bulwark", val: 10 + game.floor, role: 'bulwark' }
             ]
         },
         {
             name: "The Council",
             minions: [
-                { slot: 'boss-weapon', name: "Sorcerer", val: 8 + game.floor, asset: 'heart.png', uv: 4, role: 'sorcerer' }, // Magic/Heart
-                { slot: 'boss-potion', name: "Architect", val: 12 + game.floor, asset: 'block.png', uv: 3, role: 'architect' }, // Structure/Block
-                { slot: 'boss-armor', name: "Loyalist", val: 10 + game.floor, asset: 'armor.png', uv: 2, role: 'loyalist' } // Shield/Armor
+                { slot: 'boss-weapon', name: "Sorcerer", val: 8 + game.floor, role: 'sorcerer' }, // Magic/Heart
+                { slot: 'boss-potion', name: "Architect", val: 12 + game.floor, role: 'architect' }, // Structure/Block
+                { slot: 'boss-armor', name: "Loyalist", val: 10 + game.floor, role: 'loyalist' } // Shield/Armor
             ]
         },
         {
             name: "The Fortress",
             minions: [
-                { slot: 'boss-weapon', name: "Architect", val: 10 + game.floor, asset: 'block.png', uv: 3, role: 'architect' },
-                { slot: 'boss-potion', name: "Architect", val: 10 + game.floor, asset: 'block.png', uv: 3, role: 'architect' },
-                { slot: 'boss-armor', name: "Bulwark", val: 12 + game.floor, asset: 'armor.png', uv: 8, role: 'bulwark' }
+                { slot: 'boss-weapon', name: "Architect", val: 10 + game.floor, role: 'architect' },
+                { slot: 'boss-potion', name: "Architect", val: 10 + game.floor, role: 'architect' },
+                { slot: 'boss-armor', name: "Bulwark", val: 12 + game.floor, role: 'bulwark' }
             ]
         }
     ];
@@ -2587,6 +2587,7 @@ function startBossFight() {
 
 function startSoulBrokerEncounter() {
     game.isBossFight = true;
+    game.isBrokerFight = true;
     game.activeRoom.state = 'boss_active';
     game.chosenCount = 0;
 
@@ -2596,15 +2597,24 @@ function startSoulBrokerEncounter() {
     spawnFloatingText("THE FINAL DEBT", window.innerWidth/2, window.innerHeight/2 - 100, '#d4af37');
 
     // The Soul Broker Boss
-    // He uses the merchant visual but is now a monster
+    // Diamond formation with 3 Guardians as minions (Level 2 stats ~19)
     game.combatCards = [
-        { type: 'monster', val: 10, suit: '💀', name: "Debt Collector", bossSlot: 'boss-weapon' },
-        { type: 'monster', val: 10, suit: '💀', name: "Debt Collector", bossSlot: 'boss-armor' },
-        { type: 'monster', val: 10, suit: '💀', name: "Debt Collector", bossSlot: 'boss-potion' },
+        { 
+            type: 'monster', val: 19, suit: '💀', name: "Abyssal Maw", bossSlot: 'boss-weapon',
+            customAsset: 'animations/guardian_abyssal_maw.png', customBgSize: '2500% 100%', isAnimated: true 
+        },
+        { 
+            type: 'monster', val: 19, suit: '💀', name: "Ironclad Sentinel", bossSlot: 'boss-armor',
+            customAsset: 'animations/guardian_ironclad_sentinel.png', customBgSize: '2500% 100%', isAnimated: true 
+        },
+        { 
+            type: 'monster', val: 19, suit: '💀', name: "Gargoyle", bossSlot: 'boss-potion',
+            customAsset: 'animations/guardian_gargoyle.png', customBgSize: '2500% 100%', isAnimated: true 
+        },
         { 
             type: 'monster', val: 30, suit: '👺', name: "The Soul Broker", 
             bossSlot: 'boss-guardian', 
-            customAsset: 'visualnovel/soulbroker.png', // Uses the image you have
+            customAnim: 'final', 
             isBroker: true 
         }
     ];
@@ -2641,21 +2651,27 @@ function showCombat() {
         // Custom Asset Overrides (for Boss Parts)
         if (c.customAsset) {
             bgUrl = `assets/images/${c.customAsset}`;
-            bgSize = '900% 100%';
-            bgPos = `${(c.customUV || 0) * 112.5}% 0%`;
+            bgSize = c.customBgSize || '900% 100%';
+            // Fix: 100 / 8 = 12.5% per step for 9-slice strip
+            bgPos = `${(c.customUV || 0) * 12.5}% 0%`;
+        }
+
+        if (c.isAnimated) {
+            animClass = "animated-card-art";
         }
 
         // Boss Animations: 11-14 Clubs/Spades
         // if (c.type === 'monster' && c.val >= 11) {
         // all monster cards now have sprite sheet animations. 
-        if (c.type === 'monster' && c.val >= 1) {
+        if (c.type === 'monster' && c.val >= 1 && !c.customAsset) {
             let suitName = 'club';
             if (c.suit === SUITS.SPADES) suitName = 'spade';
             else if (c.suit === SUITS.SKULLS) suitName = 'skull';
             else if (c.suit === SUITS.MENACES) suitName = 'menace';
 
             // const rankName = { 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[c.val];
-            const rankName = { 1: '1', 2: '1', 3: '1', 4: '2', 5: '2', 6: '3', 7: '3', 8: '4', 9: '4', 10: '5', 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[c.val];
+            const clampedVal = Math.min(c.val, 14);
+            const rankName = { 1: '1', 2: '1', 3: '1', 4: '2', 5: '2', 6: '3', 7: '3', 8: '4', 9: '4', 10: '5', 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[clampedVal];
             bgUrl = `assets/images/animations/${suitName}_${rankName}.png`;
             bgSize = "2500% 100%"; // 25 framing spritesheet
             bgPos = "0% 0%";
@@ -2665,11 +2681,6 @@ function showCombat() {
             if (c.bossSlot === 'boss-guardian') {
                 // Use a specific boss sprite if available, or fallback to King/Ace
                 // Assuming animations are in the same folder
-                if (c.isBroker) {
-                    bgUrl = `assets/images/visualnovel/soulbroker.png`;
-                    bgSize = "cover";
-                    animClass = "";
-                } else
                 bgUrl = `assets/images/animations/${c.customAnim || 'spade_king'}.png`;
             }
         }
@@ -3144,7 +3155,7 @@ function finishRoom() {
         spawnAboveModalTexture('scorch_03.png', window.innerWidth / 2, window.innerHeight / 2 - 100, 40, { tint: '#ff4400', blend: 'lighter', sizeRange: [60, 200], spread: 120, decay: 0.02 });
         spawnAboveModalTexture('spark_01.png', window.innerWidth / 2, window.innerHeight / 2 - 100, 60, { tint: '#ffffff', blend: 'lighter', sizeRange: [10, 40], spread: 150, decay: 0.01 });
 
-        const isBroker = game.floor === 9; // Was this the Soul Broker?
+        const isBroker = game.isBrokerFight; // Was this the Soul Broker?
 
         // Visuals
         document.getElementById('combatMessage').innerText = isBroker ? "SOUL BROKER DEFEATED!" : `Guardian Defeated! Descending to Level ${game.floor + 1}...`;
@@ -3154,6 +3165,13 @@ function finishRoom() {
 
         if (isBroker) {
             setTimeout(() => { alert("YOU HAVE DEFEATED THE SOUL BROKER!\n\nThe curse is lifted. You are free."); location.reload(); }, 4000);
+            return;
+        }
+
+        // If we just beat the Floor 9 Guardian, trigger Soul Broker
+        if (game.floor === 9 && !isBroker) {
+            document.getElementById('combatMessage').innerText = "The Guardian falls... but something darker emerges.";
+            setTimeout(startSoulBrokerEncounter, 3000);
             return;
         }
 
@@ -3194,7 +3212,7 @@ function finishRoom() {
     if (allCleared) {
         if (game.activeRoom.isFinal) {
             // Check for Final Boss Trigger (Floor 9)
-            if (game.floor === 9) {
+            if (game.floor === 9 && !game.isBrokerFight) {
                 logMsg("The air grows heavy. The Soul Broker approaches...");
                 startSoulBrokerEncounter();
                 return;
@@ -4698,6 +4716,72 @@ window.blastLock = function() {
         enterRoom(lockpickState.room.id);
     } else {
         gameOver();
+    }
+};
+
+// --- DEBUG CONSOLE COMMANDS ---
+window.setgame = function(mode, arg) {
+    console.log(`Debug Command: ${mode}`, arg || '');
+    switch(mode.toLowerCase()) {
+        case 'finalboss':
+            game.floor = 9;
+            if (!game.activeRoom) game.activeRoom = game.rooms[0];
+            startSoulBrokerEncounter();
+            break;
+        case 'boss':
+            if (!game.activeRoom) game.activeRoom = game.rooms[0];
+            startBossFight();
+            break;
+        case 'merchant':
+            if (game.activeRoom) {
+                game.activeRoom.isSpecial = true;
+                game.activeRoom.isBonfire = false;
+                game.activeRoom.isTrap = false;
+                game.activeRoom.state = 'uncleared';
+                game.activeRoom.generatedContent = null;
+                enterRoom(game.activeRoom.id);
+            }
+            break;
+        case 'bonfire':
+            if (game.activeRoom) {
+                game.activeRoom.isBonfire = true;
+                game.activeRoom.isSpecial = false;
+                game.activeRoom.isTrap = false;
+                game.activeRoom.state = 'uncleared';
+                game.activeRoom.restRemaining = 3;
+                enterRoom(game.activeRoom.id);
+            }
+            break;
+        case 'showhidden':
+            game.rooms.forEach(r => {
+                r.isRevealed = true;
+                if (!r.correveals) r.correveals = {};
+                r.connections.forEach(cid => r.correveals[`cor_${r.id}_${cid}`] = true);
+            });
+            break;
+        case 'godmode':
+            game.hp = 100;
+            game.maxHp = 100;
+            game.soulCoins = 5000;
+            game.ap = 20;
+            game.maxAp = 20;
+            updateUI();
+            logMsg("God Mode Enabled.");
+            break;
+        case 'floor':
+            if (arg) {
+                game.floor = parseInt(arg) - 1;
+                descendToNextFloor();
+            }
+            break;
+        case 'lockpick':
+            if (game.activeRoom) startLockpickGame(game.activeRoom);
+            break;
+        case 'trap':
+            if (game.activeRoom) showTrapUI();
+            break;
+        default:
+            console.log("Commands: finalboss, boss, merchant, bonfire, showhidden, godmode, floor [n], lockpick, trap");
     }
 };
 
