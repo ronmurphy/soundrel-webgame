@@ -85,6 +85,12 @@ const CLASS_DATA = {
     }
 };
 
+const INTRO_STORY_DEFAULTS = [
+    "The entrance to the Gilded Depths looms before you. Legends say a great Guardian protects the treasures within.",
+    "You have prepared for this moment all your life. Your equipment is ready, your resolve is steel.",
+    "But beware... the darkness is alive here. Light your torch, Scoundrel. Your destiny awaits."
+];
+
 // --- PROC-GEN DUNGEON (Grid Based) ---
 function generateDungeon() {
     // Escalation Logic
@@ -190,6 +196,69 @@ function generateDungeon() {
             m.isSpecial = true;
             m.generatedContent = null; // Will store the fixed items
         }
+    }
+
+    // 4. Assign Trap Rooms (1-2)
+    const potentialTraps = rooms.filter(r => r.id !== 0 && !r.isFinal && !r.isWaypoint && !r.isSpecial && !r.isBonfire);
+    shuffle(potentialTraps);
+    const trapCount = 1 + (Math.random() > 0.5 ? 1 : 0);
+    for(let i=0; i<trapCount; i++) {
+        if(potentialTraps.length > 0) {
+            const t = potentialTraps.pop();
+            t.isTrap = true;
+        }
+    }
+
+    // 5. Create Secret Room (1 per floor)
+    // Find a room with an empty neighbor
+    const potentialParents = rooms.filter(r => !r.isWaypoint && !r.isFinal);
+    shuffle(potentialParents);
+    let secretCreated = false;
+    
+    for(const p of potentialParents) {
+        if(secretCreated) break;
+        const dirs = shuffle([{x:1, y:0}, {x:-1, y:0}, {x:0, y:1}, {x:0, y:-1}]);
+        for(const d of dirs) {
+            const nx = p.gx + d.x * 4;
+            const ny = p.gy + d.y * 4;
+            // Check collision with existing rooms/waypoints
+            const collide = rooms.some(r => Math.abs(r.gx - nx) < 2 && Math.abs(r.gy - ny) < 2);
+            if(!collide) {
+                // Create Secret Room
+                const sRoom = {
+                    id: roomCount++,
+                    gx: nx, gy: ny, w: 1, h: 1,
+                    state: 'uncleared', cards: [], connections: [],
+                    isSpecial: true, isSecret: true, isLocked: true, // It's a special room (Merchant), Locked
+                    generatedContent: null, // Will generate merchant
+                    isWaypoint: false,
+                    shape: 'rect', depth: 2, isRevealed: false
+                };
+                
+                // Create Hidden Waypoint
+                const wp = {
+                    id: `wp_secret_${p.id}_${sRoom.id}`,
+                    gx: p.gx + (nx - p.gx) * 0.5,
+                    gy: p.gy + (ny - p.gy) * 0.5,
+                    state: 'cleared', cards: [], connections: [p.id, sRoom.id],
+                    isWaypoint: true, isHidden: true
+                };
+                
+                p.connections.push(wp.id);
+                sRoom.connections.push(wp.id);
+                
+                rooms.push(sRoom, wp);
+                secretCreated = true;
+                break;
+            }
+        }
+    }
+
+    // 6. Randomly Lock 1 other room (High value or random)
+    const potentialLocks = rooms.filter(r => !r.isWaypoint && !r.isSpecial && !r.isBonfire && !r.isTrap && r.id !== 0);
+    if (potentialLocks.length > 0) {
+        const r = potentialLocks[Math.floor(Math.random() * potentialLocks.length)];
+        r.isLocked = true;
     }
 
     // Remaining are monsters (default)
@@ -340,7 +409,7 @@ function loadFXImage(name) {
 }
 
 function preloadFXTextures() {
-    const list = ['slash_02.png', 'spark_01.png', 'twirl_01.png', 'circle_03.png', 'flame_03.png', 'muzzle_02.png'];
+    const list = ['slash_02.png', 'spark_01.png', 'twirl_01.png', 'circle_03.png', 'flame_03.png', 'muzzle_02.png', 'trace_01.png'];
     list.forEach(n => loadFXImage(n));
 }
 
@@ -1036,6 +1105,12 @@ function on3DClick(event) {
                 enterRoom(roomIdx);
                 break;
             }
+            
+            // Allow clicking SELF if it has an active event (Trap, Bonfire, Merchant)
+            if (current && current.id === roomIdx && (current.isTrap || current.isBonfire || current.isSpecial) && current.state !== 'cleared') {
+                enterRoom(roomIdx);
+                break;
+            }
         }
     }
 }
@@ -1060,6 +1135,9 @@ function update3DScene() {
         let vRad = 2.5;
         // Check for Spectral Lantern (ID 1)
         const hasLantern = game.hotbar.some(i => i && i.type === 'item' && i.id === 1);
+
+        // Check for Map (ID 3)
+        const hasMap = game.hotbar.some(i => i && i.type === 'item' && i.id === 3);
 
         if (game.equipment.weapon) {
             if (game.equipment.weapon.val >= 8 || hasLantern) {
@@ -1094,11 +1172,26 @@ function update3DScene() {
 
             if (r.isRevealed) {
                 if (r.isWaypoint) {
+                    // Hidden Waypoint Logic
+                    if (r.isHidden) {
+                        // Only visible if player is in a connected room (parent)
+                        const isConnected = currentRoom && currentRoom.connections.includes(r.id);
+                        if (!isConnected) return; // Skip rendering
+                    }
+
                     if (!waypointMeshes.has(r.id)) {
-                        const geo = new THREE.SphereGeometry(0.2, 16, 16);
-                        const mat = new THREE.MeshStandardMaterial({ color: 0x555555, emissive: 0x222222 });
+                        let geo, mat;
+                        if (r.isHidden) {
+                            // Disguised Waypoint: Suspicious Rock
+                            geo = new THREE.DodecahedronGeometry(0.4, 0);
+                            mat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9 });
+                        } else {
+                            geo = new THREE.SphereGeometry(0.2, 16, 16);
+                            mat = new THREE.MeshStandardMaterial({ color: 0x555555, emissive: 0x222222 });
+                        }
                         const mesh = new THREE.Mesh(geo, mat);
-                        mesh.position.set(r.gx, 0.1, r.gy);
+                        mesh.position.set(r.gx, r.isHidden ? 0.3 : 0.1, r.gy);
+                        if (r.isHidden) mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
                         mesh.userData = { roomId: r.id };
                         scene.add(mesh);
                         waypointMeshes.set(r.id, mesh);
@@ -1123,9 +1216,14 @@ function update3DScene() {
                             const rad = Math.min(rw, rh) * 0.4;
                             geo = new THREE.CylinderGeometry(rad, rad, rDepth, 16);
                         } else if (r.isSpecial && !r.isFinal) { // Merchant/Special
-                            // Octagonal Room
-                            const rad = Math.min(rw, rh) * 0.45;
-                            geo = new THREE.CylinderGeometry(rad, rad * 0.8, rDepth, 8);
+                            if (r.isSecret) {
+                                // Secret Room: Large Boulder/Mound
+                                geo = new THREE.DodecahedronGeometry(Math.min(rw, rh) * 0.9, 1);
+                            } else {
+                                // Merchant: Octagonal Room
+                                const rad = Math.min(rw, rh) * 0.45;
+                                geo = new THREE.CylinderGeometry(rad, rad * 0.8, rDepth, 8);
+                            }
                         } else {
                             // Varied Shapes
                             if (r.shape === 'round') {
@@ -1149,7 +1247,7 @@ function update3DScene() {
                         if (r.isFinal) {
                             // Extend downwards for the pit/tower
                             mesh.position.set(r.gx, -5, r.gy);
-                        } else if (r.shape === 'dome') {
+                        } else if (r.shape === 'dome' || r.isSecret) {
                             mesh.position.set(r.gx, 0, r.gy); // Sit on ground (half buried)
                         } else {
                             mesh.position.set(r.gx, rDepth / 2, r.gy);
@@ -1219,6 +1317,12 @@ function update3DScene() {
                     if (mesh.material.emissiveIntensity !== eInt) mesh.material.emissiveIntensity = eInt;
                 }
             }
+            
+            // Secret Room Map Glow
+            if (r.isSecret && r.mesh && hasMap) {
+                r.mesh.material.emissive.setHex(0x0044ff);
+                r.mesh.material.emissiveIntensity = 0.8;
+            }
 
             r.connections.forEach(cid => {
                 const target = game.rooms.find(rm => rm.id === cid);
@@ -1226,6 +1330,10 @@ function update3DScene() {
                 const corridorId = `cor_${r.id}_${cid}`;
                 const mesh = corridorMeshes.get(corridorId) || corridorMeshes.get(`cor_${cid}_${r.id}`);
                 if (!mesh) {
+                    // Don't draw corridors to secret rooms
+                    if (r.isSecret || target.isSecret) return;
+                    if (r.isHidden || target.isHidden) return; // Don't draw to hidden waypoints either
+
                     const h = 0.05;
                     const v1 = new THREE.Vector3(r.gx, h, r.gy);
                     const v2 = new THREE.Vector3(target.gx, h, target.gy);
@@ -1370,6 +1478,8 @@ function addDoorsToRoom(room, mesh) {
     room.connections.forEach(cid => {
         const target = game.rooms.find(rm => rm.id === cid);
         if (!target) return;
+        if (target.isSecret || target.isHidden) return; // No doors to secret areas
+
         const dx = target.gx - room.gx; const dy = target.gy - room.gy;
         const door = new THREE.Mesh(new THREE.PlaneGeometry(1, 2), new THREE.MeshStandardMaterial({ map: tex, transparent: true, side: THREE.FrontSide }));
         // Doors are static geometry relative to the room; disable matrix auto updates
@@ -1611,6 +1721,25 @@ function generateFloorCA() {
     const rockInstances = [];
     let vertexCount = 0;
 
+    // Pre-calculate all paths (including secret ones) for flattening
+    const paths = [];
+    game.rooms.forEach(r => {
+        r.connections.forEach(cid => {
+            const target = game.rooms.find(rm => rm.id === cid);
+            if (target && r.id < target.id) { // Avoid duplicates
+                paths.push({ x1: r.gx, z1: r.gy, x2: target.gx, z2: target.gy });
+            }
+        });
+    });
+
+    function distToSegment(px, pz, x1, z1, x2, z2) {
+        const l2 = (x1 - x2) * (x1 - x2) + (z1 - z2) * (z1 - z2);
+        if (l2 === 0) return Math.hypot(px - x1, pz - z1);
+        let t = ((px - x1) * (x2 - x1) + (pz - z1) * (z2 - z1)) / l2;
+        t = Math.max(0, Math.min(1, t));
+        return Math.hypot(px - (x1 + t * (x2 - x1)), pz - (z1 + t * (z2 - z1)));
+    }
+
     // Helper to get height at a specific corner coordinate (world space)
     function getVertexHeight(vx, vz) {
         // 1. Flatten near rooms/corridors
@@ -1621,11 +1750,13 @@ function generateFloorCA() {
                 return 0;
             }
         }
-        for (const m of corridorMeshes.values()) {
-            if (Math.abs(vx - m.position.x) < 0.6 && Math.abs(vz - m.position.z) < 0.6) return 0;
+        
+        // 2. Flatten along ALL paths (visible and secret)
+        for (const p of paths) {
+            if (distToSegment(vx, vz, p.x1, p.z1, p.x2, p.z2) < 0.8) return 0;
         }
 
-        // 2. Terrain Noise
+        // 3. Terrain Noise
         const noise = Math.sin(vx * 0.15) + Math.cos(vz * 0.23);
         if (noise > 1.2) return 1.5; // Mountain
         if (noise > 0.5) return 0.75; // Hill
@@ -1985,20 +2116,28 @@ function showClassSelection() {
     let selectedClass = 'knight';
     let selectedMode = 'checkpoint';
 
+    const iconStyle = (idx) => `width:64px; height:64px; margin:0 auto 10px; background-image:url('assets/images/classes.png'); background-size:900% 100%; background-position:${(idx/9)*112.5}% 0%; border:2px solid var(--gold); background-color:rgba(0,0,0,0.5); box-shadow: 0 0 10px rgba(0,0,0,0.5);`;
+
     modal.innerHTML = `
         <h2 style="font-family:'Cinzel'; font-size:2.5rem; color:var(--gold); margin-bottom:20px;">Select Class</h2>
         <div class="class-selection-container">
             <div class="class-card selected" data-id="knight" onclick="selectClassUI('knight')">
+                <div style="${iconStyle(0)}"></div>
                 <div class="class-name">Knight</div>
                 <div class="class-desc">Starts with Rusty Sword (4) and Studded Gloves (+2 AP).</div>
+                <div style="margin-top:15px; font-weight:bold; color:#4f4; font-family:'Cinzel';">Easy Mode</div>
             </div>
             <div class="class-card" data-id="rogue" onclick="selectClassUI('rogue')">
+                <div style="${iconStyle(1)}"></div>
                 <div class="class-name">Rogue</div>
                 <div class="class-desc">Starts with Skeleton Key and Iron-Bound Tome (+2 Coins/kill).</div>
+                <div style="margin-top:15px; font-weight:bold; color:#d4af37; font-family:'Cinzel';">Normal Mode</div>
             </div>
             <div class="class-card" data-id="occultist" onclick="selectClassUI('occultist')">
+                <div style="${iconStyle(2)}"></div>
                 <div class="class-name">Occultist</div>
                 <div class="class-desc">Starts with Spectral Lantern (Perm. Light). <br><span style="color:#d00">-5 Max HP.</span></div>
+                <div style="margin-top:15px; font-weight:bold; color:#d00; font-family:'Cinzel';">Hard Mode</div>
             </div>
         </div>
 
@@ -2031,7 +2170,7 @@ function showClassSelection() {
         game.classId = selectedClass;
         game.mode = selectedMode;
         document.body.removeChild(modal);
-        finalizeStartDive();
+        startIntroSequence();
     };
 }
 
@@ -2175,13 +2314,6 @@ function startIntermission() {
 
         card.onclick = () => {
             if (game.soulCoins >= item.cost) {
-                // Slot Restriction Check
-                const slotTaken = item.type === 'armor' && game.equipment[item.slot] !== null;
-                if (slotTaken) {
-                    spawnFloatingText(`Already wearing a ${item.slot} piece!`, window.innerWidth / 2, window.innerHeight / 2, '#ffaa00');
-                    return;
-                }
-
                 if (getFreeBackpackSlot() === -1) {
                     spawnFloatingText("Backpack Full!", window.innerWidth / 2, window.innerHeight / 2, '#ffaa00');
                     return;
@@ -2272,6 +2404,19 @@ function enterRoom(id) {
     if (room.state === 'cleared' && !room.isFinal) { logMsg("Safe passage."); return; }
     if (room.state === 'cleared' && room.isFinal) { game.activeRoom = room; showCombat(); return; }
 
+    if (room.isLocked && room.state !== 'cleared') {
+        game.activeRoom = room;
+        startLockpickGame(room);
+        return;
+    }
+
+    if (room.isTrap && room.state !== 'cleared') {
+        game.activeRoom = room;
+        game.chosenCount = 0;
+        showTrapUI();
+        return;
+    }
+
     if (room.isSpecial && room.state !== 'cleared') {
         game.activeRoom = room;
 
@@ -2316,7 +2461,7 @@ function enterRoom(id) {
                 gifts.push({
                     suit: '🛠️', val: boost, type: 'gift',
                     name: `Blacksmith's Service`,
-                    actualGift: { type: 'repair', val: boost, name: `Gear Repaired` }
+                    actualGift: { type: 'repair', val: boost, name: game.equipment.weapon ? `Repaired ${game.equipment.weapon.name}` : `Gear Repaired` }
                 });
             }
             room.generatedContent = gifts;
@@ -2667,6 +2812,9 @@ function pickCard(idx, event) {
             if (game.equipment.weapon && effectiveCardVal <= game.weaponDurability) {
                 dmg = Math.max(0, effectiveCardVal - game.equipment.weapon.val);
                 game.weaponDurability = card.val;
+                // Persist durability on the item itself
+                game.equipment.weapon.durability = game.weaponDurability;
+
                 // Scoundrel rules usually care about the card's face value. Let's stick to card.val for durability check to be safe,
                 // but use effectiveVal for damage calculation.
                 logMsg(`Slit ${card.name}'s throat. Next enemy must be <=${card.val}.`);
@@ -2834,6 +2982,7 @@ function pickCard(idx, event) {
                 let msg = "";
                 game.equipment.weapon.val = Math.min(14, game.equipment.weapon.val + gift.val);
                 game.weaponDurability = Infinity;
+                game.equipment.weapon.durability = Infinity; // Reset item durability
                 game.slainStack = [];
                 msg += `Weapon honed (+${gift.val}). `;
 
@@ -2982,6 +3131,10 @@ function closeCombat() {
     document.getElementById('combatModal').style.display = 'none';
     document.getElementById('combatContainer').style.display = 'flex';
     document.getElementById('bonfireUI').style.display = 'none';
+    const trapUI = document.getElementById('trapUI');
+    if (trapUI) trapUI.style.display = 'none';
+    const lockpickUI = document.getElementById('lockpickUI');
+    if (lockpickUI) lockpickUI.style.display = 'none';
     // Hide merchant portrait when modal is closed
     audio.setMusicMuffled(false); // Unmuffle music
     const mp = document.getElementById('merchantPortrait');
@@ -2994,6 +3147,8 @@ function showBonfireUI() {
     overlay.style.display = 'flex';
     document.getElementById('combatContainer').style.display = 'none';
     document.getElementById('bonfireUI').style.display = 'flex';
+    const trapUI = document.getElementById('trapUI');
+    if (trapUI) trapUI.style.display = 'none';
     // Ensure merchant portrait is hidden when showing bonfire UI
     const mp = document.getElementById('merchantPortrait');
     if (mp) mp.style.display = 'none';
@@ -3053,6 +3208,61 @@ function updateBonfireUI() {
         }
     });
 }
+
+function showTrapUI() {
+    const overlay = document.getElementById('combatModal');
+    overlay.style.display = 'flex';
+    document.getElementById('combatContainer').style.display = 'none';
+    document.getElementById('bonfireUI').style.display = 'none';
+    
+    let trapUI = document.getElementById('trapUI');
+    if (!trapUI) {
+        trapUI = document.createElement('div');
+        trapUI.id = 'trapUI';
+        document.body.appendChild(trapUI);
+    }
+    trapUI.style.display = 'flex';
+
+    // Check resources
+    const hasBomb = game.hotbar.some(i => i && i.type === 'item' && i.id === 0);
+    const hasKey = game.hotbar.some(i => i && i.type === 'item' && i.id === 2);
+    const canPay = game.soulCoins >= 30;
+
+    trapUI.innerHTML = `
+        <h2 style="font-family:'Cinzel'; font-size:3rem; color:#ff4400; text-shadow:0 0 20px #ff0000; margin-bottom:20px;">IT'S A TRAP!</h2>
+        <div style="font-style:italic; margin-bottom:40px; color:#aaa; text-align:center; max-width:400px;">
+            You've triggered a hidden mechanism. The room is locked down. <br>How will you escape?
+        </div>
+        <div style="display:flex; flex-direction:column; gap:15px; width:320px;">
+            <button class="v2-btn trap-option-btn" onclick="handleTrap('damage')"><span>Take Damage</span> <span style="color:#d00">-5 HP</span></button>
+            <button class="v2-btn trap-option-btn" onclick="handleTrap('coin')" ${canPay ? '' : 'disabled'}><span>Bribe Mechanism</span> <span style="color:#d4af37">-30 Coins</span></button>
+            <button class="v2-btn trap-option-btn" onclick="handleTrap('bomb')" ${hasBomb ? '' : 'disabled'}><span>Blast It (Bomb)</span> <span style="color:#aaa">Item</span></button>
+            <button class="v2-btn trap-option-btn" onclick="handleTrap('key')" ${hasKey ? '' : 'disabled'}><span>Unlock (Key)</span> <span style="color:#aaa">Item</span></button>
+            <button class="v2-btn" onclick="closeCombat()" style="background:#444; margin-top:20px;">Not Now (Leave)</button>
+        </div>
+    `;
+}
+
+window.handleTrap = function(action) {
+    if (action === 'damage') {
+        takeDamage(5);
+        logMsg("You brute-forced the trap. Took 5 damage.");
+    } else if (action === 'coin') {
+        game.soulCoins -= 30;
+        logMsg("You paid the toll. -30 Soul Coins.");
+    } else if (action === 'bomb') {
+        const idx = game.hotbar.findIndex(i => i && i.type === 'item' && i.id === 0);
+        if (idx !== -1) game.hotbar[idx] = null;
+        logMsg("You blasted the trap mechanism!");
+    } else if (action === 'key') {
+        const idx = game.hotbar.findIndex(i => i && i.type === 'item' && i.id === 2);
+        if (idx !== -1) game.hotbar[idx] = null;
+        logMsg("You unlocked the mechanism.");
+    }
+    game.activeRoom.state = 'cleared';
+    updateUI();
+    closeCombat();
+};
 
 function gameOver() {
     logMsg("DEATH HAS CLAIMED YOU.");
@@ -3214,11 +3424,20 @@ function updateUI() {
     const floorModalEl = document.getElementById('floorValueModal');
     if (floorModalEl) floorModalEl.innerText = game.floor;
 
-    const totalRooms = game.rooms ? game.rooms.filter(r => !r.isWaypoint).length : 0;
-    const clearedRooms = game.rooms ? game.rooms.filter(r => !r.isWaypoint && r.state === 'cleared').length : 0;
+    // const totalRooms = game.rooms ? game.rooms.filter(r => !r.isWaypoint).length : 0;
+    // const clearedRooms = game.rooms ? game.rooms.filter(r => !r.isWaypoint && r.state === 'cleared').length : 0;
+        // Only count MANDATORY rooms for progress (Monsters & Traps)
+    // Exclude Waypoints, Specials (Merchants/Secret), and Bonfires
+    const mandatoryRooms = game.rooms ? game.rooms.filter(r => !r.isWaypoint && !r.isSpecial && !r.isBonfire) : [];
+    const totalRooms = mandatoryRooms.length;
+    const clearedRooms = mandatoryRooms.filter(r => r.state === 'cleared').length;
+
 
     const progressEl = document.getElementById('progressValue');
-    if (progressEl) progressEl.innerText = `${clearedRooms} / ${totalRooms}`;
+    // if (progressEl) progressEl.innerText = `${clearedRooms} / ${totalRooms}`;
+    // const progressModalEl = document.getElementById('progressValueModal');
+    // if (progressModalEl) progressModalEl.innerText = `${clearedRooms} / ${totalRooms}`;
+        if (progressEl) progressEl.innerText = `${clearedRooms} / ${totalRooms}`;
     const progressModalEl = document.getElementById('progressValueModal');
     if (progressModalEl) progressModalEl.innerText = `${clearedRooms} / ${totalRooms}`;
 
@@ -3309,6 +3528,11 @@ function updateUI() {
 
             slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:900% 100%; background-position:${asset.uv.u * 112.5}% 0%; ${tint}" onclick="useItem(${i})"></div>`;
 
+            // Durability Label
+            if (item.type === 'weapon' && item.durability !== undefined && item.durability !== Infinity) {
+                slot.innerHTML += `<div class="item-durability">${item.durability}</div>`;
+            }
+
             // Tooltip Events
             slot.onmouseenter = () => {
                 tooltip.style.display = 'block';
@@ -3340,6 +3564,11 @@ function updateUI() {
                 const tint = (item.type === 'armor' && isArmorBroken) ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
 
                 slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:900% 100%; background-position:${asset.uv.u * 112.5}% 0%; ${tint}" onclick="useItem(${i})"></div>`;
+
+                // Durability Label
+                if (item.type === 'weapon' && item.durability !== undefined && item.durability !== Infinity) {
+                    slot.innerHTML += `<div class="item-durability">${item.durability}</div>`;
+                }
 
                 // Tooltip Events
                 slot.onmouseenter = () => {
@@ -3456,7 +3685,11 @@ function getAssetData(type, value, suit, extra) {
             file = 'armor.png';
             v = extra.id;
         } else {
-            file = extra.type === 'weapon' ? 'diamond.png' : 'heart.png';
+                if (extra.type === 'weapon') {
+                    file = (game.classId === 'occultist') ? 'occultist.png' : 'diamond.png';
+                } else {
+                    file = 'heart.png';
+                }
             v = extra.val; s = extra.suit;
         }
     }
@@ -3486,6 +3719,13 @@ function getAssetData(type, value, suit, extra) {
         }
     } else if (type === 'gift' && extra && extra.type === 'armor') {
         cellIdx = v; // v is extra.id
+    } else if (type === 'gift' && extra && extra.type === 'weapon') {
+        // Handle weapon gifts (Merchant)
+        if (game.classId === 'occultist' && v > 10) {
+            cellIdx = v - 6; // Map 11->5, 12->6, etc.
+        } else {
+            cellIdx = Math.max(0, v - 2);
+        }
     } else {
         // WEIGHTED MAPPING (Must match getMonsterName)
         if (v <= 3) cellIdx = 0;
@@ -3705,6 +3945,11 @@ function renderInventoryUI() {
         div.style.backgroundImage = `url('assets/images/${asset.file}')`;
         div.style.backgroundSize = '900% 100%';
         div.style.backgroundPosition = `${asset.uv.u * 112.5}% 0%`;
+        
+        if (item.type === 'weapon' && item.durability !== undefined && item.durability !== Infinity) {
+            div.innerHTML = `<div class="item-durability">${item.durability}</div>`;
+        }
+
         div.draggable = true;
         div.ondragstart = (e) => {
             e.dataTransfer.setData('text/plain', JSON.stringify({ source, idx }));
@@ -3842,6 +4087,14 @@ function handleDrop(e, targetType, targetIdx) {
         else if (srcType === 'hotbar') game.hotbar[srcIdx] = targetItem;
     }
 
+    // If active weapon changed, update global durability state
+    if (game.equipment.weapon) {
+        game.weaponDurability = (game.equipment.weapon.durability !== undefined) ? game.equipment.weapon.durability : Infinity;
+    } else {
+        game.weaponDurability = Infinity;
+    }
+    // Note: We don't reset slainStack here to avoid punishing swaps, but visually the trophies might mismatch.
+
     recalcAP();
     updateUI();
 }
@@ -3932,6 +4185,343 @@ function loadGame() {
 function deleteSave() {
     localStorage.removeItem('scoundrelSave');
 }
+
+// --- INTRO SEQUENCE ---
+let currentIntroStep = 0;
+let introTextData = null;
+
+async function startIntroSequence() {
+    currentIntroStep = 0;
+    
+    // Try to load story text if not already loaded
+    if (!introTextData) {
+        try {
+            const res = await fetch('assets/images/story/story.json');
+            const data = await res.json();
+            // Handle if json is array or object {intro: []}
+            introTextData = Array.isArray(data) ? data : (data.intro || INTRO_STORY_DEFAULTS);
+        } catch (e) {
+            console.warn("Could not load story.json, using defaults.", e);
+            introTextData = INTRO_STORY_DEFAULTS;
+        }
+    }
+
+    let modal = document.getElementById('introModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'introModal';
+        document.body.appendChild(modal);
+    }
+    
+    modal.style.display = 'flex';
+    updateIntroPanel();
+}
+
+function updateIntroPanel() {
+    const modal = document.getElementById('introModal');
+    const imgIdx = currentIntroStep + 1; // 1-based for files
+    const imgPath = `assets/images/story/intro_${game.sex}_panel_${imgIdx}.png`;
+    const text = introTextData[currentIntroStep] || "...";
+
+    modal.innerHTML = `
+        <div class="intro-panel" style="background-image: url('${imgPath}');">
+            <div class="intro-text-overlay">${text}</div>
+        </div>
+        <div class="intro-controls">
+            <button class="v2-btn" onclick="endIntro()">Skip</button>
+            <button class="v2-btn" onclick="nextIntro()">Next</button>
+        </div>
+    `;
+}
+
+window.nextIntro = function() {
+    currentIntroStep++;
+    if (currentIntroStep >= 3) {
+        endIntro();
+    } else {
+        updateIntroPanel();
+    }
+};
+
+window.endIntro = function() {
+    const modal = document.getElementById('introModal');
+    if (modal) modal.style.display = 'none';
+    finalizeStartDive();
+};
+
+// --- LOCKPICK MINIGAME ---
+let lockpickState = null;
+
+function startLockpickGame(room) {
+    let modal = document.getElementById('lockpickUI');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'lockpickUI';
+        modal.innerHTML = `
+            <h2 style="font-family:'Cinzel'; color:var(--gold); margin-bottom:10px;">Mechanism Locked</h2>
+            <div style="margin-bottom:10px; color:#aaa; font-size:0.9rem;">Guide the light to the receiver. Click to place mirrors.</div>
+            <canvas id="lockpickCanvas" width="480" height="480"></canvas>
+            <div class="btn-group" style="margin-top:20px;">
+                <button class="v2-btn" onclick="blastLock()">Blast Lock (-5 HP)</button>
+                <button class="v2-btn" onclick="cancelLockpick()">Leave</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    modal.style.display = 'flex';
+
+    // Initialize Puzzle
+    const size = 6;
+    const grid = [];
+    for(let y=0; y<size; y++) {
+        const row = [];
+        for(let x=0; x<size; x++) row.push(0); 
+        grid.push(row);
+    }
+
+    // --- LOGIC PUZZLE GENERATOR (Guaranteed Solvable) ---
+    const edges = [];
+    for(let i=0; i<size; i++) {
+        edges.push({x: i, y: -1, dir: {x:0, y:1}}); // Top
+        edges.push({x: i, y: size, dir: {x:0, y:-1}}); // Bottom
+        edges.push({x: -1, y: i, dir: {x:1, y:0}}); // Left
+        edges.push({x: size, y: i, dir: {x:-1, y:0}}); // Right
+    }
+    
+    const start = edges[Math.floor(Math.random() * edges.length)];
+    let curr = { x: start.x + start.dir.x, y: start.y + start.dir.y };
+    let dir = { ...start.dir };
+    
+    const pathCells = new Set();
+    let end = null;
+    let steps = 0;
+
+    // Walk a path
+    while(steps < 30) {
+        if (curr.x < 0 || curr.x >= size || curr.y < 0 || curr.y >= size) {
+            if (steps > 2) {
+                // Found an exit. Calculate direction pointing back to grid for the receiver.
+                end = { x: curr.x, y: curr.y, dir: { x: -dir.x, y: -dir.y } };
+                break;
+            } else {
+                // Retry
+                curr = { x: start.x + start.dir.x, y: start.y + start.dir.y };
+                dir = { ...start.dir };
+                pathCells.clear();
+                steps = 0;
+                continue;
+            }
+        }
+        pathCells.add(`${curr.x},${curr.y}`);
+        if (Math.random() < 0.3) {
+            const turn = Math.random() < 0.5 ? 1 : -1;
+            if (turn === 1) dir = { x: -dir.y, y: dir.x };
+            else dir = { x: dir.y, y: -dir.x };
+        }
+        curr.x += dir.x;
+        curr.y += dir.y;
+        steps++;
+    }
+
+    if (!end) {
+        end = { 
+            x: start.x + start.dir.x * (size+1), 
+            y: start.y + start.dir.y * (size+1),
+            dir: { x: -start.dir.x, y: -start.dir.y }
+        };
+    }
+
+    // Place Walls
+    for(let y=0; y<size; y++) {
+        for(let x=0; x<size; x++) {
+            if (!pathCells.has(`${x},${y}`) && Math.random() < 0.25) grid[y][x] = 1;
+        }
+    }
+
+    lockpickState = {
+        room: room,
+        grid: grid,
+        size: size,
+        start: start,
+        end: end,
+        active: true
+    };
+
+    const canvas = document.getElementById('lockpickCanvas');
+    canvas.onclick = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = Math.floor((e.clientX - rect.left) / (canvas.width / size));
+        const y = Math.floor((e.clientY - rect.top) / (canvas.height / size));
+        handleLockpickClick(x, y);
+    };
+
+    renderLockpickGame();
+}
+
+function handleLockpickClick(x, y) {
+    if (!lockpickState || !lockpickState.active) return;
+    const { grid, size } = lockpickState;
+    if (x < 0 || x >= size || y < 0 || y >= size) return;
+
+    const cell = grid[y][x];
+    if (cell === 1) return; // Wall
+
+    // Cycle: Empty -> / -> \ -> Empty
+    if (cell === 0) grid[y][x] = 2;
+    else if (cell === 2) grid[y][x] = 3;
+    else grid[y][x] = 0;
+
+    renderLockpickGame();
+}
+
+function renderLockpickGame() {
+    if (!lockpickState) return;
+    const canvas = document.getElementById('lockpickCanvas');
+    const ctx = canvas.getContext('2d');
+    const { grid, size, start, end } = lockpickState;
+    const cellSize = canvas.width / size;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw Grid
+    const blockTex = loadTexture('assets/images/block.png').image; // Use raw image
+    const itemsTex = loadTexture('assets/images/items.png').image;
+    const bgTileX = 6 * 128; // Sprite #6
+    const wallTileX = 3 * 128; // Sprite #3
+    
+    for(let y=0; y<size; y++) {
+        for(let x=0; x<size; x++) {
+            // Draw Background
+            if (blockTex && blockTex.complete) {
+                ctx.drawImage(blockTex, bgTileX, 0, 128, 128, x*cellSize, y*cellSize, cellSize, cellSize);
+            } else {
+                ctx.fillStyle = '#222';
+                ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
+                ctx.strokeStyle = '#444';
+                ctx.strokeRect(x*cellSize, y*cellSize, cellSize, cellSize);
+            }
+
+            const cell = grid[y][x];
+            const cx = x*cellSize + cellSize/2;
+            const cy = y*cellSize + cellSize/2;
+
+            if (cell === 1) { // Wall
+                if (blockTex && blockTex.complete) ctx.drawImage(blockTex, wallTileX, 0, 128, 128, x*cellSize, y*cellSize, cellSize, cellSize);
+                else { ctx.fillStyle = '#555'; ctx.fillRect(x*cellSize+4, y*cellSize+4, cellSize-8, cellSize-8); }
+            } else if (cell === 2) { // Mirror /
+                ctx.strokeStyle = '#00ffff';
+                ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.moveTo(x*cellSize+10, y*cellSize+cellSize-10); ctx.lineTo(x*cellSize+cellSize-10, y*cellSize+10); ctx.stroke();
+            } else if (cell === 3) { // Mirror \
+                ctx.strokeStyle = '#00ffff';
+                ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.moveTo(x*cellSize+10, y*cellSize+10); ctx.lineTo(x*cellSize+cellSize-10, y*cellSize+cellSize-10); ctx.stroke();
+            }
+        }
+    }
+
+    // Draw Emitter/Receiver
+    // Draw Emitter/Receiver (On top of beam)
+    const drawPort = (pt, spriteIdx, color) => {
+        const gx = pt.x + pt.dir.x; const gy = pt.y + pt.dir.y; // Draw in adjacent valid cell
+        const px = gx * cellSize; const py = gy * cellSize;
+        if (itemsTex && itemsTex.complete) ctx.drawImage(itemsTex, spriteIdx * 128, 0, 128, 128, px, py, cellSize, cellSize);
+        else { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(px + cellSize/2, py + cellSize/2, cellSize/3, 0, Math.PI*2); ctx.fill(); }
+    };
+    
+    drawPort(start, 2, '#00ff00'); // Lantern
+    drawPort(end, 6, '#ff0000');   // Mirror
+
+    // Raycast Beam
+    ctx.strokeStyle = '#ccffcc';
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = '#00ff00';
+    
+    let curr = { x: start.x + start.dir.x, y: start.y + start.dir.y };
+    let dir = { ...start.dir };
+    let path = [{x: (start.x+0.5)*cellSize, y: (start.y+0.5)*cellSize}];
+    
+    const beamTex = loadFXImage('trace_01.png');
+
+    let steps = 0;
+    let won = false;
+
+    while(steps < 100) {
+        // Check bounds (Win or Lose)
+        if (curr.x === end.x && curr.y === end.y) {
+            won = true;
+            path.push({x: (curr.x+0.5)*cellSize, y: (curr.y+0.5)*cellSize});
+            break;
+        }
+        if (curr.x < 0 || curr.x >= size || curr.y < 0 || curr.y >= size) {
+            path.push({x: (curr.x+0.5)*cellSize, y: (curr.y+0.5)*cellSize}); // Off screen
+            break;
+        }
+
+        path.push({x: (curr.x+0.5)*cellSize, y: (curr.y+0.5)*cellSize});
+
+        const cell = grid[curr.y][curr.x];
+        if (cell === 1) break; // Hit wall
+        if (cell === 2) { // / Mirror
+            // (1,0) -> (0,-1) | (-1,0) -> (0,1) | (0,1) -> (-1,0) | (0,-1) -> (1,0)
+            const oldDir = {...dir};
+            dir.x = -oldDir.y;
+            dir.y = -oldDir.x;
+        } else if (cell === 3) { // \ Mirror
+            const oldDir = {...dir};
+            dir.x = oldDir.y;
+            dir.y = oldDir.x;
+        }
+
+        curr.x += dir.x;
+        curr.y += dir.y;
+        steps++;
+    }
+
+    // Draw Beam
+    ctx.beginPath();
+    ctx.moveTo(path[0].x, path[0].y);
+    for(let i=1; i<path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    if (won) {
+        lockpickState.active = false;
+        setTimeout(() => {
+            document.getElementById('lockpickUI').style.display = 'none';
+            logMsg("Mechanism unlocked!");
+            lockpickState.room.isLocked = false;
+            enterRoom(lockpickState.room.id);
+        }, 500);
+    }
+}
+
+window.cancelLockpick = function() {
+    document.getElementById('lockpickUI').style.display = 'none';
+    closeCombat(); // Reset state
+};
+
+window.blastLock = function() {
+    // Check for Bomb Item
+    const bombIdx = game.hotbar.findIndex(i => i && i.type === 'item' && i.id === 0);
+    if (bombIdx !== -1) {
+        game.hotbar[bombIdx] = null;
+        logMsg("Used Bomb to blast the lock! (5 Damage taken)");
+    } else {
+        logMsg("Smashed the lock mechanism! (5 Damage taken)");
+    }
+    takeDamage(5);
+    updateUI();
+    
+    if (game.hp > 0) {
+        document.getElementById('lockpickUI').style.display = 'none';
+        lockpickState.room.isLocked = false;
+        enterRoom(lockpickState.room.id);
+    } else {
+        gameOver();
+    }
+};
 
 // Initialize Layout
 setupLayout();

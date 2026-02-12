@@ -1149,3 +1149,114 @@ h1 {
     box-shadow: 0 0 15px rgba(212, 175, 55, 0.3);
     z-index: 10;
 }
+
+.item-durability {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    font-size: 10px;
+    color: #fff;
+    background: rgba(0,0,0,0.7);
+    padding: 1px 3px;
+    border-radius: 3px;
+    pointer-events: none;
+    font-family: 'Cinzel', serif;
+}
+
+/* --- Trap UI --- */
+#trapUI {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 6500;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding-bottom: 220px;
+    pointer-events: auto;
+    background: rgba(0, 0, 0, 0.85);
+}
+
+.trap-option-btn {
+    width: 300px;
+    margin-bottom: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* --- Intro Sequence --- */
+#introModal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    z-index: 8000; /* Above everything */
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.intro-panel {
+    width: 800px;
+    max-width: 95vw;
+    height: 500px;
+    max-height: 60vh;
+    background-size: cover;
+    background-position: center;
+    border: 2px solid var(--gold);
+    box-shadow: 0 0 50px rgba(0,0,0,0.8);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+.intro-text-overlay {
+    background: rgba(0, 0, 0, 0.85);
+    color: var(--parchment);
+    padding: 20px;
+    font-family: 'Crimson Text', serif;
+    font-size: 1.4rem;
+    text-align: center;
+    border-top: 1px solid var(--gold);
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-shadow: 0 2px 4px #000;
+}
+
+.intro-controls {
+    margin-top: 20px;
+    display: flex;
+    gap: 20px;
+}
+
+/* --- Lockpick Minigame --- */
+#lockpickUI {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 7000;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+#lockpickCanvas {
+    border: 4px solid var(--gold);
+    box-shadow: 0 0 30px rgba(212, 175, 55, 0.2);
+    background: #000;
+    cursor: crosshair;
+}
