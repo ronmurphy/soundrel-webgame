@@ -3301,8 +3301,50 @@ function logMsg(m) {
     log.prepend(entry);
 }
 
+// --- LAYOUT SETUP ---
+function setupLayout() {
+    // 1. Create Floating Control Box
+    const controlBox = document.createElement('div');
+    controlBox.className = 'control-box';
+    document.body.appendChild(controlBox);
+
+    // Move Title/Label
+    const title = document.querySelector('.title-area');
+    if (title) controlBox.appendChild(title);
+
+    // Move Log
+    const logContainer = document.querySelector('.log-container');
+    if (logContainer) {
+        controlBox.appendChild(logContainer);
+        logContainer.style.maxHeight = '150px'; // Limit height in floating box
+    }
+
+    // Move Buttons
+    const newGameBtn = document.getElementById('newGameBtn');
+    const viewBtn = document.getElementById('viewToggleBtn');
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'btn-group';
+    btnContainer.style.marginTop = '10px';
+    if (newGameBtn) btnContainer.appendChild(newGameBtn);
+    if (viewBtn) btnContainer.appendChild(viewBtn);
+    controlBox.appendChild(btnContainer);
+
+    // 2. Transform Player Combat Area into Always-Visible Dock
+    const combatArea = document.querySelector('.player-combat-area');
+    if (combatArea) {
+        document.body.appendChild(combatArea); // Move out of modal to body
+        combatArea.classList.add('dock-mode');
+    }
+
+    // 3. Force Resize to ensure 3D canvas fills the new full-width container
+    window.dispatchEvent(new Event('resize'));
+}
+
 document.getElementById('newGameBtn').onclick = startDive;
 document.getElementById('modalAvoidBtn').onclick = avoidRoom;
 document.getElementById('exitCombatBtn').onclick = closeCombat;
 document.getElementById('descendBtn').onclick = startIntermission;
 document.getElementById('bonfireNotNowBtn').onclick = closeCombat;
+
+// Initialize Layout
+setupLayout();

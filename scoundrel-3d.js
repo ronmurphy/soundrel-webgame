@@ -2788,6 +2788,10 @@ function showBonfireUI() {
     // Ensure merchant portrait is hidden when showing bonfire UI
     const mp = document.getElementById('merchantPortrait');
     if (mp) mp.style.display = 'none';
+
+    // Ensure the native 'Leave' button is visible
+    const leaveBtn = document.getElementById('bonfireNotNowBtn');
+    if (leaveBtn) leaveBtn.style.display = 'inline-block';
     updateBonfireUI();
 }
 
@@ -3306,3 +3310,52 @@ document.getElementById('modalAvoidBtn').onclick = avoidRoom;
 document.getElementById('exitCombatBtn').onclick = closeCombat;
 document.getElementById('descendBtn').onclick = startIntermission;
 document.getElementById('bonfireNotNowBtn').onclick = closeCombat;
+
+// --- LAYOUT SETUP ---
+function setupLayout() {
+    console.log("Initializing Custom Layout...");
+    // 1. Create Floating Control Box
+    const controlBox = document.createElement('div');
+    controlBox.className = 'control-box';
+    document.body.appendChild(controlBox);
+
+    // Move Title/Label
+    const title = document.querySelector('.title-area');
+    if (title) controlBox.appendChild(title);
+
+    // Move Log
+    const logContainer = document.querySelector('.log-container');
+    if (logContainer) {
+        controlBox.appendChild(logContainer);
+        logContainer.style.maxHeight = '150px'; // Limit height in floating box
+    }
+
+    // Move Buttons
+    const newGameBtn = document.getElementById('newGameBtn');
+    const viewBtn = document.getElementById('viewToggleBtn');
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'btn-group';
+    btnContainer.style.marginTop = '10px';
+    if (newGameBtn) btnContainer.appendChild(newGameBtn);
+    if (viewBtn) btnContainer.appendChild(viewBtn);
+    controlBox.appendChild(btnContainer);
+
+    // 2. Transform Player Combat Area into Always-Visible Dock
+    const combatArea = document.querySelector('.player-combat-area');
+    if (combatArea) {
+        document.body.appendChild(combatArea); // Move out of modal to body
+        combatArea.classList.add('dock-mode');
+    }
+
+    // 3. Hoist Bonfire UI to Body (to ensure z-index works and it's not trapped)
+    const bonfireUI = document.getElementById('bonfireUI');
+    if (bonfireUI) {
+        document.body.appendChild(bonfireUI);
+    }
+
+    // 4. Force Resize to ensure 3D canvas fills the new full-width container
+    window.dispatchEvent(new Event('resize'));
+}
+
+// Initialize Layout
+setupLayout();

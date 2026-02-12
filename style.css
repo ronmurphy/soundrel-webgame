@@ -26,6 +26,7 @@ body {
 
 /* --- Sidebar Stats (Always Visible) --- */
 .sidebar {
+    display: none !important; /* Hidden as requested */
     width: 320px;
     background: url('assets/images/individuals/block_007.png') repeat;
     border-right: 4px solid #000;
@@ -232,13 +233,13 @@ h1 {
 
 
 .combat-container {
-    width: calc(100% - 320px);
+    width: 100%;
     height: 100%;
     position: relative;
     display: flex;
     flex-direction: column;
     padding: 40px;
-    justify-content: space-between;
+    justify-content: flex-start; /* Align content to top since dock is fixed bottom */
 }
 
 /* Top Right: Enemy Cards */
@@ -249,6 +250,7 @@ h1 {
     max-width: 800px;
     flex-wrap: wrap;
     justify-content: flex-end;
+    margin-top: 60px; /* Spacing from top */
 }
 
 /* Boss Fight Grid Layout */
@@ -307,16 +309,28 @@ h1 {
     display: flex;
     padding: 0;
     /* Remove padding to handle segments internally */
-    min-height: 180px;
+    min-height: 120px;
     box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(8px);
+}
+
+/* New Dock Mode for Player Area */
+.player-combat-area.dock-mode {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    z-index: 7000; /* Above modal overlay */
+    background: rgba(0, 0, 0, 0.9);
+    border-top: 2px solid var(--gold);
+    box-shadow: 0 -5px 25px rgba(0,0,0,0.8);
 }
 
 .combat-segment-stats,
 .combat-segment-inventory,
 .combat-segment-trophies {
     flex: 1;
-    padding: 20px;
+    padding: 10px;
     display: flex;
     flex-direction: column;
     border-right: 1px solid rgba(212, 175, 55, 0.2);
@@ -335,7 +349,7 @@ h1 {
 .stat-subgrid {
     display: flex;
     gap: 20px;
-    margin-top: 10px;
+    margin-top: 5px;
     align-items: flex-start;
 }
 
@@ -358,7 +372,7 @@ h1 {
 }
 
 .stat-value {
-    font-size: 2rem;
+    font-size: 1.5rem;
     font-weight: 700;
     line-height: 1;
     color: #fff;
@@ -367,7 +381,7 @@ h1 {
 .stat-meta-row {
     display: flex;
     justify-content: space-between;
-    font-size: 0.8rem;
+    font-size: 0.7rem;
     color: var(--gold);
     margin-top: 5px;
     opacity: 0.9;
@@ -380,8 +394,8 @@ h1 {
 }
 
 .weapon-art-combat {
-    width: 60px;
-    height: 60px;
+    width: 42px;
+    height: 42px;
     background: rgba(0, 0, 0, 0.5);
     border: 1px solid var(--gold);
     background-size: 900% 100%;
@@ -439,8 +453,8 @@ h1 {
 }
 
 .combat-inventory-grid>div {
-    width: 70px;
-    height: 70px;
+    width: 48px;
+    height: 48px;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(212, 175, 55, 0.4);
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
@@ -582,7 +596,7 @@ h1 {
     gap: 8px;
     padding-left: 20px;
     border-left: 1px solid rgba(212, 175, 55, 0.3);
-    max-height: 120px;
+    max-height: 90px;
     overflow-y: auto;
     align-content: flex-start;
 }
@@ -702,7 +716,7 @@ h1 {
 /* Avatar Selection */
 .avatar-modal {
     position: fixed;
-    top: 0;
+    top: -100px;
     left: 0;
     width: 100%;
     height: 100%;
@@ -779,4 +793,57 @@ h1 {
     width: auto;
     filter: drop-shadow(0 0 15px rgba(0, 0, 0, 0.6));
     object-fit: contain;
+}
+
+/* Floating Control Box */
+.control-box {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    width: 320px;
+    max-height: 400px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid var(--gold);
+    padding: 15px;
+    z-index: 5000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: auto;
+}
+
+/* --- Bonfire UI --- */
+#bonfireUI {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 6500; /* Above modal overlay (6000), below Dock (7000) */
+    display: none; /* Toggled by JS */
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding-bottom: 220px; /* Increased to ensure buttons clear the dock */
+    pointer-events: auto;
+}
+
+#bonfireUI h2 {
+    color: var(--gold);
+    font-family: 'Cinzel', serif;
+    font-size: 3rem;
+    margin-bottom: 20px;
+    text-shadow: 0 2px 4px #000;
+}
+
+#bonfireStatus {
+    font-size: 1.5rem;
+    color: #fff;
+    margin-bottom: 30px;
+}
+
+#bonfireImage {
+    width: 300px;
+    height: 300px;
+    margin-bottom: 30px;
 }
