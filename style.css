@@ -1276,3 +1276,29 @@ h1 {
 .sell-slot:hover {
     background: rgba(212, 175, 55, 0.3);
 }
+
+/* --- Anvil / Crafting --- */
+.anvil-section {
+    margin-top: 15px;
+    border-top: 1px solid #333;
+    padding-top: 10px;
+    text-align: center;
+}
+.anvil-slots {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin: 10px 0;
+}
+.anvil-slot {
+    width: 64px;
+    height: 64px;
+    border: 1px dashed #666;
+    background: rgba(0,0,0,0.3);
+    position: relative;
+    cursor: pointer;
+}
+.anvil-slot:hover {
+    border-color: var(--gold);
+    background: rgba(212, 175, 55, 0.1);
+}

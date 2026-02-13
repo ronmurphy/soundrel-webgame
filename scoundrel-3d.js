@@ -1111,6 +1111,14 @@ function clearFogRings() {
 }
 
 function on3DClick(event) {
+    // Prevent interaction if any modal is open
+    const blockers = ['combatModal', 'lockpickUI', 'introModal', 'avatarModal', 'inventoryModal', 'classModal'];
+    const isBlocked = blockers.some(id => {
+        const el = document.getElementById(id);
+        return el && window.getComputedStyle(el).display !== 'none';
+    });
+    if (isBlocked) return;
+
     const container = document.getElementById('v3-container');
     const rect = container.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
