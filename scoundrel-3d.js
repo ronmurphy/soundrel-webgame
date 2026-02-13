@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { SoundManager } from './sound-manager.js';
 import { MagicCircleFX } from './magic-circle.js';
 
@@ -352,10 +353,12 @@ let walkAnims = {
     f: { up: null, down: null }
 };
 const clock = new THREE.Clock();
-let globalAnimSpeed = 1.0;
+let globalAnimSpeed = 0.5; // Slowed down default animation speed
 let isEditMode = false;
 let selectedMesh = null;
 const textureLoader = new THREE.TextureLoader();
+const glbCache = new Map(); // Cache for loaded GLB assets
+const loadingPromises = new Map(); // Deduplicate in-flight loads
 const gltfLoader = new GLTFLoader();
 gltfLoader.setMeshoptDecoder(MeshoptDecoder);
 const textureCache = new Map();
@@ -381,32 +384,75 @@ function getClonedTexture(path) {
 }
 
 function loadGLB(path, callback, scale = 1.0, configKey = null) {
-    console.log(`[GLB] Loading: ${path} (Scale: ${scale})`);
-    gltfLoader.load(path, (gltf) => {
-        console.log(`[GLB] Loaded: ${path}`);
-        const model = gltf.scene;
+    // Helper to setup the model instance
+    const setupInstance = (modelScene) => {
+        // Use SkeletonUtils to properly clone SkinnedMeshes (Player) and hierarchy
+        const model = SkeletonUtils.clone(modelScene);
+        
         model.traverse((child) => {
             if (child.isMesh) {
                 child.castShadow = true;
                 child.receiveShadow = true;
-                child.material.side = THREE.DoubleSide; // Ensure walls are visible from inside
+                if (child.material) child.material.side = THREE.DoubleSide;
             }
         });
+        
         model.scale.set(scale, scale, scale);
         
-        // Store config key for editor auto-save
         if (configKey) model.userData.configKey = configKey;
 
-        // Apply saved config if available
-        if (configKey && roomConfig[configKey]) {
-            const c = roomConfig[configKey];
+        const key = configKey ? configKey.trim() : null;
+        if (key && roomConfig[key]) {
+            const c = roomConfig[key];
             if (c.pos) model.position.set(c.pos.x, c.pos.y, c.pos.z);
             if (c.rot) model.rotation.set(c.rot.x, c.rot.y, c.rot.z);
-            if (c.scale) model.scale.set(c.scale.x, c.scale.y, c.scale.z);
+            if (c.scale) {
+                model.scale.set(c.scale.x, c.scale.y, c.scale.z);
+                console.debug(`[GLB] Applied CONFIG scale for ${key}:`, model.scale);
+            } else {
+                console.debug(`[GLB] Config found but NO scale for ${key}, using default:`, scale);
+            }
+        } else {
+            console.debug(`[GLB] Default Scale Applied for ${configKey || path}: ${scale}`);
         }
+        return model;
+    };
 
+    // Check Cache
+    if (glbCache.has(path)) {
+        const cachedGLTF = glbCache.get(path);
+        const model = setupInstance(cachedGLTF.scene);
+        if (callback) callback(model, cachedGLTF.animations);
+        return;
+    }
+
+    // Check In-Flight Requests
+    if (loadingPromises.has(path)) {
+        loadingPromises.get(path).then((gltf) => {
+            const model = setupInstance(gltf.scene);
+            if (callback) callback(model, gltf.animations);
+        });
+        return;
+    }
+
+    console.log(`[GLB] Loading: ${path} (Scale: ${scale})`);
+    
+    const promise = new Promise((resolve, reject) => {
+        gltfLoader.load(path, (gltf) => {
+            console.log(`[GLB] Loaded: ${path}`);
+            glbCache.set(path, gltf);
+            resolve(gltf);
+        }, undefined, reject);
+    });
+
+    loadingPromises.set(path, promise);
+
+    promise.then((gltf) => {
+        loadingPromises.delete(path); // Cleanup promise
+        const model = setupInstance(gltf.scene);
         if (callback) callback(model, gltf.animations);
-    }, undefined, (error) => {
+    }).catch((error) => {
+        loadingPromises.delete(path);
         console.warn(`Could not load model: ${path}`, error);
     });
 }
@@ -1138,11 +1184,10 @@ function loadPlayerModel() {
     
     const suffix = isTrueEndingUnlocked ? '_evil' : '';
     const path = `assets/images/glb/${game.sex === 'm' ? 'male' : 'female'}${suffix}-web.glb`;
-    
+    const configKey = path.split('/').pop();
+
     loadGLB(path, (model, animations) => {
         playerMesh = model;
-        // Shrink model in-game as requested (Adjust 0.5 if still too big/small)
-        playerMesh.scale.set(0.7, 0.7, 0.7); 
         
         playerMesh.position.set(0, 0.1, 0);
         scene.add(playerMesh);
@@ -1172,7 +1217,7 @@ function loadPlayerModel() {
         if (currentRoom) {
             playerMesh.position.set(currentRoom.gx, 0.1, currentRoom.gy);
         }
-    });
+    }, 0.7, configKey);
 }
 
 // Initialize Audio on first interaction
@@ -1469,11 +1514,14 @@ function update3DScene() {
                         if (r.isFinal) {
                             // Extend downwards for the pit/tower
                             mesh.position.set(r.gx, 0, r.gy); // Sit on ground
-                        } else if (r.shape === 'dome' || r.isSecret) {
+                        } else if (r.shape === 'dome' || r.isSecret || (use3dModel && customModelPath)) {
+                            // If using 3D models, always sit on ground (y=0) to ensure config offsets are consistent
+                            // regardless of random rDepth generation.
                             mesh.position.set(r.gx, 0, r.gy); // Sit on ground (half buried)
                         } else {
                             mesh.position.set(r.gx, rDepth / 2, r.gy); // Standard rooms raised slightly
                         }
+                        
                         // Apply the matrix once
                         mesh.updateMatrix();
 
@@ -5527,17 +5575,27 @@ window.setgame = function(mode, arg) {
 window.use3dmodels = function(bool) {
     use3dModel = bool;
     console.log(`3D Models: ${use3dModel}`);
-    // Reload scene to apply
-    const currentRoom = game.rooms.find(r => r.id === game.currentRoomIdx);
-    clear3DScene();
-    init3D();
-    generateFloorCA();
-    updateAtmosphere(game.floor);
     
-    // Restore position
-    if (currentRoom) {
-        if (use3dModel && playerMesh) playerMesh.position.set(currentRoom.gx, 0.1, currentRoom.gy);
-        else if (playerSprite) playerSprite.position.set(currentRoom.gx, 0.75, currentRoom.gy);
+    // Ensure config is loaded before reloading scene
+    const reloadScene = () => {
+        const currentRoom = game.rooms.find(r => r.id === game.currentRoomIdx);
+        clear3DScene();
+        init3D();
+        generateFloorCA();
+        updateAtmosphere(game.floor);
+        
+        // Restore position
+        if (currentRoom) {
+            if (use3dModel && playerMesh) playerMesh.position.set(currentRoom.gx, 0.1, currentRoom.gy);
+            else if (playerSprite) playerSprite.position.set(currentRoom.gx, 0.75, currentRoom.gy);
+        }
+    };
+
+    if (Object.keys(roomConfig).length === 0) {
+        console.log("Reloading Room Config...");
+        loadRoomConfig().then(reloadScene);
+    } else {
+        reloadScene();
     }
 }
 window.show3dmodels = window.use3dmodels; // Alias
@@ -5572,9 +5630,9 @@ window.editmap = function(bool) {
                 <h3 style="margin:0; color:#0ff;">Map Editor</h3>
                 <div id="editorTarget" style="font-size:0.8rem; color:#aaa;">No selection</div>
                 
-                ${row('Pos X', 'edPosX', -5, 5, 0.05, 0)}
-                ${row('Pos Y', 'edPosY', -5, 5, 0.05, 0)}
-                ${row('Pos Z', 'edPosZ', -5, 5, 0.05, 0)}
+                ${row('<span style="color:#ff6666">Pos X</span>', 'edPosX', -5, 5, 0.05, 0)}
+                ${row('<span style="color:#66ff66">Pos Y</span>', 'edPosY', -5, 5, 0.05, 0)}
+                ${row('<span style="color:#6666ff">Pos Z</span>', 'edPosZ', -5, 5, 0.05, 0)}
                 
                 ${row('Rot Y', 'edRotY', 0, 6.28, 0.1, 0)}
                 
@@ -5719,13 +5777,15 @@ window.saveRoomConfig = function() {
 
 async function loadRoomConfig() {
     try {
-        const res = await fetch('assets/data/room_config.json');
+        const res = await fetch('assets/images/glb/room_config.json?v=' + Date.now());
         if (res.ok) {
             roomConfig = await res.json();
             console.log("Loaded Room Config", roomConfig);
+        } else {
+            console.warn(`Room Config not found: ${res.status}`);
         }
     } catch (e) {
-        console.log("No room config found, using defaults.");
+        console.warn("Error loading Room Config:", e);
     }
 }
 
@@ -5774,6 +5834,7 @@ window.addEventListener('touchend', (e) => {
 });
 
 // Initialize Layout
-loadRoomConfig(); // Load transforms before layout
-setupLayout();
-initAttractMode();
+loadRoomConfig().then(() => {
+    setupLayout();
+    initAttractMode();
+});
