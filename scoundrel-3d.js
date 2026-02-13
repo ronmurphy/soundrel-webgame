@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SoundManager } from './sound-manager.js';
+import { MagicCircleFX } from './magic-circle.js';
 
 // --- CORE GAME STATE ---
 const game = {
@@ -308,6 +309,7 @@ let treePositions = []; // Store tree locations for FX
 
 // Audio State
 const audio = new SoundManager();
+const magicFX = new MagicCircleFX();
 
 function preloadSounds() {
     // Placeholders - You will need to add these files to assets/sounds/
@@ -2776,8 +2778,94 @@ function spawnFloatingText(text, x, y, color) {
 }
 
 // Helper for player attack visuals
-function triggerPlayerAttackAnim(x, y, hasWeapon) {
-    if (hasWeapon) {
+function triggerPlayerAttackAnim(x, y, weapon) {
+    // Occultist Spell FX
+    if (weapon && game.classId === 'occultist' && weapon.isSpell) {
+        const val = weapon.val;
+        
+        // Trigger Magic Circle Shader
+        let circleColor = [1, 1, 1];
+        if (val === 2 || val === 7 || val === 11) circleColor = [1.0, 0.5, 0.0]; // Orange/Red
+        else if (val === 3) circleColor = [0.0, 1.0, 1.0]; // Ice Blue
+        else if (val === 4) circleColor = [0.0, 1.0, 0.0]; // Neon Green
+        else if (val === 5) circleColor = [0.2, 0.5, 1.0]; // Lightning Blue
+        else if (val === 6) circleColor = [0.4, 0.4, 1.0]; // Dark Lightning
+        else if (val === 8) circleColor = [0.8, 0.0, 1.0]; // Purple
+        else if (val === 9) circleColor = [0.8, 0.9, 1.0]; // Blue-White
+        else if (val === 10 || val === 14) circleColor = [0.2, 1.0, 0.2]; // Green
+        else if (val === 12) circleColor = [0.6, 0.0, 0.8]; // Dark Purple
+        else if (val === 13) circleColor = [0.9, 0.9, 1.0]; // White
+        magicFX.trigger(x, y, circleColor);
+        
+        // Fire Spells (2: Fire Bolt, 7: Fireball, 9: Comet Fall, 11: Fireball)
+        if (val === 2 || val === 7 || val === 9 || val === 11) {
+             spawnAboveModalTexture('flame_03.png', x, y, 1, {
+                size: 300, spread: 0, decay: 0.05,
+                tint: '#ff5500', blend: 'lighter', intensity: 1.8
+            });
+            spawnAboveModalTexture('muzzle_02.png', x, y, 5, {
+                sizeRange: [40, 80], spread: 60, decay: 0.06,
+                tint: '#ffaa00', blend: 'lighter'
+            });
+            triggerShake(10, 20);
+        }
+        // Ice (3: Ice Dagger)
+        else if (val === 3) {
+             spawnAboveModalTexture('slash_02.png', x, y, 2, {
+                size: 200, spread: 20, decay: 0.08,
+                tint: '#00ffff', blend: 'lighter', intensity: 1.5
+            });
+            spawnAboveModalTexture('spark_01.png', x, y, 12, {
+                sizeRange: [10, 30], spread: 40, decay: 0.04,
+                tint: '#ffffff', blend: 'lighter'
+            });
+            triggerShake(5, 10);
+        }
+        // Poison (4: Poison Dart)
+        else if (val === 4) {
+             spawnAboveModalTexture('circle_03.png', x, y, 1, {
+                size: 250, spread: 0, decay: 0.04,
+                tint: '#00ff00', blend: 'lighter', intensity: 1.2
+            });
+            spawnAboveModalTexture('twirl_01.png', x, y, 3, {
+                sizeRange: [40, 80], spread: 30, decay: 0.03,
+                tint: '#44ff44', blend: 'lighter'
+            });
+            triggerShake(5, 10);
+        }
+        // Lightning (5: Lightning, 6: Ball Lightning)
+        else if (val === 5 || val === 6) {
+             spawnAboveModalTexture('trace_01.png', x, y, 4, {
+                size: 250, spread: 40, decay: 0.1,
+                tint: '#ffffaa', blend: 'lighter', intensity: 2.0
+            });
+            spawnAboveModalTexture('spark_01.png', x, y, 15, {
+                sizeRange: [5, 20], spread: 80, decay: 0.08,
+                tint: '#ffffff', blend: 'lighter'
+            });
+            triggerShake(12, 15);
+        }
+        // Void/Eldritch (8: Abyssal Rift, 10: Eldritch Annihilation, 12+)
+        else {
+             spawnAboveModalTexture('twirl_01.png', x, y, 1, {
+                size: 350, spread: 0, decay: 0.03,
+                tint: '#aa00ff', blend: 'lighter', intensity: 1.6
+            });
+            spawnAboveModalTexture('circle_03.png', x, y, 1, {
+                size: 200, spread: 0, decay: 0.05,
+                tint: '#ff00ff', blend: 'lighter', intensity: 1.0
+            });
+             spawnAboveModalTexture('spark_01.png', x, y, 10, {
+                sizeRange: [10, 40], spread: 60, decay: 0.04,
+                tint: '#ff88ff', blend: 'lighter'
+            });
+            triggerShake(15, 25);
+        }
+        return;
+    }
+
+    // Standard Physical Attacks
+    if (weapon) {
         // Slash
         spawnAboveModalTexture('slash_02.png', x, y, 1, {
             size: 280, spread: 0, decay: 0.06,
@@ -2926,7 +3014,7 @@ function pickCard(idx, event) {
             // --- CINEMATIC COMBAT SEQUENCE ---
 
             // 1. Player Attack Phase (Visuals)
-            triggerPlayerAttackAnim(centerX, centerY, !!game.equipment.weapon);
+            triggerPlayerAttackAnim(centerX, centerY, game.equipment.weapon);
             audio.play(game.equipment.weapon ? 'attack_slash' : 'attack_blunt', { volume: 0.8, rate: 0.9 + Math.random() * 0.2 });
 
             // Animate Card Impact (Recoil)
