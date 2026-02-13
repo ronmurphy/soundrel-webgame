@@ -1,6 +1,7 @@
 // <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { SoundManager } from './sound-manager.js';
 import { MagicCircleFX } from './magic-circle.js';
 
@@ -338,12 +339,17 @@ function preloadSounds() {
 let ghosts = []; // Active ghost sprites
 let is3DView = true;
 let isAttractMode = false; // Title screen mode
+let use3dModel = false; // Default to 2D sprites
 let playerSprite;
+let playerMesh; // 3D Model
+let mixer; // Animation Mixer
+let actions = {}; // Animation Actions (Idle, Walk)
 let walkAnims = {
     m: { up: null, down: null },
     f: { up: null, down: null }
 };
 const textureLoader = new THREE.TextureLoader();
+const gltfLoader = new GLTFLoader();
 const textureCache = new Map();
 
 function loadTexture(path) {
@@ -364,6 +370,21 @@ function getClonedTexture(path) {
         original.image.addEventListener('load', onImgLoad);
     }
     return clone;
+}
+
+function loadGLB(path, callback) {
+    gltfLoader.load(path, (gltf) => {
+        const model = gltf.scene;
+        model.traverse((child) => {
+            if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+            }
+        });
+        if (callback) callback(model, gltf.animations);
+    }, undefined, (error) => {
+        console.warn(`Could not load model: ${path}`, error);
+    });
 }
 
 // FX State
@@ -1057,18 +1078,24 @@ function init3D() {
 
     // Fog of War
     scene.fog = new THREE.FogExp2(0x000000, 0.05);
-    // Load Walking Textures
-    walkAnims.m.up = loadTexture('assets/images/animations/m_walk_up.png');
-    walkAnims.m.down = loadTexture('assets/images/animations/m_walk_down.png');
-    walkAnims.f.up = loadTexture('assets/images/animations/f_walk_up.png');
-    walkAnims.f.down = loadTexture('assets/images/animations/f_walk_down.png');
+    
+    if (use3dModel) {
+        // Load 3D Player Model
+        loadPlayerModel();
+    } else {
+        // Load Walking Textures
+        walkAnims.m.up = loadTexture('assets/images/animations/m_walk_up.png');
+        walkAnims.m.down = loadTexture('assets/images/animations/m_walk_down.png');
+        walkAnims.f.up = loadTexture('assets/images/animations/f_walk_up.png');
+        walkAnims.f.down = loadTexture('assets/images/animations/f_walk_down.png');
 
-    // Player Billboard
-    const spriteMat = new THREE.SpriteMaterial({ map: walkAnims.m.up, transparent: true });
-    playerSprite = new THREE.Sprite(spriteMat);
-    playerSprite.scale.set(1.5, 1.5, 1.5);
-    playerSprite.position.set(0, 0.75, 0); // initial pos
-    scene.add(playerSprite);
+        // Player Billboard
+        const spriteMat = new THREE.SpriteMaterial({ map: walkAnims.m.up, transparent: true });
+        playerSprite = new THREE.Sprite(spriteMat);
+        playerSprite.scale.set(1.5, 1.5, 1.5);
+        playerSprite.position.set(0, 0.75, 0); // initial pos
+        scene.add(playerSprite);
+    }
 
     // Player Marker (Floating Diamond)
     const markerGeo = new THREE.OctahedronGeometry(0.3, 0);
@@ -1078,6 +1105,45 @@ function init3D() {
 
     animate3D();
     window.addEventListener('click', on3DClick);
+}
+
+function loadPlayerModel() {
+    const path = `assets/images/glb/${game.sex === 'm' ? 'male' : 'female'}.glb`;
+    
+    loadGLB(path, (model, animations) => {
+        playerMesh = model;
+        // Shrink model in-game as requested (Adjust 0.5 if still too big/small)
+        playerMesh.scale.set(0.7, 0.7, 0.7); 
+        
+        playerMesh.position.set(0, 0.1, 0);
+        scene.add(playerMesh);
+
+        // Setup Animations
+        if (animations && animations.length > 0) {
+            mixer = new THREE.AnimationMixer(playerMesh);
+            actions = {};
+            
+            console.log(`Animations loaded for ${game.sex}:`, animations.map(a => a.name));
+            
+            // Auto-detect animations or fallback to index
+            // Improved detection: Look for 'idle', 'stand', 'wait'
+            const idleClip = animations.find(a => /idle|stand|wait/i.test(a.name)) || animations[0];
+            const walkClip = animations.find(a => /walk|run|move/i.test(a.name)) || animations.find(a => a !== idleClip) || animations[0];
+
+            if (walkClip) actions.walk = mixer.clipAction(walkClip);
+            if (idleClip) actions.idle = mixer.clipAction(idleClip);
+            
+            // Start Idle
+            if (actions.idle) actions.idle.reset().play();
+            else if (actions.walk) actions.walk.play();
+        }
+        
+        // Position correctly if game is running
+        const currentRoom = game.rooms.find(r => r.id === game.currentRoomIdx);
+        if (currentRoom) {
+            playerMesh.position.set(currentRoom.gx, 0.1, currentRoom.gy);
+        }
+    });
 }
 
 // Initialize Audio on first interaction
@@ -1153,7 +1219,8 @@ function update3DScene() {
     if (!scene) return;
     const currentRoom = game.rooms.find(room => room.id === game.currentRoomIdx);
 
-    if (playerSprite && torchLight) {
+    const playerObj = use3dModel ? playerMesh : playerSprite;
+    if (playerObj && torchLight) {
         // --- Attract Mode Overrides ---
         if (isAttractMode) {
             // Force full visibility
@@ -1201,10 +1268,10 @@ function update3DScene() {
         // Note: This check is cheap in the loop map
         // if (audio.initialized) audio.startLoop('torch', 'torch_loop', { volume: 0 });
 
-        torchLight.position.set(playerSprite.position.x, 2.5, playerSprite.position.z);
+        torchLight.position.set(playerObj.position.x, 2.5, playerObj.position.z);
 
         game.rooms.forEach(r => {
-            const dist = Math.sqrt(Math.pow(r.gx - playerSprite.position.x, 2) + Math.pow(r.gy - playerSprite.position.z, 2));
+            const dist = Math.sqrt(Math.pow(r.gx - playerObj.position.x, 2) + Math.pow(r.gy - playerObj.position.z, 2));
             const isVisible = isAttractMode || (dist < vRad);
             if (isVisible) r.isRevealed = true;
 
@@ -1462,7 +1529,7 @@ function update3DScene() {
                 } else {
                     const midX = (r.gx + target.gx) / 2;
                     const midZ = (r.gy + target.gy) / 2;
-                    const distToMid = Math.sqrt(Math.pow(midX - playerSprite.position.x, 2) + Math.pow(midZ - playerSprite.position.z, 2));
+                    const distToMid = Math.sqrt(Math.pow(midX - playerObj.position.x, 2) + Math.pow(midZ - playerObj.position.z, 2));
                     const isDir = distToMid < vRad;
                     if (isDir) { r.correveals = r.correveals || {}; r.correveals[corridorId] = true; }
                     mesh.visible = (r.correveals && r.correveals[corridorId]);
@@ -1487,7 +1554,8 @@ function animate3D() {
     updateSpatialAudio();
 
     // Animate Player Marker
-    if (playerMarker && playerSprite && !isAttractMode) {
+    const playerObj = use3dModel ? playerMesh : playerSprite;
+    if (playerMarker && playerObj && !isAttractMode) {
         const currentRoom = game.rooms.find(r => r.id === game.currentRoomIdx);
 
         if (currentRoom && currentRoom.isWaypoint) {
@@ -1502,7 +1570,7 @@ function animate3D() {
             const roomHeight = (currentRoom && currentRoom.rDepth) ? currentRoom.rDepth : 3.0;
             const markerHeight = roomHeight + 2.0 + Math.sin(time) * 0.5;
 
-            playerMarker.position.set(playerSprite.position.x, markerHeight, playerSprite.position.z);
+            playerMarker.position.set(playerObj.position.x, markerHeight, playerObj.position.z);
             playerMarker.rotation.y += 0.02;
         }
     }
@@ -1564,7 +1632,14 @@ function animate3D() {
     }
 
     if (window.TWEEN) TWEEN.update();
-    animatePlayerSprite();
+    
+    // Update Animation Mixer
+    if (use3dModel && mixer) {
+        const delta = 0.016; // Approx 60fps
+        mixer.update(delta);
+    } else if (!use3dModel) {
+        animatePlayerSprite();
+    }
 }
 
 function animatePlayerSprite() {
@@ -1595,8 +1670,26 @@ function movePlayerSprite(oldId, newId) {
     if (game.torchCharge < 5) logMsg(`Torch is fading... (${game.torchCharge} left)`);
     updateUI();
 
-    playerSprite.material.map = (r2.gy > r1.gy) ? walkAnims[game.sex].up : walkAnims[game.sex].down;
-    new TWEEN.Tween(playerSprite.position).to({ x: r2.gx, z: r2.gy }, 600).easing(TWEEN.Easing.Quadratic.Out).start();
+    // Rotate to face target
+    if (use3dModel && playerMesh) {
+        playerMesh.lookAt(r2.gx, playerMesh.position.y, r2.gy);
+        // Trigger Walk Animation
+        if (actions.walk && actions.idle) {
+            actions.walk.enabled = true;
+            actions.walk.setEffectiveTimeScale(1.0);
+            actions.walk.setEffectiveWeight(1.0);
+            actions.idle.crossFadeTo(actions.walk, 0.2, true).play();
+        }
+        new TWEEN.Tween(playerMesh.position).to({ x: r2.gx, z: r2.gy }, 600).easing(TWEEN.Easing.Quadratic.Out).onComplete(() => {
+            // Return to Idle
+            if (actions.walk && actions.idle) {
+                actions.walk.crossFadeTo(actions.idle, 0.2, true).play();
+            }
+        }).start();
+    } else if (playerSprite) {
+        playerSprite.material.map = (r2.gy > r1.gy) ? walkAnims[game.sex].up : walkAnims[game.sex].down;
+        new TWEEN.Tween(playerSprite.position).to({ x: r2.gx, z: r2.gy }, 600).easing(TWEEN.Easing.Quadratic.Out).start();
+    }
 }
 
 function addDoorsToRoom(room, mesh) {
@@ -2121,7 +2214,14 @@ function clear3DScene() {
     ghosts.forEach(g => scene.remove(g));
     ghosts = [];
 
-    playerSprite = null; torchLight = null;
+    playerSprite = null;
+    if (playerMesh) {
+        scene.remove(playerMesh);
+        playerMesh = null;
+    }
+    mixer = null;
+    actions = {};
+    torchLight = null;
 }
 
 function toggleView() {
@@ -2363,10 +2463,8 @@ function finalizeStartDive() {
     generateFloorCA(); // Generate Atmosphere and Floor
     updateAtmosphere(game.floor);
 
-    if (playerSprite) playerSprite.position.set(0, 0.75, 0);
     updateUI();
     logMsg("The descent begins. Room 0 explored.");
-    playerSprite.material.map = walkAnims[game.sex].up;
 
     // Reset Camera for Gameplay
     camera.position.set(20, 20, 20);
@@ -2530,10 +2628,8 @@ function descendToNextFloor() {
     generateFloorCA();
     updateAtmosphere(game.floor);
 
-    if (playerSprite) playerSprite.position.set(0, 0.75, 0);
     updateUI();
     logMsg(`Descending deeper... Floor ${game.floor}`);
-    playerSprite.material.map = walkAnims[game.sex].up;
     enterRoom(0);
 
     // Checkpoint Save: Save state at start of new floor (after generation)
@@ -4332,7 +4428,8 @@ function initAttractMode() {
     updateAtmosphere(1);
 
     // Center player/torch for lighting
-    if (playerSprite) playerSprite.position.set(0, 0, 0);
+    if (use3dModel && playerMesh) playerMesh.position.set(0, 0.1, 0);
+    if (!use3dModel && playerSprite) playerSprite.position.set(0, 0.75, 0);
     
     // Ensure logo is visible
     const logo = document.getElementById('gameLogo');
@@ -4771,9 +4868,9 @@ function loadGame() {
 
     // Restore Player Position
     const currentRoom = game.rooms.find(r => r.id === game.currentRoomIdx);
-    if (currentRoom && playerSprite) {
-        playerSprite.position.set(currentRoom.gx, 0.75, currentRoom.gy);
-        playerSprite.material.map = walkAnims[game.sex].up;
+    if (currentRoom) {
+        if (use3dModel && playerMesh) playerMesh.position.set(currentRoom.gx, 0.1, currentRoom.gy);
+        else if (playerSprite) playerSprite.position.set(currentRoom.gx, 0.75, currentRoom.gy);
         
         // Snap Camera
         camera.position.set(20, 20, 20);
@@ -5209,6 +5306,23 @@ window.setgame = function(mode, arg) {
             console.log("Commands: finalboss, boss, merchant, bonfire, showhidden, godmode, floor [n], lockpick, trap");
     }
 };
+
+window.use3dmodels = function(bool) {
+    use3dModel = bool;
+    console.log(`3D Models: ${use3dModel}`);
+    // Reload scene to apply
+    const currentRoom = game.rooms.find(r => r.id === game.currentRoomIdx);
+    clear3DScene();
+    init3D();
+    generateFloorCA();
+    updateAtmosphere(game.floor);
+    
+    // Restore position
+    if (currentRoom) {
+        if (use3dModel && playerMesh) playerMesh.position.set(currentRoom.gx, 0.1, currentRoom.gy);
+        else if (playerSprite) playerSprite.position.set(currentRoom.gx, 0.75, currentRoom.gy);
+    }
+}
 
 // --- GLOBAL TOUCH HANDLERS (For Inventory Drag) ---
 window.addEventListener('touchmove', (e) => {
