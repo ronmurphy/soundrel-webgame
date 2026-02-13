@@ -36,6 +36,11 @@ const game = {
     isBossFight: false // Flag for boss state
 };
 
+// Touch Drag State
+let touchDragGhost = null;
+let touchDragData = null;
+let touchDragMoved = false;
+
 const ITEMS_SHEET_COUNT = 10; // Change to 10 when you add the ring graphic!
 const WEAPON_SHEET_COUNT = 10; // Updated for Cursed Blade
 
@@ -319,10 +324,11 @@ function preloadSounds() {
     audio.load('attack_slash', 'assets/sounds/attack_slash.ogg');
     audio.load('attack_blunt', 'assets/sounds/attack_blunt.ogg');
     audio.load('bgm_dungeon', 'assets/sounds/bgm_dungeon.ogg');
-    audio.load('footstep', 'assets/sounds/footstep.ogg');
+    // audio.load('footstep', 'assets/sounds/footstep.ogg');
     audio.load('card_shuffle', 'assets/sounds/card_shuffle.ogg');
 
     // Use code-generated sounds for missing files (like torch/bonfire):
+    audio.loadPlaceholders();
     // audio.loadPlaceholders();
 }
 
@@ -956,12 +962,12 @@ function updateSpatialAudio() {
     // 1. Torch Loop (Based on Zoom)
     // Louder when zoomed in (camera.zoom higher)
     // camera.zoom ranges from 0.5 (far) to 2.0 (close)
-    if (torchLight) {
-        // Map zoom 0.5->2.0 to volume 0.1->0.6
-        const zoomFactor = (camera.zoom - 0.5) / 1.5;
-        const torchVol = 0.05 + (zoomFactor * 0.25); // Reduced volume for OGG file
-        audio.setLoopVolume('torch', torchVol);
-    }
+    // if (torchLight) {
+    //     // Map zoom 0.5->2.0 to volume 0.1->0.6
+    //     const zoomFactor = (camera.zoom - 0.5) / 1.5;
+    //     const torchVol = 0.05 + (zoomFactor * 0.25); // Reduced volume for OGG file
+    //     audio.setLoopVolume('torch', torchVol);
+    // }
 
     // 2. Bonfire Loops (Based on Distance to Center of Screen)
     game.rooms.forEach(r => {
@@ -1181,7 +1187,7 @@ function update3DScene() {
 
         // Start torch sound if not playing
         // Note: This check is cheap in the loop map
-        if (audio.initialized) audio.startLoop('torch', 'torch_loop', { volume: 0 });
+        // if (audio.initialized) audio.startLoop('torch', 'torch_loop', { volume: 0 });
 
         torchLight.position.set(playerSprite.position.x, 2.5, playerSprite.position.z);
 
@@ -2388,8 +2394,6 @@ function startIntermission() {
         nextBtn.innerText = "Descend"; // Reset text
         nextBtn.onclick = startIntermission; // Reset handler to intermission
         
-        // Checkpoint Save on Floor Transition
-        if (game.mode === 'checkpoint') saveGame();
         descendToNextFloor();
     };
 }
@@ -2420,6 +2424,9 @@ function descendToNextFloor() {
     logMsg(`Descending deeper... Floor ${game.floor}`);
     playerSprite.material.map = walkAnims[game.sex].up;
     enterRoom(0);
+
+    // Checkpoint Save: Save state at start of new floor (after generation)
+    if (game.mode === 'checkpoint') saveGame();
 }
 
 function enterRoom(id) {
@@ -2895,6 +2902,10 @@ function pickCard(idx, event) {
 
     let card = game.combatCards[idx];
     let cardEl = event.target.closest('.card');
+    
+    const cardRect = cardEl.getBoundingClientRect();
+    const centerX = cardRect.left + cardRect.width / 2;
+    const centerY = cardRect.top + cardRect.height / 2;
 
     // --- BOSS MECHANIC: LOYALIST INTERCEPTION ---
     if (game.isBossFight && card.bossSlot === 'boss-guardian') {
@@ -3015,7 +3026,21 @@ function pickCard(idx, event) {
 
             // 1. Player Attack Phase (Visuals)
             triggerPlayerAttackAnim(centerX, centerY, game.equipment.weapon);
-            audio.play(game.equipment.weapon ? 'attack_slash' : 'attack_blunt', { volume: 0.8, rate: 0.9 + Math.random() * 0.2 });
+            
+            let attackSound = 'attack_blunt';
+            if (game.equipment.weapon) {
+                if (game.equipment.weapon.isSpell) {
+                    const val = game.equipment.weapon.val;
+                    if (val === 2 || val === 7 || val === 9 || val === 11) attackSound = 'spell_fire';
+                    else if (val === 3) attackSound = 'spell_ice';
+                    else if (val === 4) attackSound = 'spell_poison';
+                    else if (val === 5 || val === 6) attackSound = 'spell_electric';
+                    else attackSound = 'spell_void';
+                } else {
+                    attackSound = 'attack_slash';
+                }
+            }
+            audio.play(attackSound, { volume: 0.8, rate: 0.9 + Math.random() * 0.2 });
 
             // Animate Card Impact (Recoil)
             const recoilAnim = cardEl.animate([
@@ -3128,12 +3153,16 @@ function pickCard(idx, event) {
             // Spawn both canvas FX (for background) and DOM UI FX (so they appear above the modal)
             spawnAboveModalTexture('circle_03.png', window.innerWidth / 2, window.innerHeight / 2, 20, { tint: '#00cc00', blend: 'lighter', sizeRange: [24, 64], intensity: 1.35 });
 
-            if (addToHotbar({ type: 'potion', val: card.val, name: card.name, suit: card.suit })) {
+            const potionItem = { type: 'potion', val: card.val, name: card.name, suit: card.suit };
+
+            if (addToHotbar(potionItem)) {
                 logMsg(`Stored ${card.name} in hotbar.`);
+            } else if (addToBackpack(potionItem)) {
+                logMsg(`Stored ${card.name} in backpack.`);
             } else {
                 const heal = Math.min(card.val, game.maxHp - game.hp);
                 game.hp += heal;
-                logMsg(`Hotbar full! Drank ${card.name} (+${heal} HP).`);
+                logMsg(`Inventory full! Drank ${card.name} (+${heal} HP).`);
             }
             updateUI(); // Immediate UI refresh
             break;
@@ -4172,16 +4201,22 @@ function setupInventoryUI() {
             <div class="inventory-left">
                 <div id="classIconDisplay" class="class-icon-display"></div>
                 <div id="paperDoll" class="paper-doll" style="background-image: url('assets/images/visualnovel/${game.sex}_doll.png');">
-                    <div class="equip-slot head" data-slot="head"></div>
-                    <div class="equip-slot chest" data-slot="chest"></div>
-                    <div class="equip-slot hands" data-slot="hands"></div>
-                    <div class="equip-slot legs" data-slot="legs"></div>
-                    <div class="equip-slot weapon" data-slot="weapon"></div>
+                    <div class="equip-slot head" data-slot="head" data-slot-type="equipment" data-slot-idx="head"></div>
+                    <div class="equip-slot chest" data-slot="chest" data-slot-type="equipment" data-slot-idx="chest"></div>
+                    <div class="equip-slot hands" data-slot="hands" data-slot-type="equipment" data-slot-idx="hands"></div>
+                    <div class="equip-slot legs" data-slot="legs" data-slot-type="equipment" data-slot-idx="legs"></div>
+                    <div class="equip-slot weapon" data-slot="weapon" data-slot-type="equipment" data-slot-idx="weapon"></div>
                 </div>
             </div>
             <div class="inventory-right">
-                <h3 style="color:var(--gold); font-family:'Cinzel'; border-bottom:1px solid #333;">Backpack</h3>
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; margin-bottom:10px;">
+                    <h3 style="color:var(--gold); font-family:'Cinzel'; margin:0;">Backpack</h3>
+                    <button class="v2-btn" onclick="sortInventory()" style="padding:2px 8px; font-size:0.8rem; margin-right: 12px;">Sort</button>
+                </div>
                 <div id="backpackGrid" class="backpack-grid"></div>
+                <div id="sellSlot" class="sell-slot" ondragover="event.preventDefault()" ondrop="handleDrop(event, 'sell', 0)" data-slot-type="sell" data-slot-idx="0">
+                    Drag here to Sell (1 Coin)
+                </div>
             </div>
             <div class="inventory-bottom">
                 <div class="inventory-hotbar-section">
@@ -4192,11 +4227,30 @@ function setupInventoryUI() {
                     <div style="opacity:0.5; font-style:italic;">Select an item to view details...</div>
                 </div>
             </div>
-            <button class="v2-btn close-inv-btn" onclick="toggleInventory()" style="position:absolute; top:20px; right:20px;">Close</button>
+            <button class="v2-btn close-inv-btn" onclick="toggleInventory()" style="position:absolute; top:5px; right:5px; width:32px; height:32px; padding:0; display:flex; align-items:center; justify-content:center; font-size:1.2rem; box-shadow:none; z-index:10;">✕</button>
         </div>
     `;
     document.body.appendChild(modal);
 }
+
+window.sortInventory = function() {
+    // Sort logic: Type Priority (Weapon > Armor > Potion > Item) -> Value (High to Low)
+    const typePriority = { 'weapon': 1, 'armor': 2, 'potion': 3, 'item': 4 };
+    
+    game.backpack.sort((a, b) => {
+        if (!a && !b) return 0;
+        if (!a) return 1; // nulls last
+        if (!b) return -1;
+        
+        const typeA = typePriority[a.type] || 5;
+        const typeB = typePriority[b.type] || 5;
+        
+        if (typeA !== typeB) return typeA - typeB;
+        return b.val - a.val; // Descending value
+    });
+    
+    updateUI();
+};
 
 function renderInventoryUI() {
     const modal = document.getElementById('inventoryModal');
@@ -4238,6 +4292,25 @@ function renderInventoryUI() {
         div.ondragstart = (e) => {
             e.dataTransfer.setData('text/plain', JSON.stringify({ source, idx }));
         };
+        
+        // Touch Drag Support
+        div.ontouchstart = (e) => {
+            if (e.touches.length > 1) return;
+            const touch = e.touches[0];
+            touchDragData = { source, idx };
+            
+            touchDragGhost = div.cloneNode(true);
+            touchDragGhost.style.position = 'fixed';
+            touchDragGhost.style.zIndex = '10000';
+            touchDragGhost.style.opacity = '0.8';
+            touchDragGhost.style.pointerEvents = 'none';
+            touchDragGhost.style.width = div.getBoundingClientRect().width + 'px';
+            touchDragGhost.style.height = div.getBoundingClientRect().height + 'px';
+            touchDragGhost.style.left = (touch.clientX - touchDragGhost.offsetWidth / 2) + 'px';
+            touchDragGhost.style.top = (touch.clientY - touchDragGhost.offsetHeight / 2) + 'px';
+            document.body.appendChild(touchDragGhost);
+        };
+
         div.onclick = (e) => {
             e.stopPropagation();
             updateItemDescription(item);
@@ -4266,6 +4339,8 @@ function renderInventoryUI() {
         div.className = 'inv-slot';
         div.ondragover = (e) => e.preventDefault();
         div.ondrop = (e) => handleDrop(e, 'backpack', idx);
+        div.dataset.slotType = 'backpack';
+        div.dataset.slotIdx = idx;
         if (item) {
             div.appendChild(createItemEl(item, 'backpack', idx));
         }
@@ -4281,6 +4356,8 @@ function renderInventoryUI() {
         div.style.width = '64px';
         div.ondragover = (e) => e.preventDefault();
         div.ondrop = (e) => handleDrop(e, 'hotbar', idx);
+        div.dataset.slotType = 'hotbar';
+        div.dataset.slotIdx = idx;
         if (item) {
             div.appendChild(createItemEl(item, 'hotbar', idx));
         }
@@ -4307,6 +4384,7 @@ function updateItemDescription(item) {
     `;
 }
 
+window.handleDrop = handleDrop; // Expose to window for HTML attribute access
 function handleDrop(e, targetType, targetIdx) {
     e.preventDefault();
     const data = JSON.parse(e.dataTransfer.getData('text/plain'));
@@ -4320,6 +4398,20 @@ function handleDrop(e, targetType, targetIdx) {
     else if (srcType === 'hotbar') item = game.hotbar[srcIdx];
 
     if (!item) return;
+
+    // Handle Selling
+    if (targetType === 'sell') {
+        if (srcType === 'equipment') game.equipment[srcIdx] = null;
+        else if (srcType === 'backpack') game.backpack[srcIdx] = null;
+        else if (srcType === 'hotbar') game.hotbar[srcIdx] = null;
+        
+        game.soulCoins++;
+        spawnFloatingText("+1 Soul Coin", e.clientX, e.clientY, '#d4af37');
+        
+        if (item.type === 'armor') recalcAP();
+        updateUI();
+        return;
+    }
 
     // Validation: Equipment Slots
     if (targetType === 'equipment') {
@@ -4393,6 +4485,8 @@ function saveGame() {
         hp: game.hp, maxHp: game.maxHp, floor: game.floor,
         soulCoins: game.soulCoins, ap: game.ap, maxAp: game.maxAp,
         sex: game.sex, classId: game.classId, mode: game.mode,
+        isBossFight: game.isBossFight,
+        isBrokerFight: game.isBrokerFight,
         currentRoomIdx: game.currentRoomIdx,
         bonfireUsed: game.bonfireUsed, merchantUsed: game.merchantUsed,
         slainStack: game.slainStack,
@@ -4872,6 +4966,50 @@ window.setgame = function(mode, arg) {
             console.log("Commands: finalboss, boss, merchant, bonfire, showhidden, godmode, floor [n], lockpick, trap");
     }
 };
+
+// --- GLOBAL TOUCH HANDLERS (For Inventory Drag) ---
+window.addEventListener('touchmove', (e) => {
+    if (touchDragGhost) {
+        e.preventDefault();
+        touchDragMoved = true;
+        const touch = e.touches[0];
+        touchDragGhost.style.left = (touch.clientX - touchDragGhost.offsetWidth / 2) + 'px';
+        touchDragGhost.style.top = (touch.clientY - touchDragGhost.offsetHeight / 2) + 'px';
+    }
+}, { passive: false });
+
+window.addEventListener('touchend', (e) => {
+    if (!touchDragGhost) return;
+    const touch = e.changedTouches[0];
+    
+    // Hide ghost momentarily to find element below it
+    touchDragGhost.style.display = 'none';
+    const elemBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+    
+    document.body.removeChild(touchDragGhost);
+    touchDragGhost = null;
+    
+    if (elemBelow && touchDragMoved) {
+        const slot = elemBelow.closest('[data-slot-type]');
+        if (slot) {
+            const targetType = slot.dataset.slotType;
+            let targetIdx = slot.dataset.slotIdx;
+            
+            // Convert index to number for arrays
+            if (targetType === 'backpack' || targetType === 'hotbar') targetIdx = parseInt(targetIdx);
+            
+            // Mock event for handleDrop
+            const mockEvent = {
+                preventDefault: () => {},
+                clientX: touch.clientX, clientY: touch.clientY,
+                dataTransfer: { getData: () => JSON.stringify(touchDragData) }
+            };
+            handleDrop(mockEvent, targetType, targetIdx);
+        }
+    }
+    touchDragData = null;
+    touchDragMoved = false;
+});
 
 // Initialize Layout
 setupLayout();

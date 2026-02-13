@@ -1260,3 +1260,19 @@ h1 {
     background: #000;
     cursor: crosshair;
 }
+
+.sell-slot {
+    margin-top: 10px;
+    border: 1px dashed var(--gold);
+    background: rgba(212, 175, 55, 0.1);
+    color: var(--gold);
+    text-align: center;
+    padding: 15px;
+    font-family: 'Cinzel', serif;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.sell-slot:hover {
+    background: rgba(212, 175, 55, 0.3);
+}

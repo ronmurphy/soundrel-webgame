@@ -146,8 +146,8 @@ export class SoundManager {
 
         // 4. Footstep (Short thud)
         if (!this.buffers.has('footstep')) {
-            this.buffers.set('footstep', createBuffer(0.05, (i, t) => {
-                return (Math.random() * 2 - 1) * (1 - t/0.05);
+            this.buffers.set('footstep', createBuffer(0.1, (i, t) => {
+                return (Math.random() * 2 - 1) * Math.pow(1 - t/0.1, 2) * 0.15;
             }));
         }
         
@@ -155,6 +155,41 @@ export class SoundManager {
         if (!this.buffers.has('bgm_dungeon')) {
              this.buffers.set('bgm_dungeon', createBuffer(5.0, (i, t) => {
                 return Math.sin(t * 55 * Math.PI * 2) * 0.05 + Math.sin(t * 58 * Math.PI * 2) * 0.05;
+            }));
+        }
+
+        // 6. Spells (Synthesized)
+        if (!this.buffers.has('spell_fire')) {
+            // Hissing noise
+            this.buffers.set('spell_fire', createBuffer(0.8, (i, t) => {
+                return (Math.random() * 2 - 1) * Math.pow(1 - t/0.8, 2) * 0.6;
+            }));
+        }
+        if (!this.buffers.has('spell_ice')) {
+            // High pitched sine shatter
+            this.buffers.set('spell_ice', createBuffer(0.6, (i, t) => {
+                const freq = 2000 + Math.random() * 1000;
+                return Math.sin(t * freq * Math.PI * 2) * (1 - t/0.6) * 0.3;
+            }));
+        }
+        if (!this.buffers.has('spell_poison')) {
+            // Low bubbling
+            this.buffers.set('spell_poison', createBuffer(0.6, (i, t) => {
+                return Math.sin(t * 200 * Math.PI * 2 + Math.sin(t * 50)) * (1 - t/0.6) * 0.5;
+            }));
+        }
+        if (!this.buffers.has('spell_electric')) {
+            // Sawtooth buzz
+            this.buffers.set('spell_electric', createBuffer(0.4, (i, t) => {
+                const freq = 150 + Math.random() * 50;
+                return ((t * freq) % 1 - 0.5) * (1 - t/0.4) * 0.4;
+            }));
+        }
+        if (!this.buffers.has('spell_void')) {
+            // Deep wobble
+            this.buffers.set('spell_void', createBuffer(1.2, (i, t) => {
+                const freq = 60 + Math.sin(t * 20) * 20;
+                return Math.sin(t * freq * Math.PI * 2) * (1 - t/1.2) * 0.8;
             }));
         }
     }
