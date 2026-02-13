@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Optimize GLB
+Comment=Drag and drop .glb files here to optimize them
+Exec=/home/brad/Documents/soundrel-webgame/assets/images/glb/optimize_glb.fish %F
+Icon=utilities-terminal
+Terminal=true
+MimeType=model/gltf-binary;
+Path=/home/brad/Documents/soundrel-webgame/assets/images/glb/

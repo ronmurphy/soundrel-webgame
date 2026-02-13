@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { SoundManager } from './sound-manager.js';
 import { MagicCircleFX } from './magic-circle.js';
 
@@ -350,6 +351,7 @@ let walkAnims = {
 };
 const textureLoader = new THREE.TextureLoader();
 const gltfLoader = new GLTFLoader();
+gltfLoader.setMeshoptDecoder(MeshoptDecoder);
 const textureCache = new Map();
 
 function loadTexture(path) {
@@ -372,15 +374,19 @@ function getClonedTexture(path) {
     return clone;
 }
 
-function loadGLB(path, callback) {
+function loadGLB(path, callback, scale = 1.0) {
+    console.log(`[GLB] Loading: ${path} (Scale: ${scale})`);
     gltfLoader.load(path, (gltf) => {
+        console.log(`[GLB] Loaded: ${path}`);
         const model = gltf.scene;
         model.traverse((child) => {
             if (child.isMesh) {
                 child.castShadow = true;
                 child.receiveShadow = true;
+                child.material.side = THREE.DoubleSide; // Ensure walls are visible from inside
             }
         });
+        model.scale.set(scale, scale, scale);
         if (callback) callback(model, gltf.animations);
     }, undefined, (error) => {
         console.warn(`Could not load model: ${path}`, error);
@@ -1108,7 +1114,12 @@ function init3D() {
 }
 
 function loadPlayerModel() {
-    const path = `assets/images/glb/${game.sex === 'm' ? 'male' : 'female'}.glb`;
+    // Check for True Ending Unlock
+    const wins = JSON.parse(localStorage.getItem('scoundrelWins') || '{"m":false, "f":false}');
+    const isTrueEndingUnlocked = (wins.m && wins.f);
+    
+    const suffix = isTrueEndingUnlocked ? '_evil' : '';
+    const path = `assets/images/glb/${game.sex === 'm' ? 'male' : 'female'}${suffix}-web.glb`;
     
     loadGLB(path, (model, animations) => {
         playerMesh = model;
@@ -1126,9 +1137,9 @@ function loadPlayerModel() {
             console.log(`Animations loaded for ${game.sex}:`, animations.map(a => a.name));
             
             // Auto-detect animations or fallback to index
-            // Improved detection: Look for 'idle', 'stand', 'wait'
-            const idleClip = animations.find(a => /idle|stand|wait/i.test(a.name)) || animations[0];
-            const walkClip = animations.find(a => /walk|run|move/i.test(a.name)) || animations.find(a => a !== idleClip) || animations[0];
+            // Improved detection: Look for 'idle', 'stand', 'wait', or specific names like 'Idle_03'/'Idle_15'
+            const idleClip = animations.find(a => /idle|stand|wait/i.test(a.name)) || animations.find(a => a.name === 'Idle_03' || a.name === 'Idle_15') || animations[0];
+            const walkClip = animations.find(a => /walk/i.test(a.name)) || animations.find(a => /run|move/i.test(a.name)) || animations.find(a => a !== idleClip) || animations[0];
 
             if (walkClip) actions.walk = mixer.clipAction(walkClip);
             if (idleClip) actions.idle = mixer.clipAction(idleClip);
@@ -1285,17 +1296,31 @@ function update3DScene() {
                     }
 
                     if (!waypointMeshes.has(r.id)) {
-                        let geo, mat;
+                        let geo, mat, customModelPath = null, customScale = 1.0;
+
                         if (r.isHidden) {
                             // Disguised Waypoint: Suspicious Rock
                             geo = new THREE.DodecahedronGeometry(0.4, 0);
                             mat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9 });
                         } else {
+                            if (use3dModel) {
+                                customModelPath = 'assets/images/glb/waypoint-web.glb';
+                                customScale = 0.5; // Adjust based on your model size
+                            }
                             geo = new THREE.SphereGeometry(0.2, 16, 16);
-                            mat = new THREE.MeshStandardMaterial({ color: 0x555555, emissive: 0x222222 });
+                            mat = new THREE.MeshStandardMaterial({ color: 0x555555, emissive: 0x222222, visible: !customModelPath });
                         }
                         const mesh = new THREE.Mesh(geo, mat);
                         mesh.position.set(r.gx, r.isHidden ? 0.3 : 0.1, r.gy);
+                        
+                        if (customModelPath) {
+                            loadGLB(customModelPath, (model) => {
+                                model.position.set(0, -0.1, 0); // Center vertically
+                                mesh.add(model);
+                                mesh.material.visible = false;
+                            }, customScale);
+                        }
+
                         if (r.isHidden) mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
                         mesh.userData = { roomId: r.id };
                         scene.add(mesh);
@@ -1304,20 +1329,41 @@ function update3DScene() {
                     const mesh = waypointMeshes.get(r.id);
                     mesh.visible = true;
                     const isAdj = currentRoom && (currentRoom.id === r.id || currentRoom.connections.includes(r.id));
-                    mesh.material.emissive.setHex(isAdj ? 0xd4af37 : 0x222222);
+                    
+                    const targetEmissive = isAdj ? 0xd4af37 : 0x222222;
+                    mesh.material.emissive.setHex(targetEmissive);
+
+                    // Propagate emissive glow to GLB children
+                    mesh.traverse((child) => {
+                        if (child.isMesh && child !== mesh && child.material) {
+                            if (!child.userData.hasClonedMat) {
+                                child.material = child.material.clone();
+                                child.userData.hasClonedMat = true;
+                            }
+                            child.material.emissive.setHex(targetEmissive);
+                        }
+                    });
                 } else {
                     if (!roomMeshes.has(r.id)) {
                         const rw = r.w; const rh = r.h;
                         const rDepth = 3.0 + Math.random() * 3.0;
                         r.rDepth = rDepth;
 
-                        let geo;
+                        let geo, customModelPath = null, customScale = 1.0;
+
                         if (r.isFinal) {
                             // Tower/Deep Pit
-                            geo = new THREE.BoxGeometry(rw, 20, rh);
+                            // Use Gothic Tower GLB if available
+                            if (use3dModel) customModelPath = 'assets/images/glb/gothic_tower-web.glb';
+                            customScale = 2.5; // Increased size
+                            // Fallback geometry while loading or if fails
+                            geo = new THREE.BoxGeometry(rw, 10, rh);
                         } else if (r.isBonfire) {
                             // Circular Campfire Ring 
                             // Use a Cylinder. radius ~ min(w,h)/2.
+                            // Use Campfire Tower GLB
+                            if (use3dModel) customModelPath = 'assets/images/glb/campfire_tower-web.glb';
+                            customScale = 2.0; // Increased size
                             const rad = Math.min(rw, rh) * 0.4;
                             geo = new THREE.CylinderGeometry(rad, rad, rDepth, 16);
                         } else if (r.isSpecial && !r.isFinal) { // Merchant/Special
@@ -1344,18 +1390,45 @@ function update3DScene() {
                             }
                         }
 
-                        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+                        // Create a container mesh (or placeholder)
+                        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, visible: !customModelPath });
                         const mesh = new THREE.Mesh(geo, mat);
-                        // These room meshes are static; avoid matrix recomputation every frame
-                        mesh.matrixAutoUpdate = false;
+                        
+                        if (customModelPath) {
+                            loadGLB(customModelPath, (model) => {
+                                // Fix Origin: Align bottom of model to floor using Bounding Box
+                                const box = new THREE.Box3().setFromObject(model);
+                                
+                                // Determine floor level relative to container mesh
+                                let floorOffset = -rDepth / 2;
+                                if (r.isFinal || r.shape === 'dome' || r.isSecret) {
+                                    floorOffset = 0;
+                                }
+                                
+                                // Shift model so its bottom (box.min.y) sits at floorOffset
+                                model.position.set(0, floorOffset - box.min.y - 0.05, 0);
+
+                                mesh.add(model);
+                                // Hide placeholder geometry but keep mesh for logic/positioning
+                                mesh.material.visible = false; 
+                                
+                                // Special logic for Bonfire Tower Light
+                                if (r.isBonfire) {
+                                    const fireLight = new THREE.PointLight(0xff6600, 500, 15);
+                                    fireLight.position.set(0, 2, 0); // Inside the tower
+                                    fireLight.castShadow = true;
+                                    model.add(fireLight);
+                                }
+                            }, customScale);
+                        }
 
                         if (r.isFinal) {
                             // Extend downwards for the pit/tower
-                            mesh.position.set(r.gx, -5, r.gy);
+                            mesh.position.set(r.gx, 0, r.gy); // Sit on ground
                         } else if (r.shape === 'dome' || r.isSecret) {
                             mesh.position.set(r.gx, 0, r.gy); // Sit on ground (half buried)
                         } else {
-                            mesh.position.set(r.gx, rDepth / 2, r.gy);
+                            mesh.position.set(r.gx, rDepth / 2, r.gy); // Standard rooms raised slightly
                         }
                         // Apply the matrix once
                         mesh.updateMatrix();
@@ -1457,6 +1530,14 @@ function update3DScene() {
                             // Start spatial sound for this bonfire
                             if (audio.initialized)
                                 audio.startLoop(`bonfire_${r.id}`, 'bonfire_loop', { volume: 0 });
+                            
+                            // Force Idle Animation inside Bonfire Room (since it's visible)
+                            if (currentRoom && currentRoom.id === r.id && use3dModel && actions.idle && actions.walk) {
+                                if (actions.walk.isRunning()) {
+                                    actions.walk.stop();
+                                    actions.idle.play();
+                                }
+                            }
                         }
 
                         mesh.receiveShadow = true;
@@ -1700,20 +1781,33 @@ function addDoorsToRoom(room, mesh) {
         if (target.isSecret || target.isHidden) return; // No doors to secret areas
 
         const dx = target.gx - room.gx; const dy = target.gy - room.gy;
-        const door = new THREE.Mesh(new THREE.PlaneGeometry(1, 2), new THREE.MeshStandardMaterial({ map: tex, transparent: true, side: THREE.FrontSide }));
-        // Doors are static geometry relative to the room; disable matrix auto updates
-        door.matrixAutoUpdate = false;
         const rw = room.w / 2; const rh = room.h / 2; const margin = 0.075;
+        let posX = 0, posY = -(room.rDepth / 2) + 1, posZ = 0;
+        let rotY = 0;
+
         if (Math.abs(dx) > Math.abs(dy)) {
-            door.position.set(dx > 0 ? rw + margin : -rw - margin, -(room.rDepth / 2) + 1, 0);
-            door.rotation.y = dx > 0 ? Math.PI / 2 : -Math.PI / 2;
+            posX = dx > 0 ? rw + margin : -rw - margin;
+            rotY = dx > 0 ? Math.PI / 2 : -Math.PI / 2;
         } else {
-            door.position.set(0, -(room.rDepth / 2) + 1, dy > 0 ? rh + margin : -rh - margin);
-            door.rotation.y = dy > 0 ? 0 : Math.PI;
+            posZ = dy > 0 ? rh + margin : -rh - margin;
+            rotY = dy > 0 ? 0 : Math.PI;
         }
-        // Bake matrix once
-        door.updateMatrix();
-        mesh.add(door);
+
+        if (use3dModel) {
+            loadGLB('assets/images/glb/door-web.glb', (model) => {
+                // Assume model origin is at bottom. Place at floor level.
+                model.position.set(posX, -(room.rDepth / 2), posZ);
+                model.rotation.y = rotY;
+                mesh.add(model);
+            }, 1.0);
+        } else {
+            const door = new THREE.Mesh(new THREE.PlaneGeometry(1, 2), new THREE.MeshStandardMaterial({ map: tex, transparent: true, side: THREE.FrontSide }));
+            door.matrixAutoUpdate = false;
+            door.position.set(posX, posY, posZ);
+            door.rotation.y = rotY;
+            door.updateMatrix();
+            mesh.add(door);
+        }
     });
     updateRoomVisuals();
 }
@@ -1723,23 +1817,41 @@ function updateRoomVisuals() {
     game.rooms.forEach(r => {
         if (!r.mesh) return;
 
-        // Reset to default (dark)
-        r.mesh.material.emissive.setHex(0x000000);
-        r.mesh.material.color.setHex(0x444444); // Default Dark Grey
+        // Determine target colors
+        let targetEmissive = 0x000000;
+        let targetColor = 0x444444; // Default Dark Grey
 
         if (r.state === 'cleared' && !r.isWaypoint) {
             // Holy Glow for cleared rooms
-            r.mesh.material.emissive.setHex(0x222222); // Light emission
-            r.mesh.material.color.setHex(0xaaaaaa); // Lighten base color
+            targetEmissive = 0x222222; // Light emission
+            targetColor = 0xaaaaaa; // Lighten base color
 
             if (r.isFinal) {
-                r.mesh.material.color.setHex(0xffaaaa); // Pale Red
-                r.mesh.material.emissive.setHex(0x440000);
+                targetColor = 0xffaaaa; // Pale Red
+                targetEmissive = 0x440000;
             }
         } else if (r.isFinal) {
             // Uncleared Final Room (Dark Red)
-            r.mesh.material.color.setHex(0x880000);
+            targetColor = 0x880000;
         }
+
+        // Apply to the main container mesh (placeholder)
+        r.mesh.material.emissive.setHex(targetEmissive);
+        r.mesh.material.color.setHex(targetColor);
+
+        // Apply to any loaded GLB children (Towers)
+        r.mesh.traverse((child) => {
+            if (child.isMesh && child !== r.mesh && child.material) {
+                // We clone the material so we don't affect other instances of the same GLB
+                if (!child.userData.hasClonedMat) {
+                    child.material = child.material.clone();
+                    child.userData.hasClonedMat = true;
+                }
+                child.material.emissive.setHex(targetEmissive);
+                // Optional: Tint the texture color too, but be careful not to wash it out
+                child.material.color.setHex(targetColor); 
+            }
+        });
     });
 }
 
@@ -3488,7 +3600,7 @@ function finishRoom() {
         document.getElementById('modalAvoidBtn').style.display = 'none';
 
         if (isBroker) {
-            setTimeout(() => { alert("YOU HAVE DEFEATED THE SOUL BROKER!\n\nThe curse is lifted. You are free."); location.reload(); }, 4000);
+            setTimeout(() => { startEndingSequence(); }, 4000);
             return;
         }
 
@@ -4892,67 +5004,125 @@ function deleteSave() {
     localStorage.removeItem('scoundrelSave');
 }
 
-// --- INTRO SEQUENCE ---
-let currentIntroStep = 0;
-let introTextData = null;
+// --- STORY SYSTEM (Intro & Ending) ---
+let currentStoryStep = 0;
+let storyData = null;
+let isEnding = false;
+let isTrueEnding = false;
+
+async function loadStoryData() {
+    if (storyData) return;
+    try {
+        const res = await fetch('assets/images/story/intro_sequence.json');
+        storyData = await res.json();
+    } catch (e) {
+        console.warn("Could not load intro_sequence.json", e);
+    }
+}
 
 async function startIntroSequence() {
-    currentIntroStep = 0;
-    
-    // Try to load story text if not already loaded
-    if (!introTextData) {
-        try {
-            const res = await fetch('assets/images/story/story.json');
-            const data = await res.json();
-            // Handle if json is array or object {intro: []}
-            introTextData = Array.isArray(data) ? data : (data.intro || INTRO_STORY_DEFAULTS);
-        } catch (e) {
-            console.warn("Could not load story.json, using defaults.", e);
-            introTextData = INTRO_STORY_DEFAULTS;
-        }
-    }
+    isEnding = false;
+    currentStoryStep = 0;
+    await loadStoryData();
+    showStoryModal();
+    updateStoryPanel();
+}
 
+async function startEndingSequence() {
+    isEnding = true;
+    currentStoryStep = 0;
+    await loadStoryData();
+
+    // Track Wins for True Ending
+    const wins = JSON.parse(localStorage.getItem('scoundrelWins') || '{"m":false, "f":false}');
+    wins[game.sex] = true;
+    localStorage.setItem('scoundrelWins', JSON.stringify(wins));
+    
+    isTrueEnding = (wins.m && wins.f);
+
+    showStoryModal();
+    updateStoryPanel();
+}
+
+function showStoryModal() {
     let modal = document.getElementById('introModal');
     if (!modal) {
         modal = document.createElement('div');
         modal.id = 'introModal';
         document.body.appendChild(modal);
     }
-    
     modal.style.display = 'flex';
-    updateIntroPanel();
 }
 
-function updateIntroPanel() {
+function updateStoryPanel() {
+    if (!storyData) return;
+    
     const modal = document.getElementById('introModal');
-    const imgIdx = currentIntroStep + 1; // 1-based for files
-    const imgPath = `assets/images/story/intro_${game.sex}_panel_${imgIdx}.png`;
-    const text = introTextData[currentIntroStep] || "...";
+    let panel, imgPath, text;
+    let isLastStep = false;
+
+    if (!isEnding) {
+        // Intro
+        if (currentStoryStep >= storyData.intro_panels.length) {
+            endStory();
+            return;
+        }
+        panel = storyData.intro_panels[currentStoryStep];
+        const imgName = panel.images[game.sex === 'm' ? 'male' : 'female'];
+        imgPath = `assets/images/story/${imgName}`;
+        text = panel.script;
+    } else {
+        // Ending
+        if (isTrueEnding && currentStoryStep >= storyData.ending_panels.length) {
+            // True Ending
+            panel = storyData.true_ending;
+            imgPath = `assets/images/story/${panel.image}`;
+            text = panel.script;
+            isLastStep = true;
+        } else if (currentStoryStep < storyData.ending_panels.length) {
+            // Normal Ending
+            panel = storyData.ending_panels[currentStoryStep];
+            const imgName = panel.images[game.sex === 'm' ? 'male' : 'female'];
+            imgPath = `assets/images/story/${imgName}`;
+            text = panel.script;
+        } else {
+            endStory();
+            return;
+        }
+    }
 
     modal.innerHTML = `
         <div class="intro-panel" style="background-image: url('${imgPath}');">
-            <div class="intro-text-overlay">${text}</div>
+            <div class="intro-text-overlay">
+                <div style="max-width: 800px;">${text}</div>
+            </div>
         </div>
         <div class="intro-controls">
-            <button class="v2-btn" onclick="endIntro()">Skip</button>
-            <button class="v2-btn" onclick="nextIntro()">Next</button>
+            ${!isEnding ? `<button class="v2-btn" onclick="endStory()">Skip</button>` : ''}
+            <button class="v2-btn" onclick="nextStoryStep()">${(isEnding && isLastStep) ? 'The End' : 'Next'}</button>
         </div>
     `;
 }
 
-window.nextIntro = function() {
-    currentIntroStep++;
-    if (currentIntroStep >= 3) {
-        endIntro();
-    } else {
-        updateIntroPanel();
+window.nextStoryStep = function() {
+    // If we just showed the true ending, finish
+    if (isEnding && isTrueEnding && currentStoryStep >= storyData.ending_panels.length) {
+        endStory();
+        return;
     }
+    currentStoryStep++;
+    updateStoryPanel();
 };
 
-window.endIntro = function() {
+window.endStory = function() {
     const modal = document.getElementById('introModal');
     if (modal) modal.style.display = 'none';
-    finalizeStartDive();
+    
+    if (!isEnding) {
+        finalizeStartDive();
+    } else {
+        location.reload(); // Reset game after ending
+    }
 };
 
 // --- LOCKPICK MINIGAME ---
@@ -5323,6 +5493,7 @@ window.use3dmodels = function(bool) {
         else if (playerSprite) playerSprite.position.set(currentRoom.gx, 0.75, currentRoom.gy);
     }
 }
+window.show3dmodels = window.use3dmodels; // Alias
 
 // --- GLOBAL TOUCH HANDLERS (For Inventory Drag) ---
 window.addEventListener('touchmove', (e) => {
