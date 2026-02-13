@@ -40,6 +40,8 @@ const game = {
     anvil: [null, null] // Crafting slots
 };
 
+let roomConfig = {}; // Stores custom transforms for GLB models
+
 // Touch Drag State
 let touchDragGhost = null;
 let touchDragData = null;
@@ -349,6 +351,8 @@ let walkAnims = {
     m: { up: null, down: null },
     f: { up: null, down: null }
 };
+let isEditMode = false;
+let selectedMesh = null;
 const textureLoader = new THREE.TextureLoader();
 const gltfLoader = new GLTFLoader();
 gltfLoader.setMeshoptDecoder(MeshoptDecoder);
@@ -374,7 +378,7 @@ function getClonedTexture(path) {
     return clone;
 }
 
-function loadGLB(path, callback, scale = 1.0) {
+function loadGLB(path, callback, scale = 1.0, configKey = null) {
     console.log(`[GLB] Loading: ${path} (Scale: ${scale})`);
     gltfLoader.load(path, (gltf) => {
         console.log(`[GLB] Loaded: ${path}`);
@@ -387,6 +391,15 @@ function loadGLB(path, callback, scale = 1.0) {
             }
         });
         model.scale.set(scale, scale, scale);
+        
+        // Apply saved config if available
+        if (configKey && roomConfig[configKey]) {
+            const c = roomConfig[configKey];
+            if (c.pos) model.position.set(c.pos.x, c.pos.y, c.pos.z);
+            if (c.rot) model.rotation.set(c.rot.x, c.rot.y, c.rot.z);
+            if (c.scale) model.scale.set(c.scale.x, c.scale.y, c.scale.z);
+        }
+
         if (callback) callback(model, gltf.animations);
     }, undefined, (error) => {
         console.warn(`Could not load model: ${path}`, error);
@@ -1187,6 +1200,10 @@ function clearFogRings() {
 }
 
 function on3DClick(event) {
+    if (isEditMode) {
+        handleEditClick(event);
+        return;
+    }
     // Prevent interaction if any modal is open
     const blockers = ['combatModal', 'lockpickUI', 'introModal', 'avatarModal', 'inventoryModal', 'classModal'];
     const isBlocked = blockers.some(id => {
@@ -1314,11 +1331,12 @@ function update3DScene() {
                         mesh.position.set(r.gx, r.isHidden ? 0.3 : 0.1, r.gy);
                         
                         if (customModelPath) {
+                            const configKey = customModelPath.split('/').pop();
                             loadGLB(customModelPath, (model) => {
-                                model.position.set(0, -0.1, 0); // Center vertically
+                                if (!roomConfig[configKey]) model.position.set(0, -0.1, 0); // Center vertically
                                 mesh.add(model);
                                 mesh.material.visible = false;
-                            }, customScale);
+                            }, customScale, configKey);
                         }
 
                         if (r.isHidden) mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
@@ -1380,13 +1398,29 @@ function update3DScene() {
                             if (r.shape === 'round') {
                                 const rad = Math.min(rw, rh) * 0.45;
                                 geo = new THREE.CylinderGeometry(rad, rad, rDepth, 16);
+                                if (use3dModel) {
+                                    customModelPath = 'assets/images/glb/room_round-web.glb';
+                                    customScale = 0.5;
+                                }
                             } else if (r.shape === 'dome') {
                                 const rad = Math.min(rw, rh) * 0.65;
                                 geo = new THREE.SphereGeometry(rad, 16, 12); // Full sphere
+                                if (use3dModel) {
+                                    customModelPath = 'assets/images/glb/room_dome-web.glb';
+                                    customScale = 0.5;
+                                }
                             } else if (r.shape === 'spire') {
                                 geo = new THREE.ConeGeometry(Math.min(rw, rh) * 0.6, rDepth, 4);
+                                if (use3dModel) {
+                                    customModelPath = 'assets/images/glb/room_spire-web.glb';
+                                    customScale = 0.5;
+                                }
                             } else {
                                 geo = new THREE.BoxGeometry(rw, rDepth, rh);
+                                if (use3dModel) {
+                                    customModelPath = 'assets/images/glb/room_rect-web.glb';
+                                    customScale = 0.5;
+                                }
                             }
                         }
 
@@ -1395,18 +1429,23 @@ function update3DScene() {
                         const mesh = new THREE.Mesh(geo, mat);
                         
                         if (customModelPath) {
+                            // Use filename as config key (e.g., 'gothic_tower-web.glb')
+                            const configKey = customModelPath.split('/').pop();
+                            
                             loadGLB(customModelPath, (model) => {
-                                // Fix Origin: Align bottom of model to floor using Bounding Box
-                                const box = new THREE.Box3().setFromObject(model);
-                                
-                                // Determine floor level relative to container mesh
-                                let floorOffset = -rDepth / 2;
-                                if (r.isFinal || r.shape === 'dome' || r.isSecret) {
-                                    floorOffset = 0;
+                                // Only auto-align if NO config exists
+                                if (!roomConfig[configKey]) {
+                                    // Fix Origin: Align bottom of model to floor using Bounding Box
+                                    const box = new THREE.Box3().setFromObject(model);
+                                    
+                                    // Determine floor level relative to container mesh
+                                    let floorOffset = -rDepth / 2;
+                                    if (r.isFinal || r.shape === 'dome' || r.isSecret) {
+                                        floorOffset = 0;
+                                    }
+                                    // Shift model so its bottom (box.min.y) sits at floorOffset
+                                    model.position.set(0, floorOffset - box.min.y - 0.05, 0);
                                 }
-                                
-                                // Shift model so its bottom (box.min.y) sits at floorOffset
-                                model.position.set(0, floorOffset - box.min.y - 0.05, 0);
 
                                 mesh.add(model);
                                 // Hide placeholder geometry but keep mesh for logic/positioning
@@ -1419,7 +1458,7 @@ function update3DScene() {
                                     fireLight.castShadow = true;
                                     model.add(fireLight);
                                 }
-                            }, customScale);
+                            }, customScale, configKey);
                         }
 
                         if (r.isFinal) {
@@ -1794,12 +1833,15 @@ function addDoorsToRoom(room, mesh) {
         }
 
         if (use3dModel) {
-            loadGLB('assets/images/glb/door-web.glb', (model) => {
-                // Assume model origin is at bottom. Place at floor level.
-                model.position.set(posX, -(room.rDepth / 2), posZ);
-                model.rotation.y = rotY;
+            const path = 'assets/images/glb/door-web.glb';
+            const configKey = path.split('/').pop();
+            loadGLB(path, (model) => {
+                if (!roomConfig[configKey]) {
+                    model.position.set(posX, -(room.rDepth / 2), posZ);
+                    model.rotation.y = rotY;
+                }
                 mesh.add(model);
-            }, 1.0);
+            }, 1.0, configKey);
         } else {
             const door = new THREE.Mesh(new THREE.PlaneGeometry(1, 2), new THREE.MeshStandardMaterial({ map: tex, transparent: true, side: THREE.FrontSide }));
             door.matrixAutoUpdate = false;
@@ -5495,6 +5537,149 @@ window.use3dmodels = function(bool) {
 }
 window.show3dmodels = window.use3dmodels; // Alias
 
+// --- MAP EDITOR ---
+window.editmap = function(bool) {
+    isEditMode = bool;
+    console.log(`Edit Mode: ${isEditMode}`);
+    
+    let ui = document.getElementById('editorUI');
+    if (isEditMode) {
+        if (!ui) {
+            ui = document.createElement('div');
+            ui.id = 'editorUI';
+            ui.style.cssText = "position:fixed; bottom:20px; right:20px; width:300px; background:rgba(0,0,0,0.8); border:2px solid #0ff; padding:15px; color:#fff; font-family:monospace; z-index:10000; display:flex; flex-direction:column; gap:10px;";
+            ui.innerHTML = `
+                <h3 style="margin:0; color:#0ff;">Map Editor</h3>
+                <div id="editorTarget" style="font-size:0.8rem; color:#aaa;">No selection</div>
+                
+                <label>Pos X <span style="color:#f44">●</span> <input type="range" id="edPosX" min="-5" max="5" step="0.05"></label>
+                <label>Pos Y <span style="color:#4f4">●</span> <input type="range" id="edPosY" min="-5" max="5" step="0.05"></label>
+                <label>Pos Z <span style="color:#44f">●</span> <input type="range" id="edPosZ" min="-5" max="5" step="0.05"></label>
+                
+                <label>Rot Y <input type="range" id="edRotY" min="0" max="6.28" step="0.1"></label>
+                
+                <label>Scale <input type="range" id="edScale" min="0.1" max="5" step="0.1"></label>
+                
+                <button class="v2-btn" onclick="saveRoomConfig()" style="margin-top:10px; padding:5px;">Save Config (JSON)</button>
+            `;
+            document.body.appendChild(ui);
+            
+            // Bind inputs
+            ['edPosX', 'edPosY', 'edPosZ', 'edRotY', 'edScale'].forEach(id => {
+                document.getElementById(id).addEventListener('input', applyEditorTransform);
+            });
+        }
+        ui.style.display = 'flex';
+    } else {
+        if (ui) ui.style.display = 'none';
+        if (selectedMesh) {
+            // Reset highlight
+            selectedMesh.traverse(c => { if(c.isMesh && c.material.emissive) c.material.emissive.setHex(0x000000); });
+            selectedMesh = null;
+        }
+    }
+};
+
+function handleEditClick(event) {
+    const container = document.getElementById('v3-container');
+    const rect = container.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(scene.children, true);
+
+    for (let i = 0; i < intersects.length; i++) {
+        // Find the root GLB model (usually a Group inside the Room Mesh)
+        let obj = intersects[i].object;
+        while(obj.parent && obj.parent !== scene && !obj.userData.roomId) {
+            // Check if this is a loaded GLB root (usually a Group)
+            if (obj.type === 'Group' || obj.type === 'Scene') break; 
+            obj = obj.parent;
+        }
+        
+        // If we found a GLB inside a room mesh
+        if (obj && obj.parent && obj.parent.userData && obj.parent.userData.roomId !== undefined) {
+            selectEditorMesh(obj);
+            break;
+        }
+    }
+}
+
+function selectEditorMesh(mesh) {
+    if (selectedMesh) {
+        // Reset old highlight
+        selectedMesh.traverse(c => { if(c.isMesh && c.material.emissive) c.material.emissive.setHex(0x000000); });
+    }
+    selectedMesh = mesh;
+    // Highlight new
+    selectedMesh.traverse(c => { if(c.isMesh && c.material.emissive) c.material.emissive.setHex(0x00ffff); });
+    
+    document.getElementById('editorTarget').innerText = "Selected: GLB Model";
+    
+    // Update UI values
+    document.getElementById('edPosX').value = mesh.position.x;
+    document.getElementById('edPosY').value = mesh.position.y;
+    document.getElementById('edPosZ').value = mesh.position.z;
+    document.getElementById('edRotY').value = mesh.rotation.y;
+    document.getElementById('edScale').value = mesh.scale.x;
+}
+
+function applyEditorTransform() {
+    if (!selectedMesh) return;
+    
+    const px = parseFloat(document.getElementById('edPosX').value);
+    const py = parseFloat(document.getElementById('edPosY').value);
+    const pz = parseFloat(document.getElementById('edPosZ').value);
+    const ry = parseFloat(document.getElementById('edRotY').value);
+    const s = parseFloat(document.getElementById('edScale').value);
+    
+    selectedMesh.position.set(px, py, pz);
+    selectedMesh.rotation.y = ry;
+    selectedMesh.scale.set(s, s, s);
+    
+    // Update Config Object
+    // We need to know WHICH file this is. 
+    // Since we don't store the filename on the mesh, we have to infer or store it during load.
+    // Let's assume the user knows what they are editing for now, or we add userData during load.
+    // For now, let's just log it.
+}
+
+window.saveRoomConfig = function() {
+    if (!selectedMesh) return;
+    
+    // Prompt for key
+    const key = prompt("Enter filename key (e.g., gothic_tower-web.glb):");
+    if (!key) return;
+    
+    roomConfig[key] = {
+        pos: { x: selectedMesh.position.x, y: selectedMesh.position.y, z: selectedMesh.position.z },
+        rot: { x: selectedMesh.rotation.x, y: selectedMesh.rotation.y, z: selectedMesh.rotation.z },
+        scale: { x: selectedMesh.scale.x, y: selectedMesh.scale.y, z: selectedMesh.scale.z }
+    };
+    
+    console.log("Updated Config:", JSON.stringify(roomConfig, null, 2));
+    
+    // Download
+    const blob = new Blob([JSON.stringify(roomConfig, null, 2)], {type : 'application/json'});
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'room_config.json';
+    link.click();
+};
+
+async function loadRoomConfig() {
+    try {
+        const res = await fetch('assets/data/room_config.json');
+        if (res.ok) {
+            roomConfig = await res.json();
+            console.log("Loaded Room Config", roomConfig);
+        }
+    } catch (e) {
+        console.log("No room config found, using defaults.");
+    }
+}
+
 // --- GLOBAL TOUCH HANDLERS (For Inventory Drag) ---
 window.addEventListener('touchmove', (e) => {
     if (touchDragGhost) {
@@ -5540,5 +5725,6 @@ window.addEventListener('touchend', (e) => {
 });
 
 // Initialize Layout
+loadRoomConfig(); // Load transforms before layout
 setupLayout();
 initAttractMode();
