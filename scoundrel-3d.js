@@ -311,6 +311,7 @@ let corridorMeshes = new Map();
 let doorMeshes = new Map();
 let decorationMeshes = []; // Store instanced meshes for cleanup
 let treePositions = []; // Store tree locations for FX
+let animatedMaterials = []; // Track shaders that need time updates
 
 // Audio State
 const audio = new SoundManager();
@@ -1300,6 +1301,81 @@ function update3DScene() {
                             fire.position.set(0, rDepth / 2 + 1, 0);
                             mesh.add(fire);
 
+                            // --- GLSL: Holy Fire Pillar ---
+                            // A volumetric cone that pulses with light
+                            const beamGeo = new THREE.ConeGeometry(r.w * 0.3, rDepth * 1.2, 16, 1, true);
+                            const beamMat = new THREE.ShaderMaterial({
+                                uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0xffaa00) } },
+                                vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+                                fragmentShader: `
+                                    uniform float uTime; uniform vec3 uColor; varying vec2 vUv;
+                                    void main() {
+                                        // Vertical fade + pulsing sine wave
+                                        float pulse = sin(vUv.y * 20.0 - uTime * 5.0) * 0.5 + 0.5;
+                                        float alpha = (1.0 - vUv.y) * (0.3 + 0.7 * pulse) * 0.6;
+                                        gl_FragColor = vec4(uColor, alpha);
+                                    }
+                                `,
+                                transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+                            });
+                            const beamMesh = new THREE.Mesh(beamGeo, beamMat);
+                            beamMesh.position.y = 0; // Center of room
+                            mesh.add(beamMesh);
+                            animatedMaterials.push(beamMat);
+                        }
+
+                        // --- GLSL: Merchant Gold Dust ---
+                        if (r.isSpecial && !r.isFinal) {
+                            const dustGeo = new THREE.CylinderGeometry(r.w * 0.4, r.w * 0.4, rDepth, 16, 1, true);
+                            const dustMat = new THREE.ShaderMaterial({
+                                uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0xffd700) } },
+                                vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+                                fragmentShader: `
+                                    uniform float uTime; uniform vec3 uColor; varying vec2 vUv;
+                                    float random(vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453); }
+                                    void main() {
+                                        // Rising particles pattern
+                                        vec2 grid = vec2(vUv.x * 20.0, vUv.y * 10.0 - uTime * 1.0);
+                                        float r = random(floor(grid));
+                                        float alpha = (r > 0.97) ? (1.0 - vUv.y) : 0.0;
+                                        gl_FragColor = vec4(uColor, alpha);
+                                    }
+                                `,
+                                transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+                            });
+                            const dustMesh = new THREE.Mesh(dustGeo, dustMat);
+                            mesh.add(dustMesh);
+                            animatedMaterials.push(dustMat);
+                        }
+
+                        // --- GLSL: Final Room Vortex ---
+                        if (r.isFinal) {
+                            const portalGeo = new THREE.PlaneGeometry(r.w * 0.8, r.h * 0.8);
+                            const portalMat = new THREE.ShaderMaterial({
+                                uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0x8800ff) } },
+                                vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+                                fragmentShader: `
+                                    uniform float uTime; uniform vec3 uColor; varying vec2 vUv;
+                                    void main() {
+                                        vec2 uv = vUv - 0.5;
+                                        float dist = length(uv);
+                                        float angle = atan(uv.y, uv.x);
+                                        // Swirling spiral pattern
+                                        float spiral = sin(dist * 20.0 - uTime * 4.0 + angle * 5.0);
+                                        float alpha = (1.0 - smoothstep(0.3, 0.5, dist)) * (0.5 + 0.5 * spiral);
+                                        gl_FragColor = vec4(uColor, alpha);
+                                    }
+                                `,
+                                transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+                            });
+                            const portalMesh = new THREE.Mesh(portalGeo, portalMat);
+                            portalMesh.rotation.x = -Math.PI / 2;
+                            portalMesh.position.y = -rDepth/2 + 0.2; // Slightly above floor
+                            mesh.add(portalMesh);
+                            animatedMaterials.push(portalMat);
+                        }
+
+                        if (r.isBonfire) {
                             // Start spatial sound for this bonfire
                             if (audio.initialized)
                                 audio.startLoop(`bonfire_${r.id}`, 'bonfire_loop', { volume: 0 });
@@ -1457,6 +1533,14 @@ function animate3D() {
     // Throttle FX updates and rendering to a target of 30 FPS to reduce CPU/GPU pressure on low-end machines
     const now = performance.now();
     if (now - lastFXTime >= FX_INTERVAL) {
+        // Update Shader Time
+        const time = now / 1000;
+        animatedMaterials.forEach(mat => {
+            if (mat.uniforms && mat.uniforms.uTime) {
+                mat.uniforms.uTime.value = time;
+            }
+        });
+
         updateFX();
         updateUIFX();
         lastFXTime = now;
@@ -2006,6 +2090,7 @@ function clear3DScene() {
     });
     decorationMeshes = [];
     treePositions = [];
+    animatedMaterials = [];
 
     // Clear ghosts
     ghosts.forEach(g => scene.remove(g));
