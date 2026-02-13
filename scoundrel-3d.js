@@ -4613,8 +4613,15 @@ function handleDrop(e, targetType, targetIdx) {
         
         // Add Torch Fuel + Coin
         game.soulCoins++;
-        game.torchCharge += (item.val || 5);
-        spawnFloatingText(`+${item.val||5} Fuel`, e.clientX, e.clientY - 30, '#ffaa00');
+        
+        let fuelAmount = (item.val || 5);
+        // Special case: Spectral Lantern (ID 1) gives massive fuel
+        if (item.id === 1) {
+            fuelAmount = 150;
+            logMsg("The Spectral Lantern shatters, releasing its eternal flame!");
+        }
+        game.torchCharge += fuelAmount;
+        spawnFloatingText(`+${fuelAmount} Fuel`, e.clientX, e.clientY - 30, '#ffaa00');
         spawnFloatingText("+1 Soul Coin", e.clientX, e.clientY, '#d4af37');
         
         if (item.type === 'armor') recalcAP();
