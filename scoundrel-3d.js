@@ -33,7 +33,9 @@ const game = {
     bonfireUsed: false, // Track for Ascetic bonus
     merchantUsed: false, // Track for Independent bonus
     pendingPurchase: null, // Track item waiting for inventory space
-    isBossFight: false // Flag for boss state
+    isBossFight: false, // Flag for boss state
+    torchCharge: 20, // Torch fuel
+    anvil: [null, null] // Crafting slots
 };
 
 // Touch Drag State
@@ -1171,20 +1173,24 @@ function update3DScene() {
         // Check for Map (ID 3)
         const hasMap = game.hotbar.some(i => i && i.type === 'item' && i.id === 3);
 
+        // Torch Logic based on Fuel
+        const baseDist = 15 + (game.torchCharge * 1.5); // 15 base + fuel
+        const baseInt = 200 + (game.torchCharge * 50);
+
         if (game.equipment.weapon) {
             if (game.equipment.weapon.val >= 8 || hasLantern) {
-                torchLight.color.setHex(0x00ccff); torchLight.intensity = (is3DView ? 800 : 2000);
-                torchLight.distance = 60; vRad = 8.0;
+                torchLight.color.setHex(0x00ccff); torchLight.intensity = (is3DView ? baseInt * 1.5 : baseInt * 2.5);
+                torchLight.distance = baseDist * 1.5; vRad = 8.0;
             } else if (game.equipment.weapon.val >= 6 || hasLantern) {
-                torchLight.color.setHex(0xd4af37); torchLight.intensity = (is3DView ? 600 : 1500);
-                torchLight.distance = 45; vRad = 5.0;
+                torchLight.color.setHex(0xd4af37); torchLight.intensity = (is3DView ? baseInt * 1.2 : baseInt * 2.0);
+                torchLight.distance = baseDist * 1.2; vRad = 5.0;
             } else {
-                torchLight.color.setHex(0xffaa44); torchLight.intensity = (is3DView ? 400 : 1200);
-                torchLight.distance = 35; vRad = 3.5;
+                torchLight.color.setHex(0xffaa44); torchLight.intensity = (is3DView ? baseInt : baseInt * 1.5);
+                torchLight.distance = baseDist; vRad = 3.5;
             }
         } else {
-            torchLight.color.setHex(0xffaa44); torchLight.intensity = (is3DView ? 300 : 1000);
-            torchLight.distance = 25; vRad = 2.5;
+            torchLight.color.setHex(0xffaa44); torchLight.intensity = (is3DView ? baseInt * 0.8 : baseInt * 1.2);
+            torchLight.distance = baseDist * 0.8; vRad = 2.5;
         }
 
         // Torch Flicker Juice
@@ -1583,6 +1589,11 @@ function movePlayerSprite(oldId, newId) {
     if (!r1 || !r2) return;
 
     audio.play('footstep', { volume: 0.4, rate: 0.9 + Math.random() * 0.2 });
+
+    // Consume Torch Fuel
+    game.torchCharge = Math.max(0, game.torchCharge - 1);
+    if (game.torchCharge < 5) logMsg(`Torch is fading... (${game.torchCharge} left)`);
+    updateUI();
 
     playerSprite.material.map = (r2.gy > r1.gy) ? walkAnims[game.sex].up : walkAnims[game.sex].down;
     new TWEEN.Tween(playerSprite.position).to({ x: r2.gx, z: r2.gy }, 600).easing(TWEEN.Easing.Quadratic.Out).start();
@@ -2319,6 +2330,7 @@ function finalizeStartDive() {
     game.floor = 1; game.deck = createDeck();
     game.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
     game.soulCoins = 0; game.ap = 0; game.maxAp = 0;
+    game.torchCharge = 20;
     game.equipment = { head: null, chest: null, hands: null, legs: null, weapon: null };
     game.backpack = new Array(24).fill(null); game.hotbar = new Array(6).fill(null);
     game.rooms = generateDungeon(); game.currentRoomIdx = 0; game.lastAvoided = false;
@@ -3757,6 +3769,25 @@ function updateUI() {
         div.innerHTML = `Soul Coins: <span id="soulCoinsValueSidebar" style="color: #fff;">0</span>`;
         weaponDurEl.parentNode.appendChild(div);
     }
+
+        // Inject Torch Fuel UI into Dock/Modal (Vertical Bar)
+    const statSubgrid = document.querySelector('.player-combat-area .stat-subgrid');
+    if (statSubgrid && !document.getElementById('torchFuelDock')) {
+        const torchCol = document.createElement('div');
+        torchCol.id = 'torchFuelDock';
+        torchCol.className = 'stat-col torch';
+        torchCol.style.cssText = "flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; margin-left: 20px; justify-content: flex-end;";
+        
+        torchCol.innerHTML = `
+            <div class="stat-label" style="font-size: 0.7rem; margin-bottom: 5px; color: #ffaa44;">FUEL</div>
+            <div style="position: relative; width: 14px; height: 42px; background: #111; border: 1px solid #444;">
+                <div id="torchBarDock" style="position: absolute; bottom: 0; left: 0; width: 100%; height: 100%; background: #ffaa44; transition: height 0.3s;"></div>
+            </div>
+            <div id="torchValueDock" style="font-size: 0.9rem; color: #fff; margin-top: 2px; font-weight: bold; text-shadow: 0 1px 2px #000;">20</div>
+        `;
+        statSubgrid.appendChild(torchCol);
+    }
+    
     const coinEl = document.getElementById('soulCoinsValueSidebar');
     if (coinEl) coinEl.innerText = game.soulCoins;
     const coinModalEl = document.getElementById('soulCoinsValueModal');
@@ -3766,6 +3797,23 @@ function updateUI() {
     if (floorEl) floorEl.innerText = game.floor;
     const floorModalEl = document.getElementById('floorValueModal');
     if (floorModalEl) floorModalEl.innerText = game.floor;
+
+    const torchBar = document.getElementById('torchBarDock');
+    const torchVal = document.getElementById('torchValueDock');
+    if (torchBar && torchVal) {
+        const maxFuel = 30; // Visual scale max
+        const pct = Math.min(100, (game.torchCharge / maxFuel) * 100);
+        torchBar.style.height = `${pct}%`;
+        torchVal.innerText = game.torchCharge;
+        
+        if (game.torchCharge <= 5) {
+            torchVal.style.color = '#ff4444';
+            torchBar.style.background = '#ff4444';
+        } else {
+            torchVal.style.color = '#fff';
+            torchBar.style.background = '#ffaa44';
+        }
+    }
 
     // const totalRooms = game.rooms ? game.rooms.filter(r => !r.isWaypoint).length : 0;
     // const clearedRooms = game.rooms ? game.rooms.filter(r => !r.isWaypoint && r.state === 'cleared').length : 0;
@@ -4314,7 +4362,17 @@ function setupInventoryUI() {
                 </div>
                 <div id="backpackGrid" class="backpack-grid"></div>
                 <div id="sellSlot" class="sell-slot" ondragover="event.preventDefault()" ondrop="handleDrop(event, 'sell', 0)" data-slot-type="sell" data-slot-idx="0">
-                    Drag here to Sell (1 Coin)
+                    Drag here for Torch fuel + 1 Coin
+                </div>
+                
+                <!-- Anvil Section -->
+                <div class="anvil-section">
+                    <h4 style="color:var(--gold); font-family:'Cinzel'; margin:0;">The Anvil</h4>
+                    <div class="anvil-slots">
+                        <div id="anvilSlot0" class="anvil-slot" data-slot-type="anvil" data-slot-idx="0" ondragover="event.preventDefault()" ondrop="handleDrop(event, 'anvil', 0)"></div>
+                        <div id="anvilSlot1" class="anvil-slot" data-slot-type="anvil" data-slot-idx="1" ondragover="event.preventDefault()" ondrop="handleDrop(event, 'anvil', 1)"></div>
+                    </div>
+                    <button class="v2-btn" onclick="forgeItems()" style="padding: 4px 12px; font-size: 0.9rem;">Forge (Combine)</button>
                 </div>
             </div>
             <div class="inventory-bottom">
@@ -4331,6 +4389,43 @@ function setupInventoryUI() {
     `;
     document.body.appendChild(modal);
 }
+
+window.forgeItems = function() {
+    const i1 = game.anvil[0];
+    const i2 = game.anvil[1];
+
+    if (!i1 || !i2) {
+        spawnFloatingText("Need 2 items!", window.innerWidth/2, window.innerHeight/2, '#ff0000');
+        return;
+    }
+    if (i1.type !== i2.type) {
+        spawnFloatingText("Types must match!", window.innerWidth/2, window.innerHeight/2, '#ff0000');
+        return;
+    }
+    if (i1.type !== 'weapon' && i1.type !== 'potion') {
+        spawnFloatingText("Only Weapons/Potions!", window.innerWidth/2, window.innerHeight/2, '#ff0000');
+        return;
+    }
+
+    // Logic: New Val = v1 + v2 - 1 (Capped at 16)
+    const newVal = Math.min(16, i1.val + i2.val - 1);
+    
+    // Randomly consume one
+    const survivorIdx = Math.random() < 0.5 ? 0 : 1;
+    const survivor = survivorIdx === 0 ? i1 : i2;
+    
+    survivor.val = newVal;
+    if (survivor.type === 'weapon') {
+        survivor.name = survivor.name.split(' (')[0] + ` (${newVal})`; // Update name val
+        survivor.durability = Infinity; // Reset durability
+    } else {
+        survivor.name = survivor.name.split(' (')[0] + ` (${newVal})`;
+    }
+
+    game.anvil = [survivor, null]; // Keep survivor in slot 0
+    spawnFloatingText("Forged!", window.innerWidth/2, window.innerHeight/2, '#00ff00');
+    updateUI();
+};
 
 window.sortInventory = function() {
     // Sort logic: Type Priority (Weapon > Armor > Potion > Item) -> Value (High to Low)
@@ -4462,6 +4557,16 @@ function renderInventoryUI() {
         }
         hbGrid.appendChild(div);
     });
+
+    // Render Anvil
+    [0, 1].forEach(idx => {
+        const el = document.getElementById(`anvilSlot${idx}`);
+        if (el) {
+            el.innerHTML = '';
+            const item = game.anvil[idx];
+            if (item) el.appendChild(createItemEl(item, 'anvil', idx));
+        }
+    });
 }
 
 function updateItemDescription(item) {
@@ -4495,6 +4600,7 @@ function handleDrop(e, targetType, targetIdx) {
     if (srcType === 'equipment') item = game.equipment[srcIdx];
     else if (srcType === 'backpack') item = game.backpack[srcIdx];
     else if (srcType === 'hotbar') item = game.hotbar[srcIdx];
+    else if (srcType === 'anvil') item = game.anvil[srcIdx];
 
     if (!item) return;
 
@@ -4503,8 +4609,12 @@ function handleDrop(e, targetType, targetIdx) {
         if (srcType === 'equipment') game.equipment[srcIdx] = null;
         else if (srcType === 'backpack') game.backpack[srcIdx] = null;
         else if (srcType === 'hotbar') game.hotbar[srcIdx] = null;
+        else if (srcType === 'anvil') game.anvil[srcIdx] = null;
         
+        // Add Torch Fuel + Coin
         game.soulCoins++;
+        game.torchCharge += (item.val || 5);
+        spawnFloatingText(`+${item.val||5} Fuel`, e.clientX, e.clientY - 30, '#ffaa00');
         spawnFloatingText("+1 Soul Coin", e.clientX, e.clientY, '#d4af37');
         
         if (item.type === 'armor') recalcAP();
@@ -4535,17 +4645,20 @@ function handleDrop(e, targetType, targetIdx) {
     if (targetType === 'equipment') targetItem = game.equipment[targetIdx];
     else if (targetType === 'backpack') targetItem = game.backpack[targetIdx];
     else if (targetType === 'hotbar') targetItem = game.hotbar[targetIdx];
+    else if (targetType === 'anvil') targetItem = game.anvil[targetIdx];
 
     // Perform Swap
     // 1. Remove from Source
     if (srcType === 'equipment') game.equipment[srcIdx] = null;
     else if (srcType === 'backpack') game.backpack[srcIdx] = null;
     else if (srcType === 'hotbar') game.hotbar[srcIdx] = null;
+    else if (srcType === 'anvil') game.anvil[srcIdx] = null;
 
     // 2. Place Source Item in Target
     if (targetType === 'equipment') game.equipment[targetIdx] = item;
     else if (targetType === 'backpack') game.backpack[targetIdx] = item;
     else if (targetType === 'hotbar') game.hotbar[targetIdx] = item;
+    else if (targetType === 'anvil') game.anvil[targetIdx] = item;
 
     // 3. Place Target Item (if any) in Source
     if (targetItem) {
@@ -4560,6 +4673,7 @@ function handleDrop(e, targetType, targetIdx) {
         }
         else if (srcType === 'backpack') game.backpack[srcIdx] = targetItem;
         else if (srcType === 'hotbar') game.hotbar[srcIdx] = targetItem;
+        else if (srcType === 'anvil') game.anvil[srcIdx] = targetItem;
     }
 
     // If active weapon changed, update global durability state
@@ -4590,8 +4704,10 @@ function saveGame() {
         bonfireUsed: game.bonfireUsed, merchantUsed: game.merchantUsed,
         slainStack: game.slainStack,
         equipment: game.equipment,
+        weaponDurability: game.weaponDurability, // Save durability state
         backpack: game.backpack,
         hotbar: game.hotbar,
+        anvil: game.anvil,
         deck: game.deck,
         // Serialize Rooms (strip meshes)
         rooms: game.rooms.map(r => {
@@ -4612,6 +4728,15 @@ function loadGame() {
     
     // Restore State
     Object.assign(game, data);
+
+    // Fallback for older saves missing weaponDurability
+    if (game.weaponDurability === undefined) {
+        if (game.equipment.weapon && game.equipment.weapon.durability !== undefined) {
+            game.weaponDurability = game.equipment.weapon.durability;
+        } else {
+            game.weaponDurability = Infinity;
+        }
+    }
     
     // Hide Attract Mode
     isAttractMode = false;
@@ -5107,7 +5232,7 @@ window.addEventListener('touchend', (e) => {
             let targetIdx = slot.dataset.slotIdx;
             
             // Convert index to number for arrays
-            if (targetType === 'backpack' || targetType === 'hotbar') targetIdx = parseInt(targetIdx);
+            if (targetType === 'backpack' || targetType === 'hotbar' || targetType === 'anvil') targetIdx = parseInt(targetIdx);
             
             // Mock event for handleDrop
             const mockEvent = {
