@@ -33,5 +33,39 @@
       },
       "script": "The first chest was easy. The first skeleton was easier. But as the first Soul Coin hit my palm, I felt its weight—heavy and cold. The merchants here are shadows, whispering of a 'Soul Broker' with his own dark agenda. I don't care about his plans. I only care about the price of my throne."
     }
-  ]
+  ],
+  "ending_panels": [
+    {
+      "id": 1,
+      "title": "The Broker's Fall",
+      "images": {
+        "male": "ending_m_panel_1.png",
+        "female": "ending_f_panel_1.png"
+      },
+      "script": "The Broker lies broken. His wings, once vast and terrifying, are now just tattered shadows on the floor. I have done what no other could. The hoard is mine."
+    },
+    {
+      "id": 2,
+      "title": "The Gilded Fever",
+      "images": {
+        "male": "ending_m_panel_2.png",
+        "female": "ending_f_panel_2.png"
+      },
+      "script": "Gold. Not just gold—souls. Every coin is a life, a dream, a debt. And I want them all. I will buy back my name. I will buy back the world."
+    },
+    {
+      "id": 3,
+      "title": "The New Debt",
+      "images": {
+        "male": "ending_m_panel_3.png",
+        "female": "ending_f_panel_3.png"
+      },
+      "script": "The weight of the coins is different now. They don't just sit in my hands; they belong to me. And as the fire burns in my blood, I realize... the Broker didn't just die. He found a successor."
+    }
+  ],
+  "true_ending": {
+    "title": "The Dual Sovereignty",
+    "image": "true_ending_unlock.png",
+    "script": "The Broker's game is over. His throne was too small for what we have become. Together, we sit upon a mountain of souls, the new masters of the dark. We no longer need the armor of our past lives; our power is our protection. The underground is our kingdom, and the world above is just another debt waiting to be collected."
+  }
 }
