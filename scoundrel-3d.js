@@ -351,6 +351,8 @@ let walkAnims = {
     m: { up: null, down: null },
     f: { up: null, down: null }
 };
+const clock = new THREE.Clock();
+let globalAnimSpeed = 1.0;
 let isEditMode = false;
 let selectedMesh = null;
 const textureLoader = new THREE.TextureLoader();
@@ -392,6 +394,9 @@ function loadGLB(path, callback, scale = 1.0, configKey = null) {
         });
         model.scale.set(scale, scale, scale);
         
+        // Store config key for editor auto-save
+        if (configKey) model.userData.configKey = configKey;
+
         // Apply saved config if available
         if (configKey && roomConfig[configKey]) {
             const c = roomConfig[configKey];
@@ -1755,8 +1760,8 @@ function animate3D() {
     
     // Update Animation Mixer
     if (use3dModel && mixer) {
-        const delta = 0.016; // Approx 60fps
-        mixer.update(delta);
+        const delta = clock.getDelta();
+        mixer.update(delta * globalAnimSpeed);
     } else if (!use3dModel) {
         animatePlayerSprite();
     }
@@ -5537,6 +5542,11 @@ window.use3dmodels = function(bool) {
 }
 window.show3dmodels = window.use3dmodels; // Alias
 
+window.setAnimSpeed = function(speed) {
+    globalAnimSpeed = speed;
+    console.log(`Animation Speed: ${globalAnimSpeed}`);
+};
+
 // --- MAP EDITOR ---
 window.editmap = function(bool) {
     isEditMode = bool;
@@ -5544,29 +5554,43 @@ window.editmap = function(bool) {
     
     let ui = document.getElementById('editorUI');
     if (isEditMode) {
+        controls.minZoom = 0.1; // Allow zooming closer
         if (!ui) {
             ui = document.createElement('div');
             ui.id = 'editorUI';
-            ui.style.cssText = "position:fixed; bottom:20px; right:20px; width:300px; background:rgba(0,0,0,0.8); border:2px solid #0ff; padding:15px; color:#fff; font-family:monospace; z-index:10000; display:flex; flex-direction:column; gap:10px;";
+            ui.style.cssText = "position:fixed; bottom:20px; right:20px; width:320px; background:rgba(0,0,0,0.9); border:2px solid #0ff; padding:15px; color:#fff; font-family:monospace; z-index:10000; display:flex; flex-direction:column; gap:8px; font-size:12px;";
+            
+            const row = (label, id, min, max, step, def) => `
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <label style="width:60px;">${label}</label>
+                    <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${def}" style="flex-grow:1; margin:0 10px;">
+                    <button class="v2-btn" onclick="resetField('${id}', ${def})" style="padding:0 5px; font-size:10px; min-width:20px;">↺</button>
+                    <span id="${id}_val" style="width:35px; text-align:right;">${def}</span>
+                </div>`;
+
             ui.innerHTML = `
                 <h3 style="margin:0; color:#0ff;">Map Editor</h3>
                 <div id="editorTarget" style="font-size:0.8rem; color:#aaa;">No selection</div>
                 
-                <label>Pos X <span style="color:#f44">●</span> <input type="range" id="edPosX" min="-5" max="5" step="0.05"></label>
-                <label>Pos Y <span style="color:#4f4">●</span> <input type="range" id="edPosY" min="-5" max="5" step="0.05"></label>
-                <label>Pos Z <span style="color:#44f">●</span> <input type="range" id="edPosZ" min="-5" max="5" step="0.05"></label>
+                ${row('Pos X', 'edPosX', -5, 5, 0.05, 0)}
+                ${row('Pos Y', 'edPosY', -5, 5, 0.05, 0)}
+                ${row('Pos Z', 'edPosZ', -5, 5, 0.05, 0)}
                 
-                <label>Rot Y <input type="range" id="edRotY" min="0" max="6.28" step="0.1"></label>
+                ${row('Rot Y', 'edRotY', 0, 6.28, 0.1, 0)}
                 
-                <label>Scale <input type="range" id="edScale" min="0.1" max="5" step="0.1"></label>
+                ${row('Scale', 'edScale', 0.1, 5, 0.1, 1)}
+                ${row('Height', 'edScaleY', 0.1, 5, 0.1, 1)}
                 
                 <button class="v2-btn" onclick="saveRoomConfig()" style="margin-top:10px; padding:5px;">Save Config (JSON)</button>
             `;
             document.body.appendChild(ui);
             
             // Bind inputs
-            ['edPosX', 'edPosY', 'edPosZ', 'edRotY', 'edScale'].forEach(id => {
-                document.getElementById(id).addEventListener('input', applyEditorTransform);
+            ['edPosX', 'edPosY', 'edPosZ', 'edRotY', 'edScale', 'edScaleY'].forEach(id => {
+                document.getElementById(id).addEventListener('input', (e) => {
+                    document.getElementById(id + '_val').innerText = e.target.value;
+                    applyEditorTransform();
+                });
             });
         }
         ui.style.display = 'flex';
@@ -5577,6 +5601,17 @@ window.editmap = function(bool) {
             selectedMesh.traverse(c => { if(c.isMesh && c.material.emissive) c.material.emissive.setHex(0x000000); });
             selectedMesh = null;
         }
+        controls.minZoom = 0.5; // Reset zoom
+    }
+};
+
+window.resetField = function(id, def) {
+    if (!selectedMesh) return;
+    const el = document.getElementById(id);
+    if (el) {
+        el.value = def;
+        document.getElementById(id + '_val').innerText = def;
+        applyEditorTransform();
     }
 };
 
@@ -5615,14 +5650,24 @@ function selectEditorMesh(mesh) {
     // Highlight new
     selectedMesh.traverse(c => { if(c.isMesh && c.material.emissive) c.material.emissive.setHex(0x00ffff); });
     
-    document.getElementById('editorTarget').innerText = "Selected: GLB Model";
+    const key = mesh.userData.configKey || "Unknown Model";
+    document.getElementById('editorTarget').innerText = `Selected: ${key}`;
     
     // Update UI values
-    document.getElementById('edPosX').value = mesh.position.x;
-    document.getElementById('edPosY').value = mesh.position.y;
-    document.getElementById('edPosZ').value = mesh.position.z;
-    document.getElementById('edRotY').value = mesh.rotation.y;
-    document.getElementById('edScale').value = mesh.scale.x;
+    const updateInput = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.value = val; // Rounding might be needed
+            document.getElementById(id + '_val').innerText = Math.round(val * 100) / 100;
+        }
+    };
+
+    updateInput('edPosX', mesh.position.x);
+    updateInput('edPosY', mesh.position.y);
+    updateInput('edPosZ', mesh.position.z);
+    updateInput('edRotY', mesh.rotation.y);
+    updateInput('edScale', mesh.scale.x); // Assume uniform X/Z
+    updateInput('edScaleY', mesh.scale.y);
 }
 
 function applyEditorTransform() {
@@ -5633,10 +5678,11 @@ function applyEditorTransform() {
     const pz = parseFloat(document.getElementById('edPosZ').value);
     const ry = parseFloat(document.getElementById('edRotY').value);
     const s = parseFloat(document.getElementById('edScale').value);
+    const sy = parseFloat(document.getElementById('edScaleY').value);
     
     selectedMesh.position.set(px, py, pz);
     selectedMesh.rotation.y = ry;
-    selectedMesh.scale.set(s, s, s);
+    selectedMesh.scale.set(s, sy, s); // X and Z linked to Scale, Y independent
     
     // Update Config Object
     // We need to know WHICH file this is. 
@@ -5648,9 +5694,12 @@ function applyEditorTransform() {
 window.saveRoomConfig = function() {
     if (!selectedMesh) return;
     
-    // Prompt for key
-    const key = prompt("Enter filename key (e.g., gothic_tower-web.glb):");
-    if (!key) return;
+    // Auto-detect key or prompt
+    let key = selectedMesh.userData.configKey;
+    if (!key) {
+        key = prompt("Enter filename key (e.g., gothic_tower-web.glb):");
+        if (!key) return;
+    }
     
     roomConfig[key] = {
         pos: { x: selectedMesh.position.x, y: selectedMesh.position.y, z: selectedMesh.position.z },
