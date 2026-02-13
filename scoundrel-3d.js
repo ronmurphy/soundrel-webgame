@@ -1074,9 +1074,6 @@ function init3D() {
     playerMarker = new THREE.Mesh(markerGeo, markerMat);
     scene.add(playerMarker);
 
-    // Create atmospheric fog rings around the map
-    createFogRings();
-
     animate3D();
     window.addEventListener('click', on3DClick);
 }
@@ -1732,22 +1729,12 @@ function getThemeForFloor(floor) {
 
 function updateAtmosphere(floor) {
     const theme = getThemeForFloor(floor);
-    const dimColor = new THREE.Color(theme.color).multiplyScalar(0.75); // Brightened background
-    scene.background = dimColor;
-    // Use per-theme fog density when available
-    scene.fog = new THREE.FogExp2(dimColor, theme.fogDensity || 0.05);
-
-    // Tint fog ring materials to match theme and adjust opacity with density
-    fogRings.forEach((f, idx) => {
-        if (f && f.sprite && f.sprite.material) {
-            const m = f.sprite.material;
-            // colorize slightly toward theme
-            m.color.setHex(theme.color).lerp(new THREE.Color(0xffffff), 0.2);
-            // make ring opacity correlate inversely with fog density (so high fog -> stronger ring)
-            const base = idx === 0 ? 0.12 : 0.08;
-            m.opacity = Math.min(0.6, base + (theme.fogDensity || 0.05) * 6);
-        }
-    });
+    
+    // Darker, cleaner atmosphere (No colored fog)
+    const black = new THREE.Color(0x050505);
+    scene.background = black;
+    // Black fog creates "fade to darkness" LOD effect
+    scene.fog = new THREE.FogExp2(0x000000, 0.045);
 
     // Update ambient and hemisphere lights to match mood
     const amb = scene.children.find(c => c.isAmbientLight);
@@ -1963,9 +1950,8 @@ function generateFloorCA() {
         for (let z = -bounds; z <= bounds; z++) {
             if (grid[x][z]) {
                 // Calculate varied tile index
-                // Use primes and offset to prevent row/column striping and symmetry
-                const noise = Math.abs((x + 64) * 17 + (z + 64) * 23);
-                const variation = noise % maxVar;
+                // Randomize variation to avoid diagonal patterns
+                const variation = Math.floor(Math.random() * maxVar);
                 // Ensure we don't exceed the sprite sheet (indices 0-8)
                 const tileIndex = Math.min(8, (theme.tile - 1) + variation);
 
@@ -2015,13 +2001,33 @@ function generateFloorCA() {
     blockTex.wrapS = THREE.RepeatWrapping;
     blockTex.wrapT = THREE.RepeatWrapping;
 
+    // Determine emissive properties based on theme (Performance-friendly Glow)
+    let emissiveColor = 0x000000;
+    let emissiveIntensity = 0.0;
+    
+    if (theme.name === 'Magma') {
+        emissiveColor = 0xff4400;
+        emissiveIntensity = 0.5;
+    } else if (theme.name === 'Ice') {
+        emissiveColor = 0x0088ff;
+        emissiveIntensity = 0.4;
+    } else if (theme.name === 'Moss') {
+        emissiveColor = 0x225522;
+        emissiveIntensity = 0.25;
+    } else if (theme.name === 'Ancient') {
+        emissiveColor = 0x440044;
+        emissiveIntensity = 0.3;
+    }
+
     // Create material
     const floorMaterial = new THREE.MeshStandardMaterial({
         map: blockTex,
         color: 0xffffff,
         roughness: 0.9,
         metalness: 0.1,
-        side: THREE.FrontSide  // Only render front faces
+        side: THREE.FrontSide,  // Only render front faces
+        emissive: emissiveColor,
+        emissiveIntensity: emissiveIntensity
     });
 
     // Create ONE mesh for the entire floor
@@ -4831,8 +4837,16 @@ function startLockpickGame(room) {
 
 function handleLockpickClick(x, y) {
     if (!lockpickState || !lockpickState.active) return;
-    const { grid, size } = lockpickState;
+    const { grid, size, start, end } = lockpickState;
     if (x < 0 || x >= size || y < 0 || y >= size) return;
+
+    // Prevent clicking on Start/End tiles (Emitter/Receiver)
+    const sx = start.x + start.dir.x;
+    const sy = start.y + start.dir.y;
+    const ex = end.x + end.dir.x;
+    const ey = end.y + end.dir.y;
+
+    if ((x === sx && y === sy) || (x === ex && y === ey)) return;
 
     const cell = grid[y][x];
     if (cell === 1) return; // Wall
@@ -4915,12 +4929,16 @@ function renderLockpickGame() {
     
     const beamTex = loadFXImage('trace_01.png');
 
+    // Calculate Receiver Tile (Inside Grid)
+    const rx = end.x + end.dir.x;
+    const ry = end.y + end.dir.y;
+
     let steps = 0;
     let won = false;
 
     while(steps < 100) {
-        // Check bounds (Win or Lose)
-        if (curr.x === end.x && curr.y === end.y) {
+        // Check Win (Hit Receiver Tile)
+        if (curr.x === rx && curr.y === ry) {
             won = true;
             path.push({x: (curr.x+0.5)*cellSize, y: (curr.y+0.5)*cellSize});
             break;
