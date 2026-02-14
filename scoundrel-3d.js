@@ -354,7 +354,7 @@ let walkAnims = {
     f: { up: null, down: null }
 };
 const clock = new THREE.Clock();
-let globalAnimSpeed = 0.5; // Slowed down default animation speed
+let globalAnimSpeed = 1.0; // Default to real-time, tune individual actions via timeScale
 let isEditMode = false;
 let selectedMesh = null;
 let currentAxesHelper = null;
@@ -531,6 +531,7 @@ function preloadFXTextures() {
 
 // Spawn simple DOM-based UI particles that sit above the modal overlay
 function spawnDOMParticles(name, x, y, count = 10, opts = {}) {
+    if (use3dModel) return; // Disable in Enhanced Mode
     const container = document.createElement('div');
     container.className = 'ui-fx';
     document.body.appendChild(container);
@@ -566,6 +567,7 @@ function spawnDOMParticles(name, x, y, count = 10, opts = {}) {
 // DOM-based projectile animation to be used when modal is open so projectiles appear above UI
 function spawnDOMProjectile(name, fromX, fromY, toX, toY, count = 6, opts = {}) {
     // console.debug('spawnDOMProjectile', { name, fromX, fromY, toX, toY, count, opts, uiCanvasPresent: !!uiFxCanvas }); // DEBUG (commented out)
+    if (use3dModel) return Promise.resolve(); // Disable in Enhanced Mode
     return new Promise(resolve => {
         const container = document.createElement('div');
         container.className = 'ui-fx ui-projectile';
@@ -670,6 +672,7 @@ class ImageParticle extends Particle {
 }
 
 function spawnTextureParticles(name, x, y, count = 12, opts = {}) {
+    if (use3dModel) return; // Disable in Enhanced Mode
     const img = loadFXImage(name);
     // Make space if we're near cap
     while (particles.length + count > MAX_PARTICLES) {
@@ -696,6 +699,7 @@ function spawnTextureParticles(name, x, y, count = 12, opts = {}) {
 
 // UI canvas variants (draw above modal)
 function spawnUITextureParticles(name, x, y, count = 12, opts = {}) {
+    if (use3dModel) return; // Disable in Enhanced Mode
     const img = loadFXImage(name);
     // Make space if we're near cap
     while (uiParticles.length + count > MAX_UI_PARTICLES) {
@@ -723,6 +727,7 @@ function spawnUITextureParticles(name, x, y, count = 12, opts = {}) {
 
 // Helper: spawn a texture either on the UI canvas (above modal) or the scene canvas depending on modal visibility
 function spawnAboveModalTexture(name, x, y, count = 12, opts = {}) {
+    if (use3dModel) return; // Disable in Enhanced Mode
     const modal = document.getElementById('combatModal');
     const modalOpen = modal && (modal.style.display === 'flex' || modal.style.display === 'block');
     if (modalOpen && typeof spawnUITextureParticles === 'function' && uiFxCanvas) {
@@ -740,6 +745,7 @@ function spawnAboveModalTexture(name, x, y, count = 12, opts = {}) {
 
 function spawnUIProjectile(name, fromX, fromY, toX, toY, count = 8, opts = {}) {
     // console.debug('spawnUIProjectile', { name, fromX, fromY, toX, toY, count, opts, uiCanvasPresent: !!uiFxCanvas, uiParticlesCount: uiParticles.length }); // DEBUG (commented out)
+    if (use3dModel) return Promise.resolve(); // Disable in Enhanced Mode
     const img = loadFXImage(name);
     const duration = opts.duration || 420; // ms
     const frames = Math.max(1, Math.round(duration / 16));
@@ -774,6 +780,7 @@ function spawnUIProjectile(name, fromX, fromY, toX, toY, count = 8, opts = {}) {
 
 // Spawn projectiles that travel from point A to B and call onHit when they arrive
 function spawnProjectile(name, fromX, fromY, toX, toY, count = 8, opts = {}) {
+    if (use3dModel) return Promise.resolve(); // Disable in Enhanced Mode
     const img = loadFXImage(name);
     const duration = opts.duration || 450; // ms
     const frames = Math.max(1, Math.round(duration / 16));
@@ -810,6 +817,7 @@ function spawnUIHitFlash(x, y, duration = 280) {
     // Disabled by default to avoid overpowering HP corner particles.
     // Re-enable at runtime by setting `window.HIT_FLASH_ENABLED = true` in console.
     if (window.HIT_FLASH_ENABLED === undefined) window.HIT_FLASH_ENABLED = false;
+    if (use3dModel) return; // Disable in Enhanced Mode
     if (!window.HIT_FLASH_ENABLED) return;
 
     const el = document.createElement('div');
@@ -1215,13 +1223,49 @@ function loadPlayerModel() {
 
             console.log(`Animations loaded for ${game.sex}:`, animations.map(a => a.name));
 
-            // Auto-detect animations or fallback to index
-            // Improved detection: Look for 'idle', 'stand', 'wait', or specific names like 'Idle_03'/'Idle_15'
-            const idleClip = animations.find(a => /idle|stand|wait/i.test(a.name)) || animations.find(a => a.name === 'Idle_03' || a.name === 'Idle_15') || animations[0];
-            const walkClip = animations.find(a => /walk/i.test(a.name)) || animations.find(a => /run|move/i.test(a.name)) || animations.find(a => a !== idleClip) || animations[0];
+            let idleClip, walkClip, attackClip, hitClip;
 
-            if (walkClip) actions.walk = mixer.clipAction(walkClip);
-            if (idleClip) actions.idle = mixer.clipAction(idleClip);
+            // Specific mapping for Evil variants
+            if (path.includes('male_evil')) {
+                attackClip = animations.find(a => a.name === 'Axe_Spin_Attack');
+                hitClip = animations.find(a => a.name === 'Face_Punch_Reaction_1');
+                idleClip = animations.find(a => a.name === 'Idle_10');
+                walkClip = animations.find(a => a.name === 'Walking') || animations.find(a => a.name === 'Running');
+            } else if (path.includes('female_evil')) {
+                attackClip = animations.find(a => a.name === 'Sweep_Kick');
+                hitClip = animations.find(a => a.name === 'Slap_Reaction');
+                idleClip = animations.find(a => a.name === 'Idle_5');
+                walkClip = animations.find(a => a.name === 'Walking') || animations.find(a => a.name === 'Running');
+            }
+
+            // Fallbacks / Auto-detect
+            if (!idleClip) idleClip = animations.find(a => /idle|stand|wait/i.test(a.name)) || animations.find(a => a.name === 'Idle_03' || a.name === 'Idle_15') || animations[0];
+            if (!walkClip) walkClip = animations.find(a => /walk/i.test(a.name)) || animations.find(a => /run|move/i.test(a.name)) || animations.find(a => a !== idleClip) || animations[0];
+            if (!attackClip) attackClip = animations.find(a => /attack|slash|punch|kick/i.test(a.name));
+            if (!hitClip) hitClip = animations.find(a => /hit|damage|reaction|death/i.test(a.name));
+
+            if (walkClip) {
+                actions.walk = mixer.clipAction(walkClip);
+                actions.walk.timeScale = 0.8; // Slower, weightier walk
+            }
+            if (idleClip) {
+                actions.idle = mixer.clipAction(idleClip);
+                actions.idle.timeScale = 0.5; // Slow down idle (breathing)
+            }
+            if (attackClip) {
+                actions.attack = mixer.clipAction(attackClip);
+                actions.attack.setLoop(THREE.LoopOnce);
+                actions.attack.clampWhenFinished = true;
+                actions.attack.timeScale = 1.0; // Attack at full speed
+                console.log(`Attack Duration: ${attackClip.duration.toFixed(2)}s`);
+            }
+            if (hitClip) {
+                actions.hit = mixer.clipAction(hitClip);
+                actions.hit.setLoop(THREE.LoopOnce);
+                actions.hit.clampWhenFinished = true;
+                actions.hit.timeScale = 1.0;
+                console.log(`Hit Duration: ${hitClip.duration.toFixed(2)}s`);
+            }
 
             // Start Idle
             if (actions.idle) actions.idle.reset().play();
@@ -1926,7 +1970,7 @@ function movePlayerSprite(oldId, newId) {
         // Trigger Walk Animation
         if (actions.walk && actions.idle) {
             actions.walk.enabled = true;
-            actions.walk.setEffectiveTimeScale(1.0);
+            actions.walk.setEffectiveTimeScale(0.8); // Match the speed set in loadPlayerModel
             actions.walk.setEffectiveWeight(1.0);
             actions.idle.crossFadeTo(actions.walk, 0.2, true).play();
         }
@@ -2126,6 +2170,24 @@ function takeDamage(amount) {
     }
 
     game.hp -= remaining;
+
+    // Trigger 3D Hit Animation
+    if (use3dModel && actions.hit && actions.idle && amount > 0) {
+        actions.idle.stop();
+        if (actions.walk) actions.walk.stop();
+        if (actions.attack) actions.attack.stop();
+        
+        actions.hit.reset().play();
+        
+        const onHitFinish = (e) => {
+            if (e.action === actions.hit) {
+                actions.hit.stop();
+                actions.idle.play();
+                mixer.removeEventListener('finished', onHitFinish);
+            }
+        };
+        mixer.addEventListener('finished', onHitFinish);
+    }
 }
 
 const THEMES = [
@@ -2542,7 +2604,7 @@ function clear3DScene() {
 function toggleView() {
     is3DView = !is3DView;
     const btn = document.getElementById('viewToggleBtn');
-    btn.innerText = `VIEW: ${is3DView ? '3D' : '2D'}`;
+    if (btn) btn.innerText = `VIEW: ${is3DView ? '3D' : '2D'}`;
     if (is3DView) { camera.position.set(20, 20, 20); controls.enableRotate = true; torchLight.intensity = 300; torchLight.distance = 40; }
     else { camera.position.set(0, 40, 0); camera.lookAt(0, 0, 0); controls.enableRotate = false; torchLight.intensity = 1500; torchLight.distance = 60; }
     camera.updateProjectionMatrix();
@@ -2731,9 +2793,6 @@ function finalizeStartDive() {
     const combatArea = document.querySelector('.player-combat-area');
     if (combatArea) combatArea.style.display = 'flex';
 
-    // Update Control Box Buttons
-    const viewBtn = document.getElementById('viewToggleBtn');
-    if (viewBtn) viewBtn.style.display = 'inline-block';
     const contBtn = document.getElementById('continueGameBtn');
     if (contBtn) contBtn.style.display = 'none';
 
@@ -3259,7 +3318,7 @@ function showCombat() {
 
     game.combatCards.forEach((c, idx) => {
         const card = document.createElement('div');
-        card.className = `card ${c.type} dealing ${c.bossSlot || ''}`;
+        card.className = `card ${c.type} ${use3dModel ? '' : 'dealing'} ${c.bossSlot || ''}`;
         card.style.animationDelay = `${idx * 0.1}s`;
 
         let asset = getAssetData(c.type, c.val, c.suit, c.type === 'gift' ? c.actualGift : null);
@@ -3560,7 +3619,7 @@ function pickCard(idx, event) {
             } else {
                 spawnFloatingText("Backpack Full!", centerX, centerY, '#ff0000');
                 // Revert animation
-                cardEl.style.pointerEvents = 'auto';
+                if (!use3dModel) cardEl.style.pointerEvents = 'auto';
                 cardEl.style.transform = 'none';
                 cardEl.style.opacity = '1';
                 return;
@@ -3647,6 +3706,22 @@ function pickCard(idx, event) {
 
             // 1. Player Attack Phase (Visuals)
             triggerPlayerAttackAnim(centerX, centerY, game.equipment.weapon);
+
+            // Trigger 3D Attack Animation
+            if (use3dModel && actions.attack && actions.idle) {
+                actions.idle.stop();
+                if (actions.walk) actions.walk.stop();
+                actions.attack.reset().play();
+                
+                const onAttackFinish = (e) => {
+                    if (e.action === actions.attack) {
+                        actions.attack.stop();
+                        actions.idle.play();
+                        mixer.removeEventListener('finished', onAttackFinish);
+                    }
+                };
+                mixer.addEventListener('finished', onAttackFinish);
+            }
 
             let attackSound = 'attack_blunt';
             if (game.equipment.weapon) {
@@ -3796,7 +3871,7 @@ function pickCard(idx, event) {
                     logMsg(`Merchant's Blessing: Looted ${gift.name}.`);
                 } else {
                     spawnFloatingText("Backpack Full!", centerX, centerY, '#ff0000');
-                    cardEl.style.pointerEvents = 'auto'; cardEl.style.transform = 'none'; cardEl.style.opacity = '1';
+                    if (!use3dModel) cardEl.style.pointerEvents = 'auto'; cardEl.style.transform = 'none'; cardEl.style.opacity = '1';
                     return;
                 }
                 game.merchantUsed = true;
@@ -3826,7 +3901,7 @@ function pickCard(idx, event) {
             } else if (gift.type === 'armor') {
                 if (!addToBackpack(gift)) {
                     spawnFloatingText("Backpack Full!", window.innerWidth / 2, window.innerHeight / 2, '#ff0000');
-                    cardEl.style.pointerEvents = 'auto'; cardEl.style.transform = 'none'; cardEl.style.opacity = '1';
+                    if (!use3dModel) cardEl.style.pointerEvents = 'auto'; cardEl.style.transform = 'none'; cardEl.style.opacity = '1';
                     return;
                 }
                 logMsg(`Merchant's Blessing: Looted ${gift.name}.`);
@@ -4753,7 +4828,7 @@ function setupLayout() {
     const controlBox = document.createElement('div');
     controlBox.className = 'control-box';
     document.body.appendChild(controlBox);
-
+    
     // Add Fullscreen Button (Top Right Corner)
     const fsBtn = document.createElement('button');
     fsBtn.className = 'v2-btn';
@@ -4806,12 +4881,6 @@ function setupLayout() {
     }
 
     // Move Buttons
-    const newGameBtn = document.getElementById('newGameBtn');
-    const viewBtn = document.getElementById('viewToggleBtn');
-    if (viewBtn) viewBtn.style.display = 'none'; // Hide initially
-    const btnContainer = document.createElement('div');
-    btnContainer.className = 'btn-group';
-    btnContainer.style.marginTop = '10px';
 
     // Add Continue Button if save exists
     if (hasSave()) {
@@ -4820,13 +4889,13 @@ function setupLayout() {
         contBtn.className = 'v2-btn';
         contBtn.innerText = "Continue";
         contBtn.onclick = loadGame;
-        btnContainer.appendChild(contBtn);
+        contBtn.style.width = '100%';
+        controlBox.appendChild(contBtn);
     }
 
-    if (newGameBtn) btnContainer.appendChild(newGameBtn);
-    if (viewBtn) btnContainer.appendChild(viewBtn);
-
-    controlBox.appendChild(btnContainer);
+    // Reposition Control Box to Bottom Left (above Dock)
+    controlBox.style.top = 'auto';
+    controlBox.style.bottom = '234px'; // 120px dock + 10px margin + 104px
 
     // 2. Transform Player Combat Area into Always-Visible Dock
     const combatArea = document.querySelector('.player-combat-area');
@@ -4909,7 +4978,7 @@ window.showOptionsModal = function() {
     
     modal.innerHTML = `
         <div style="background:rgba(0,0,0,0.9); border:2px solid var(--gold); padding:30px; width:300px; text-align:center; color:#fff; font-family:'Cinzel'; position:relative;">
-            <h2 style="color:var(--gold); margin-top:0;">OPTIONS</h2>
+            <h2 style="color:var(--gold); margin-top:0; margin-bottom:20px;">OPTIONS</h2>
             
             <div style="margin:20px 0; text-align:left;">
                 <label style="display:block; margin-bottom:5px;">Master Volume</label>
@@ -4926,7 +4995,16 @@ window.showOptionsModal = function() {
                 <label for="muteSFX">Mute Sound Effects</label>
             </div>
 
+            <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
+                <input type="checkbox" id="isoView" ${is3DView ? 'checked' : ''} onchange="toggleView()">
+                <label for="isoView">Isometric Camera</label>
+            </div>
+
             ${graphicsOption}
+
+            <div style="margin-top:30px; border-top:1px solid #444; padding-top:20px;">
+                <button class="v2-btn" onclick="document.getElementById('optionsModal').style.display='none'; startDive();" style="width:100%; background:#800; color:#fff;">NEW DIVE</button>
+            </div>
 
             <button class="v2-btn" onclick="document.getElementById('optionsModal').style.display='none'" style="margin-top:20px; width:100%;">Close</button>
         </div>
@@ -5465,9 +5543,6 @@ function loadGame() {
     const combatArea = document.querySelector('.player-combat-area');
     if (combatArea) combatArea.style.display = 'flex';
 
-    // Update Control Box Buttons
-    const viewBtn = document.getElementById('viewToggleBtn');
-    if (viewBtn) viewBtn.style.display = 'inline-block';
     const contBtn = document.getElementById('continueGameBtn');
     if (contBtn) contBtn.style.display = 'none';
 
