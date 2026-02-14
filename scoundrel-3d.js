@@ -358,6 +358,11 @@ let globalAnimSpeed = 0.5; // Slowed down default animation speed
 let isEditMode = false;
 let selectedMesh = null;
 let currentAxesHelper = null;
+// --- ENHANCED COMBAT GLOBALS ---
+let combatGroup = new THREE.Group();
+let isCombatView = false;
+let savedCamState = { pos: new THREE.Vector3(), target: new THREE.Vector3(), zoom: 1 };
+let combatEntities = []; // Track standees/chests for updates
 const textureLoader = new THREE.TextureLoader();
 const glbCache = new Map(); // Cache for loaded GLB assets
 const loadingPromises = new Map(); // Deduplicate in-flight loads
@@ -375,13 +380,13 @@ function loadTexture(path) {
 function getClonedTexture(path) {
     const original = loadTexture(path);
     const clone = original.clone();
-    if (original.image && !original.image.complete) {
-        const onImgLoad = () => {
-            clone.needsUpdate = true;
-            original.image.removeEventListener('load', onImgLoad);
-        };
-        original.image.addEventListener('load', onImgLoad);
-    }
+    clone.needsUpdate = true;
+    // Ensure update happens when image loads
+    const checkLoad = () => {
+        if (original.image && original.image.complete) clone.needsUpdate = true;
+        else requestAnimationFrame(checkLoad);
+    };
+    checkLoad();
     return clone;
 }
 
@@ -441,7 +446,6 @@ function loadGLB(path, callback, scale = 1.0, configKey = null) {
 
     const promise = new Promise((resolve, reject) => {
         gltfLoader.load(path, (gltf) => {
-            console.log(`[GLB] Loaded: ${path}`);
             glbCache.set(path, gltf);
             resolve(gltf);
         }, undefined, reject);
@@ -1267,6 +1271,9 @@ function on3DClick(event) {
     // Prevent interaction if any modal is open
     const blockers = ['combatModal', 'lockpickUI', 'introModal', 'avatarModal', 'inventoryModal', 'classModal'];
     const isBlocked = blockers.some(id => {
+        // Exception: Allow combatModal if in 3D Combat View (it's transparent)
+        if (id === 'combatModal' && isCombatView) return false;
+
         const el = document.getElementById(id);
         return el && window.getComputedStyle(el).display !== 'none';
     });
@@ -1284,7 +1291,7 @@ function on3DClick(event) {
 
     // Iterate to find first CLICKABLE object (skipping particles)
     for (let i = 0; i < intersects.length; i++) {
-        const obj = intersects[i].object;
+        let obj = intersects[i].object;
         if (obj.userData && obj.userData.roomId !== undefined) {
             const roomIdx = obj.userData.roomId;
             const current = game.rooms.find(r => r.id === game.currentRoomIdx);
@@ -1292,6 +1299,21 @@ function on3DClick(event) {
             if (current && current.connections.includes(roomIdx)) {
                 enterRoom(roomIdx);
                 break;
+            }
+        }
+
+        // Combat Interaction (3D Standees) - Check parent groups
+        if (isCombatView) {
+            let parent = obj;
+            while (parent) {
+                if (parent.userData && parent.userData.isCombatEntity) {
+                    const idx = parent.userData.cardIdx;
+                    // Trigger pickCard with a mock event or handle null event in pickCard
+                    pickCard(idx, null);
+                    return; // Stop processing clicks
+                }
+                parent = parent.parent;
+                if (parent === scene) break;
             }
 
             // Allow clicking SELF if it has an active event (Trap, Bonfire, Merchant)
@@ -1651,7 +1673,13 @@ function update3DScene() {
                         addLocalFog(mesh);
                     }
                     const mesh = roomMeshes.get(r.id);
-                    mesh.visible = true;
+                    
+                    // Fix visibility fighting with showCombat
+                    if (isCombatView && game.activeRoom && r.id === game.activeRoom.id) {
+                        mesh.visible = false;
+                    } else {
+                        mesh.visible = true;
+                    }
                     // Visual Priority: Cleared (Holy Glow) > Special > Base
                     let eCol = 0x000000;
                     let eInt = (isVisible ? 1.0 : 0.2);
@@ -1831,6 +1859,11 @@ function animate3D() {
         updateFX();
         updateUIFX();
         lastFXTime = now;
+
+        // Update Combat Entities (Floating Chest Icons)
+        if (isCombatView) {
+            combatEntities.forEach(e => { if (e.update) e.update(time); });
+        }
     }
 
     // Throttled render so we don't render >30fps
@@ -2133,7 +2166,6 @@ function updateAtmosphere(floor) {
 function generateFloorCA() {
     const theme = getThemeForFloor(game.floor);
     const bounds = 12 + (game.floor * 2);
-    console.debug(`Generating floor CA with theme ${theme.name} and bounds ${bounds}`);
 
     const size = bounds * 2 + 1;
     let grid = {};
@@ -3121,6 +3153,87 @@ function showCombat() {
     enemyArea.innerHTML = '';
     // audio.play('card_shuffle', { volume: 0.5, rate: 0.95 + Math.random() * 0.1 });
 
+    // --- 3D COMBAT SETUP ---
+    if (use3dModel) {
+        enterCombatView();
+        overlay.style.background = 'rgba(0,0,0,0)'; // Transparent modal
+        
+        // Clear previous 3D entities
+        while(combatGroup.children.length > 0){ 
+            combatGroup.remove(combatGroup.children[0]); 
+        }
+        combatEntities = [];
+
+        // Hide Current Room Mesh to prevent camera blocking
+        if (game.activeRoom && roomMeshes.has(game.activeRoom.id)) {
+            roomMeshes.get(game.activeRoom.id).visible = false;
+        }
+
+        // Position Camera for Combat (Over-the-Shoulder View)
+        const pPos = playerMesh ? playerMesh.position : new THREE.Vector3(0,0,0);
+        
+        // Face player towards enemies
+        if (playerMesh) playerMesh.lookAt(pPos.x, pPos.y, pPos.z + 4);
+
+        // Camera behind player, up slightly
+        new TWEEN.Tween(camera.position)
+            .to({ x: pPos.x, y: pPos.y + 3, z: pPos.z - 5 }, 1000)
+            .easing(TWEEN.Easing.Quadratic.Out)
+            .start();
+        new TWEEN.Tween(controls.target)
+            .to({ x: pPos.x, y: pPos.y + 1, z: pPos.z + 4 }, 1000)
+            .easing(TWEEN.Easing.Quadratic.Out)
+            .start();
+
+        // Spawn 3D Entities
+        game.combatCards.forEach((c, i) => {
+            const entity = (c.type === 'monster') ? new Standee() : new OpenChest();
+            
+            let assetData = getAssetData(c.type, c.val, c.suit, c.type === 'gift' ? c.actualGift : null);
+
+            // Override for Animated Monsters
+            if (c.type === 'monster' && c.val >= 1 && !c.customAsset) {
+                let suitName = 'club';
+                if (c.suit === SUITS.SPADES) suitName = 'spade';
+                else if (c.suit === SUITS.SKULLS) suitName = 'skull';
+                else if (c.suit === SUITS.MENACES) suitName = 'menace';
+
+                const clampedVal = Math.min(c.val, 14);
+                const rankName = { 1: '1', 2: '1', 3: '1', 4: '2', 5: '2', 6: '3', 7: '3', 8: '4', 9: '4', 10: '5', 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[clampedVal];
+                
+                assetData = {
+                    file: `animations/${suitName}_${rankName}.png`,
+                    uv: { u: 0, v: 0 },
+                    isStrip: true,
+                    sheetCount: 25,
+                    isAnimated: true
+                };
+            } else if (c.customAsset) {
+                 assetData = {
+                    file: c.customAsset,
+                    uv: { u: 0, v: 0 },
+                    isStrip: true,
+                    sheetCount: 25,
+                    isAnimated: c.isAnimated || false
+                };
+            }
+            entity.setArt(assetData);
+            
+            // Position in a line/arc in front of player
+            // Offset Z by +4, spread X
+            entity.position.set(pPos.x + (i - 1.5) * 2.5, 0, pPos.z + 4);
+            entity.lookAt(pPos.x, 0, pPos.z); // Face player
+            
+            // UserData for Raycasting
+            entity.userData = { cardIdx: i, isCombatEntity: true };
+            
+            combatGroup.add(entity);
+            combatEntities.push(entity);
+        });
+    } else {
+        overlay.style.background = 'rgba(0,0,0,0.85)';
+    }
+
     if (game.isBossFight) {
         enemyArea.classList.add('boss-grid');
     } else {
@@ -3138,6 +3251,11 @@ function showCombat() {
         let bgSize = asset.isStrip ? `${sheetCount * 100}% 100%` : 'cover';
         let bgPos = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
         let animClass = "";
+
+        // 3D Mode: Hide the 2D card visuals but keep element for layout/clicking
+        if (use3dModel) {
+            card.style.opacity = '0';
+        }
 
         // Custom Asset Overrides (for Boss Parts)
         if (c.customAsset) {
@@ -3383,7 +3501,10 @@ function pickCard(idx, event) {
     if ((game.chosenCount >= 3 && !game.isBossFight) || game.combatBusy) return;
 
     let card = game.combatCards[idx];
-    let cardEl = event.target.closest('.card');
+    let cardEl = event ? event.target.closest('.card') : document.querySelectorAll('.card')[idx];
+    
+    // Safety check if DOM element is missing
+    if (!cardEl) return;
 
     const cardRect = cardEl.getBoundingClientRect();
     const centerX = cardRect.left + cardRect.width / 2;
@@ -3431,7 +3552,7 @@ function pickCard(idx, event) {
             game.combatBusy = true;
             // Compute damage/state but defer applying until animation finishes
             let dmg = card.val;
-            const cardRect = event.target.getBoundingClientRect();
+            const cardRect = cardEl.getBoundingClientRect();
             const centerX = cardRect.left + cardRect.width / 2;
             const centerY = cardRect.top + cardRect.height / 2;
 
@@ -3865,6 +3986,14 @@ function closeCombat() {
     audio.setMusicMuffled(false); // Unmuffle music
     const mp = document.getElementById('merchantPortrait');
     if (mp) mp.style.display = 'none';
+    
+    if (use3dModel) {
+        // Restore Room Mesh Visibility
+        if (game.activeRoom && roomMeshes.has(game.activeRoom.id)) {
+            roomMeshes.get(game.activeRoom.id).visible = true;
+        }
+        exitCombatView();
+    }
 }
 window.closeCombat = closeCombat; // Expose for onClick events
 
@@ -5766,6 +5895,146 @@ window.blastLock = function () {
         gameOver();
     }
 };
+
+// --- ENHANCED COMBAT (3D) ---
+class Standee extends THREE.Group {
+    constructor() {
+        super();
+        this.artMesh = null;
+        this.pendingTex = null;
+        this.pendingConfig = null;
+        this.isAnimated = false;
+        this.frameCount = 1;
+        this.currentFrame = 0;
+
+        // Load the Standee GLB
+        loadGLB('assets/images/glb/standee-web.glb', (model) => {
+            this.add(model);
+            
+            // Find the face for art (Material named 'CardFace' OR Mesh named 'CardFace')
+            model.traverse((child) => {
+                if (child.isMesh && (child.name === 'CardFace' || (child.material && child.material.name === 'CardFace'))) {
+                    this.artMesh = child;
+                    this.artMesh.material = this.artMesh.material.clone(); // Unique material instance
+                    this.artMesh.material.color.setHex(0xffffff); // Ensure white base
+                    this.artMesh.material.transparent = true;
+                    this.artMesh.material.fog = false; // Ignore fog to stay bright
+                    
+                    // Apply any texture that was set before the model loaded
+                    if (this.pendingTex) {
+                        this.applyTex(this.pendingTex, this.pendingConfig);
+                        this.pendingTex = null;
+                        this.pendingConfig = null;
+                    }
+                }
+            });
+        }, 1.0);
+    }
+
+    setArt(assetData) {
+        const tex = getClonedTexture(`assets/images/${assetData.file}`);
+        this.isAnimated = assetData.isAnimated || false;
+        this.frameCount = assetData.sheetCount || 1;
+
+        const config = {
+            isStrip: assetData.isStrip,
+            u: assetData.uv.u,
+            sheetCount: this.frameCount
+        };
+        
+        if (this.artMesh) {
+            this.applyTex(tex, config);
+        } else {
+            this.pendingTex = tex;
+            this.pendingConfig = config;
+        }
+    }
+
+    applyTex(tex, config) {
+        if (config.isStrip) {
+            tex.repeat.set(1 / config.sheetCount, 1);
+            tex.offset.set(config.u, 0);
+        } else {
+            tex.repeat.set(1, 1);
+            tex.offset.set(0, 0);
+        }
+        this.artMesh.material.map = tex;
+        this.artMesh.material.needsUpdate = true;
+    }
+
+    update(time) {
+        if (this.isAnimated && this.artMesh && this.artMesh.material.map) {
+            // 12 FPS animation
+            const frame = Math.floor((time * 12) % this.frameCount);
+            if (frame !== this.currentFrame) {
+                this.currentFrame = frame;
+                this.artMesh.material.map.offset.x = frame / this.frameCount;
+            }
+        }
+    }
+}
+
+class OpenChest extends THREE.Group {
+    constructor() {
+        super();
+        
+        // Load Chest GLB
+        loadGLB('assets/images/glb/openchest-web.glb', (model) => {
+            this.add(model);
+        }, 1.0);
+        
+        // Floating Item Sprite (The "Card")
+        const spriteMat = new THREE.SpriteMaterial({ color: 0xffffff, transparent: true, fog: false });
+        this.icon = new THREE.Sprite(spriteMat);
+        this.icon.position.set(0, 1.5, 0); // Adjust height based on model
+        this.icon.scale.set(0.8, 0.8, 1);
+        this.add(this.icon);
+        
+        this.floatOffset = Math.random() * 100;
+    }
+    
+    setArt(assetData) {
+        const tex = getClonedTexture(`assets/images/${assetData.file}`);
+        const sheetCount = assetData.sheetCount || 9;
+        if (assetData.isStrip) {
+            tex.repeat.set(1 / sheetCount, 1);
+            tex.offset.set(assetData.uv.u, 0);
+        }
+        this.icon.material.map = tex;
+    }
+    
+    update(time) {
+        // Gentle bobbing animation
+        this.icon.position.y = 1.5 + Math.sin(time * 3 + this.floatOffset) * 0.1;
+    }
+}
+
+function enterCombatView() {
+    if (isCombatView || !use3dModel) return;
+    isCombatView = true;
+    
+    // Save Camera State
+    savedCamState.pos.copy(camera.position);
+    savedCamState.target.copy(controls.target);
+    savedCamState.zoom = camera.zoom;
+    
+    // Add Combat Group to Scene
+    scene.add(combatGroup);
+    
+    // Note: Actual camera movement and entity spawning will happen in showCombat
+    // when we know where the player is and what enemies to spawn.
+}
+
+function exitCombatView() {
+    if (!isCombatView) return;
+    isCombatView = false;
+    scene.remove(combatGroup);
+    // Restore camera
+    new TWEEN.Tween(camera.position).to({ x: savedCamState.pos.x, y: savedCamState.pos.y, z: savedCamState.pos.z }, 800).easing(TWEEN.Easing.Quadratic.Out).start();
+    new TWEEN.Tween(controls.target).to({ x: savedCamState.target.x, y: savedCamState.target.y, z: savedCamState.target.z }, 800).easing(TWEEN.Easing.Quadratic.Out).start();
+    camera.zoom = savedCamState.zoom;
+    camera.updateProjectionMatrix();
+}
 
 // --- CINEMATIC MODE (For Trailer/Screenshots) ---
 window.addEventListener('keydown', (e) => {
