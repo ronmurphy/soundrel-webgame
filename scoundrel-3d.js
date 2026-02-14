@@ -1670,6 +1670,12 @@ function update3DScene() {
                     if (mesh.material.color.getHex() !== targetColor) mesh.material.color.setHex(targetColor);
                     if (mesh.material.emissive.getHex() !== eCol) mesh.material.emissive.setHex(eCol);
                     if (mesh.material.emissiveIntensity !== eInt) mesh.material.emissiveIntensity = eInt;
+
+                    // Add Holy Light FX for cleared rooms
+                    if (r.state === 'cleared' && !r.isWaypoint && !r.isFinal && !mesh.userData.hasHolyLight) {
+                         addHolyLightFX(mesh, r.w, r.rDepth);
+                         mesh.userData.hasHolyLight = true;
+                    }
                 }
             }
             
@@ -1891,10 +1897,10 @@ function addDoorsToRoom(room, mesh) {
             const path = 'assets/images/glb/door-web.glb';
             const configKey = path.split('/').pop();
             loadGLB(path, (model) => {
-                if (!roomConfig[configKey]) {
-                    model.position.set(posX, -(room.rDepth / 2), posZ);
-                    model.rotation.y = rotY;
-                }
+                // Enforce dynamic wall position (X/Z) and facing (Rot Y)
+                // But respect configured height (Y) and other rotations (X/Z) if present
+                model.position.set(posX, model.position.y, posZ);
+                model.rotation.y = rotY;
                 mesh.add(model);
             }, 1.0, configKey);
         } else {
@@ -1965,6 +1971,38 @@ function addLocalFog(mesh) {
         s.position.set((Math.random() - 0.5) * 4, localY, (Math.random() - 0.5) * 4);
         mesh.add(s);
     }
+}
+
+function addHolyLightFX(mesh, width, depth) {
+    // Floating particles shader
+    const geo = new THREE.CylinderGeometry(width * 0.3, width * 0.3, depth, 16, 1, true);
+    const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0xffffff) } },
+        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: `
+            uniform float uTime; uniform vec3 uColor; varying vec2 vUv;
+            float random(vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453); }
+            void main() {
+                // Rising particles
+                vec2 grid = vec2(vUv.x * 15.0, vUv.y * 8.0 - uTime * 0.5);
+                float r = random(floor(grid));
+                float alpha = (r > 0.95) ? (1.0 - vUv.y) * 0.5 : 0.0;
+                // Soft glow at bottom
+                alpha += (1.0 - vUv.y) * 0.1;
+                gl_FragColor = vec4(uColor, alpha);
+            }
+        `,
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+    });
+    const fxMesh = new THREE.Mesh(geo, mat);
+    fxMesh.position.y = 1.5; // Rise from floor
+    mesh.add(fxMesh);
+    animatedMaterials.push(mat);
+    
+    // Add a small point light
+    const light = new THREE.PointLight(0xaaccff, 100, 8);
+    light.position.set(0, 1.5, 0);
+    mesh.add(light);
 }
 
 function spawn3DGhost(pos) {
