@@ -306,7 +306,7 @@ function insertWaypoints(r1, r2, allRooms) {
 }
 
 // --- 3D RENDERING (Three.js Tableau) ---
-let scene, camera, renderer, controls, raycaster, mouse;
+let scene, camera, combatCamera, renderer, controls, raycaster, mouse;
 let playerMarker; // Crystal marker
 let torchLight;
 let hemisphereLight; // Soft global fill light to improve readability under fog
@@ -1102,6 +1102,10 @@ function handleWindowResize() {
         camera.top = d;
         camera.bottom = -d;
         camera.updateProjectionMatrix();
+        if (combatCamera) {
+            combatCamera.aspect = aspect;
+            combatCamera.updateProjectionMatrix();
+        }
         renderer.setSize(container.clientWidth, container.clientHeight);
     }
 }
@@ -1131,6 +1135,7 @@ function init3D() {
     camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
     camera.position.set(20, 20, 20);
     camera.lookAt(0, 0, 0);
+    combatCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1000);
 
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enablePan = false;
@@ -1286,17 +1291,26 @@ function on3DClick(event) {
 
     if (mouse.x < -1 || mouse.x > 1 || mouse.y < -1 || mouse.y > 1) return;
 
-    raycaster.setFromCamera(mouse, camera);
+    raycaster.setFromCamera(mouse, isCombatView ? combatCamera : camera);
     const intersects = raycaster.intersectObjects(scene.children, true);
 
     // Iterate to find first CLICKABLE object (skipping particles)
     for (let i = 0; i < intersects.length; i++) {
         let obj = intersects[i].object;
+        const current = game.rooms.find(r => r.id === game.currentRoomIdx);
+        
+        // Check for Room Mesh Interaction
         if (obj.userData && obj.userData.roomId !== undefined) {
             const roomIdx = obj.userData.roomId;
-            const current = game.rooms.find(r => r.id === game.currentRoomIdx);
 
+            // Movement
             if (current && current.connections.includes(roomIdx)) {
+                enterRoom(roomIdx);
+                break;
+            }
+            
+            // Self-Interaction (Trap, Bonfire, Merchant) in Combat View
+            if (isCombatView && current && current.id === roomIdx && (current.isTrap || current.isBonfire || current.isSpecial) && current.state !== 'cleared') {
                 enterRoom(roomIdx);
                 break;
             }
@@ -1314,12 +1328,6 @@ function on3DClick(event) {
                 }
                 parent = parent.parent;
                 if (parent === scene) break;
-            }
-
-            // Allow clicking SELF if it has an active event (Trap, Bonfire, Merchant)
-            if (current && current.id === roomIdx && (current.isTrap || current.isBonfire || current.isSpecial) && current.state !== 'cleared') {
-                enterRoom(roomIdx);
-                break;
             }
         }
     }
@@ -1868,7 +1876,8 @@ function animate3D() {
 
     // Throttled render so we don't render >30fps
     if (now - lastRenderTime >= RENDER_INTERVAL) {
-        renderer.render(scene, camera);
+        const activeCam = isCombatView ? combatCamera : camera;
+        renderer.render(scene, activeCam);
         lastRenderTime = now;
     }
 
@@ -3155,6 +3164,7 @@ function showCombat() {
 
     // --- 3D COMBAT SETUP ---
     if (use3dModel) {
+        const alreadyInCombat = isCombatView;
         enterCombatView();
         overlay.style.background = 'rgba(0,0,0,0)'; // Transparent modal
         
@@ -3169,25 +3179,32 @@ function showCombat() {
             roomMeshes.get(game.activeRoom.id).visible = false;
         }
 
-        // Position Camera for Combat (Over-the-Shoulder View)
+        // Position Player
         const pPos = playerMesh ? playerMesh.position : new THREE.Vector3(0,0,0);
-        
-        // Face player towards enemies
         if (playerMesh) playerMesh.lookAt(pPos.x, pPos.y, pPos.z + 4);
 
-        // Camera behind player, up slightly
-        new TWEEN.Tween(camera.position)
-            .to({ x: pPos.x, y: pPos.y + 3, z: pPos.z - 5 }, 1000)
-            .easing(TWEEN.Easing.Quadratic.Out)
-            .start();
-        new TWEEN.Tween(controls.target)
-            .to({ x: pPos.x, y: pPos.y + 1, z: pPos.z + 4 }, 1000)
-            .easing(TWEEN.Easing.Quadratic.Out)
-            .start();
+        // Only swoop camera if entering combat for the first time
+        if (!alreadyInCombat) {
+            // Setup Perspective Camera (First Person / Over Shoulder)
+            // Start high to swoop down
+            combatCamera.position.set(pPos.x, pPos.y + 8, pPos.z - 8);
+            combatCamera.lookAt(pPos.x, pPos.y, pPos.z + 4);
+
+            // Tween Camera to Shoulder position
+            new TWEEN.Tween(combatCamera.position)
+                .to({ x: pPos.x, y: pPos.y + 0.5, z: pPos.z - 1.5 }, 1200) // Closer and lower
+                .easing(TWEEN.Easing.Quadratic.Out)
+                .start();
+
+            // Switch Controls to Perspective Camera temporarily
+            controls.object = combatCamera;
+            controls.target.set(pPos.x, pPos.y + 0.5, pPos.z + 16); // Look slightly up at enemies
+        }
 
         // Spawn 3D Entities
         game.combatCards.forEach((c, i) => {
-            const entity = (c.type === 'monster') ? new Standee() : new OpenChest();
+            // Use OpenChest for EVERYTHING (Monsters & Items)
+            const entity = new OpenChest();
             
             let assetData = getAssetData(c.type, c.val, c.suit, c.type === 'gift' ? c.actualGift : null);
 
@@ -3255,6 +3272,7 @@ function showCombat() {
         // 3D Mode: Hide the 2D card visuals but keep element for layout/clicking
         if (use3dModel) {
             card.style.opacity = '0';
+            card.style.pointerEvents = 'none'; // Allow clicking through to 3D scene
         }
 
         // Custom Asset Overrides (for Boss Parts)
@@ -5977,6 +5995,9 @@ class Standee extends THREE.Group {
 class OpenChest extends THREE.Group {
     constructor() {
         super();
+        this.isAnimated = false;
+        this.frameCount = 1;
+        this.currentFrame = 0;
         
         // Load Chest GLB
         loadGLB('assets/images/glb/openchest-web.glb', (model) => {
@@ -5995,17 +6016,27 @@ class OpenChest extends THREE.Group {
     
     setArt(assetData) {
         const tex = getClonedTexture(`assets/images/${assetData.file}`);
-        const sheetCount = assetData.sheetCount || 9;
+        this.isAnimated = assetData.isAnimated || false;
+        this.frameCount = assetData.sheetCount || 1;
+
         if (assetData.isStrip) {
-            tex.repeat.set(1 / sheetCount, 1);
+            tex.repeat.set(1 / this.frameCount, 1);
             tex.offset.set(assetData.uv.u, 0);
         }
         this.icon.material.map = tex;
     }
     
     update(time) {
-        // Gentle bobbing animation
+        // Gentle bobbing animation for the icon
         this.icon.position.y = 1.5 + Math.sin(time * 3 + this.floatOffset) * 0.1;
+
+        if (this.isAnimated && this.icon.material.map) {
+            const frame = Math.floor((time * 12) % this.frameCount);
+            if (frame !== this.currentFrame) {
+                this.currentFrame = frame;
+                this.icon.material.map.offset.x = frame / this.frameCount;
+            }
+        }
     }
 }
 
@@ -6030,10 +6061,12 @@ function exitCombatView() {
     isCombatView = false;
     scene.remove(combatGroup);
     // Restore camera
-    new TWEEN.Tween(camera.position).to({ x: savedCamState.pos.x, y: savedCamState.pos.y, z: savedCamState.pos.z }, 800).easing(TWEEN.Easing.Quadratic.Out).start();
-    new TWEEN.Tween(controls.target).to({ x: savedCamState.target.x, y: savedCamState.target.y, z: savedCamState.target.z }, 800).easing(TWEEN.Easing.Quadratic.Out).start();
-    camera.zoom = savedCamState.zoom;
-    camera.updateProjectionMatrix();
+    controls.object = camera; // Switch controls back to Ortho camera
+    controls.target.copy(savedCamState.target);
+    controls.update();
+    
+    // Optional: Tween Ortho camera back if we moved it, but we mostly moved Perspective camera.
+    // We just switch active camera in render loop, so instant switch back is fine for "exiting mind space".
 }
 
 // --- CINEMATIC MODE (For Trailer/Screenshots) ---
