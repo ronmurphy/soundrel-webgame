@@ -3,6 +3,11 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { HorizontalTiltShiftShader } from 'three/addons/shaders/HorizontalTiltShiftShader.js';
+import { VerticalTiltShiftShader } from 'three/addons/shaders/VerticalTiltShiftShader.js';
 import { SoundManager } from './sound-manager.js';
 import { MagicCircleFX } from './magic-circle.js';
 
@@ -306,7 +311,8 @@ function insertWaypoints(r1, r2, allRooms) {
 }
 
 // --- 3D RENDERING (Three.js Tableau) ---
-let scene, camera, combatCamera, renderer, controls, raycaster, mouse;
+let scene, camera, combatCamera, renderer, composer, renderPass, controls, raycaster, mouse;
+let hTilt, vTilt; // Shader passes
 let playerMarker; // Crystal marker
 let torchLight;
 let hemisphereLight; // Soft global fill light to improve readability under fog
@@ -1115,6 +1121,11 @@ function handleWindowResize() {
             combatCamera.updateProjectionMatrix();
         }
         renderer.setSize(container.clientWidth, container.clientHeight);
+        if (composer) {
+            composer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+            composer.setSize(container.clientWidth, container.clientHeight);
+            updateTiltShiftUniforms();
+        }
     }
 }
 window.addEventListener('resize', handleWindowResize);
@@ -1137,6 +1148,22 @@ function init3D() {
         renderer.shadowMap.enabled = true;
         container.appendChild(renderer.domElement);
     }
+
+    // Post-Processing Setup
+    composer = new EffectComposer(renderer);
+    composer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Match renderer quality
+    renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    hTilt = new ShaderPass(HorizontalTiltShiftShader);
+    vTilt = new ShaderPass(VerticalTiltShiftShader);
+    hTilt.enabled = false;
+    vTilt.enabled = false;
+    
+    composer.addPass(hTilt);
+    composer.addPass(vTilt);
+    
+    updateTiltShiftUniforms();
 
     const aspect = container.clientWidth / container.clientHeight;
     const d = 10;
@@ -1199,6 +1226,13 @@ function init3D() {
 
     animate3D();
     window.addEventListener('click', on3DClick);
+}
+
+function updateTiltShiftUniforms() {
+    if (hTilt) hTilt.uniforms['h'].value = 4.0 / window.innerWidth;
+    if (vTilt) vTilt.uniforms['v'].value = 4.0 / window.innerHeight;
+    if (hTilt) hTilt.uniforms['r'].value = 0.5; // Center focus
+    if (vTilt) vTilt.uniforms['r'].value = 0.5;
 }
 
 function loadPlayerModel() {
@@ -1921,7 +1955,15 @@ function animate3D() {
     // Throttled render so we don't render >30fps
     if (now - lastRenderTime >= RENDER_INTERVAL) {
         const activeCam = isCombatView ? combatCamera : camera;
-        renderer.render(scene, activeCam);
+        const lockpickActive = document.getElementById('lockpickUI') && document.getElementById('lockpickUI').style.display !== 'none';
+        
+        // Disable Tilt-Shift in Combat/Puzzle to ensure clarity
+        if (gameSettings.tiltShiftMode === 'threejs' && composer && !isCombatView && !lockpickActive) {
+            renderPass.camera = activeCam;
+            composer.render();
+        } else {
+            renderer.render(scene, activeCam);
+        }
         lastRenderTime = now;
     }
 
@@ -4929,15 +4971,22 @@ let gameSettings = {
     masterVolume: 0.5,
     musicMuted: false,
     sfxMuted: false,
-    enhancedGraphics: false
+    enhancedGraphics: false,
+    tiltShiftMode: 'threejs' // 'off', 'css', 'threejs'
 };
 
 function loadSettings() {
     const s = localStorage.getItem('scoundrelSettings');
     if (s) {
         gameSettings = JSON.parse(s);
+        // Migration for old boolean setting
+        if (gameSettings.tiltShift !== undefined) {
+            gameSettings.tiltShiftMode = gameSettings.tiltShift ? 'css' : 'off';
+            delete gameSettings.tiltShift;
+        }
         // Apply graphics setting if present
         if (gameSettings.enhancedGraphics !== undefined) use3dModel = gameSettings.enhancedGraphics;
+        applyTiltShiftMode(gameSettings.tiltShiftMode);
     }
 }
 
@@ -5000,6 +5049,11 @@ window.showOptionsModal = function() {
                 <label for="isoView">Isometric Camera</label>
             </div>
 
+            <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
+                <input type="checkbox" id="tiltShift" ${gameSettings.tiltShiftMode === 'threejs' ? 'checked' : ''} onchange="updateSetting('tiltShift', this.checked)">
+                <label for="tiltShift">Tilt-Shift FX</label>
+            </div>
+
             ${graphicsOption}
 
             <div style="margin-top:30px; border-top:1px solid #444; padding-top:20px;">
@@ -5020,10 +5074,34 @@ window.updateSetting = function(type, val) {
         gameSettings.enhancedGraphics = val;
         show3dmodels(val);
     }
+    if (type === 'tiltShift') {
+        const mode = val ? 'threejs' : 'off';
+        gameSettings.tiltShiftMode = mode;
+        applyTiltShiftMode(mode);
+    }
     
     saveSettings();
     if (type !== 'graphics') applyAudioSettings();
 };
+
+function applyTiltShiftMode(mode) {
+    // Handle CSS Overlay
+    let el = document.getElementById('tiltShiftOverlay');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'tiltShiftOverlay';
+        el.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:1; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); mask-image: linear-gradient(to bottom, black 0%, transparent 40%, transparent 60%, black 100%); -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 40%, transparent 60%, black 100%); display:none;";
+        document.body.appendChild(el);
+    }
+    el.style.display = (mode === 'css') ? 'block' : 'none';
+
+    // Handle Three.js Passes
+    if (hTilt && vTilt) {
+        const enabled = (mode === 'threejs');
+        hTilt.enabled = enabled;
+        vTilt.enabled = enabled;
+    }
+}
 
 // --- HELP SYSTEM ---
 let currentHelpSlide = 0;
