@@ -3280,26 +3280,59 @@ function showCombat() {
             roomMeshes.get(game.activeRoom.id).visible = false;
         }
 
-        // Position Player
-        const pPos = playerMesh ? playerMesh.position : new THREE.Vector3(0,0,0);
-        if (playerMesh) playerMesh.lookAt(pPos.x, pPos.y, pPos.z + 4);
+        // Determine Anchor Position (Room Center)
+        // Use activeRoom coordinates to ensure stability even if player is moving
+        const r = game.activeRoom;
+        const anchorX = r ? r.gx : (playerMesh ? playerMesh.position.x : 0);
+        const anchorZ = r ? r.gy : (playerMesh ? playerMesh.position.z : 0);
+        const anchorY = 0.1;
+
+        // Snap Player to Position (ensure they are at the stand marker)
+        if (playerMesh) {
+            // We don't stop tweens here to avoid breaking other FX, but we force position
+            playerMesh.position.set(anchorX, anchorY, anchorZ);
+            playerMesh.lookAt(anchorX, anchorY, anchorZ + 4);
+        }
+
+        // Determine Orientation (Face a corridor if possible)
+        let forward = new THREE.Vector3(0, 0, 1); // Default +Z
+        if (game.activeRoom && game.activeRoom.connections && game.activeRoom.connections.length > 0) {
+             // Pick the first connection to face
+             const targetId = game.activeRoom.connections[0];
+             const target = game.rooms.find(r => r.id === targetId);
+             if (target) {
+                 // Calculate direction from current room center to target room center
+                 forward.set(target.gx - anchorX, 0, target.gy - anchorZ).normalize();
+             }
+        }
+        const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
+
+        // Snap Player Rotation
+        if (playerMesh) {
+            const lookTarget = new THREE.Vector3(anchorX, anchorY, anchorZ).add(forward);
+            playerMesh.lookAt(lookTarget);
+        }
 
         // Only swoop camera if entering combat for the first time
         if (!alreadyInCombat) {
-            // Setup Perspective Camera (First Person / Over Shoulder)
-            // Start high to swoop down
-            combatCamera.position.set(pPos.x, pPos.y + 8, pPos.z - 8);
-            combatCamera.lookAt(pPos.x, pPos.y, pPos.z + 4);
+            // Setup Perspective Camera (Start high and behind relative to forward)
+            const startPos = new THREE.Vector3(anchorX, anchorY + 8, anchorZ).addScaledVector(forward, -8);
+            combatCamera.position.copy(startPos);
+            combatCamera.lookAt(anchorX, anchorY, anchorZ);
 
             // Tween Camera to Shoulder position
+            // Pos = Anchor - Forward * 3.5 + Up * 1.6
+            const endPos = new THREE.Vector3(anchorX, anchorY + 1.6, anchorZ).addScaledVector(forward, -3.5);
             new TWEEN.Tween(combatCamera.position)
-                .to({ x: pPos.x, y: pPos.y + 0.5, z: pPos.z - 1.5 }, 1200) // Closer and lower
+                .to({ x: endPos.x, y: endPos.y, z: endPos.z }, 1200)
                 .easing(TWEEN.Easing.Quadratic.Out)
                 .start();
 
             // Switch Controls to Perspective Camera temporarily
             controls.object = combatCamera;
-            controls.target.set(pPos.x, pPos.y + 0.5, pPos.z + 16); // Look slightly up at enemies
+            // Look Target: Anchor + Forward * 4 + Up * 1.2
+            const lookAtPos = new THREE.Vector3(anchorX, anchorY + 1.2, anchorZ).addScaledVector(forward, 4.0);
+            controls.target.copy(lookAtPos);
         }
 
         // Spawn 3D Entities
@@ -3337,10 +3370,18 @@ function showCombat() {
             }
             entity.setArt(assetData);
             
-            // Position in a line/arc in front of player
-            // Offset Z by +4, spread X
-            entity.position.set(pPos.x + (i - 1.5) * 2.5, 0, pPos.z + 4);
-            entity.lookAt(pPos.x, 0, pPos.z); // Face player
+            // Staggered "V" Layout
+            // 0: Left Outer (Row 2) -> right*-1.5 + fwd*1.5
+            // 1: Left Inner (Row 1) -> right*-0.5 + fwd*2.5
+            // 2: Right Inner (Row 1) -> right*0.5 + fwd*2.5
+            // 3: Right Outer (Row 2) -> right*1.5 + fwd*1.5
+            let xOff = (i - 1.5) * 1.5; // Default spread
+            let zOff = 2.0;
+            if (i === 0 || i === 3) { zOff = 1.5; xOff = (i === 0 ? -1.5 : 1.5); }
+            if (i === 1 || i === 2) { zOff = 2.5; xOff = (i === 1 ? -0.5 : 0.5); }
+
+            entity.position.copy(new THREE.Vector3(anchorX, 0, anchorZ).addScaledVector(right, xOff).addScaledVector(forward, zOff));
+            entity.lookAt(anchorX, 0, anchorZ); // Face player
             
             // UserData for Raycasting
             entity.userData = { cardIdx: i, isCombatEntity: true };
