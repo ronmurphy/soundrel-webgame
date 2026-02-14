@@ -5,6 +5,8 @@ export class SoundManager {
         this.activeLoops = new Map(); // key -> { source, gain }
         this.masterGain = null;
         this.musicFilter = null;
+        this.musicGain = null;
+        this.sfxGain = null;
         this.initialized = false;
     }
 
@@ -16,16 +18,25 @@ export class SoundManager {
             this.masterGain.connect(this.ctx.destination);
             this.masterGain.gain.value = 0.4; // Default master volume
 
+            // Music Channel
+            this.musicGain = this.ctx.createGain();
+            this.musicGain.connect(this.masterGain);
+
+            // SFX Channel
+            this.sfxGain = this.ctx.createGain();
+            this.sfxGain.connect(this.masterGain);
+
             // Music Filter (Low Pass for "Muffled" effect)
             this.musicFilter = this.ctx.createBiquadFilter();
             this.musicFilter.type = 'lowpass';
             this.musicFilter.frequency.value = 22000; // Start fully open (clear)
-            this.musicFilter.connect(this.masterGain);
+            this.musicFilter.connect(this.musicGain);
 
-            if (this.ctx.state === 'suspended') {
-                this.ctx.resume();
-            }
             this.initialized = true;
+        }
+        // Always try to resume if suspended (handles preloading vs user gesture timing)
+        if (this.ctx && this.ctx.state === 'suspended') {
+            this.ctx.resume();
         }
     }
 
@@ -33,6 +44,7 @@ export class SoundManager {
         if (!this.ctx) this.init();
         try {
             const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const arrayBuffer = await response.arrayBuffer();
             const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
             this.buffers.set(name, audioBuffer);
@@ -56,7 +68,7 @@ export class SoundManager {
         if (opts.isMusic) {
             gain.connect(this.musicFilter);
         } else {
-            gain.connect(this.masterGain);
+            gain.connect(this.sfxGain);
         }
         
         source.loop = opts.loop || false;
@@ -98,6 +110,18 @@ export class SoundManager {
         }
     }
 
+    setMasterVolume(val) {
+        if (this.masterGain) this.masterGain.gain.setTargetAtTime(val, this.ctx.currentTime, 0.1);
+    }
+
+    setMusicMute(muted) {
+        if (this.musicGain) this.musicGain.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.1);
+    }
+
+    setSFXMute(muted) {
+        if (this.sfxGain) this.sfxGain.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.1);
+    }
+
     // Generate simple synthesized sounds so no files are needed
     loadPlaceholders() {
         if (!this.ctx) this.init();
@@ -113,16 +137,17 @@ export class SoundManager {
         };
 
         // 1. Torch/Bonfire (Brown Noise Loop)
-        if (!this.buffers.has('torch_loop')) {
-            let lastOut = 0;
-            const buf = createBuffer(2.0, () => {
-                const white = Math.random() * 2 - 1;
-                lastOut = (lastOut + (0.02 * white)) / 1.02;
-                return lastOut * 3.5; 
-            });
-            this.buffers.set('torch_loop', buf);
-            this.buffers.set('bonfire_loop', buf);
-        }
+        // Brad note > people complained of this sound, so i commented it out.
+        // if (!this.buffers.has('torch_loop')) {
+        //     let lastOut = 0;
+        //     const buf = createBuffer(2.0, () => {
+        //         const white = Math.random() * 2 - 1;
+        //         lastOut = (lastOut + (0.02 * white)) / 1.02;
+        //         return lastOut * 3.5; 
+        //     });
+        //     this.buffers.set('torch_loop', buf);
+        //     this.buffers.set('bonfire_loop', buf);
+        // }
 
         // 2. Card Flip (Short high-pitch slide)
         if (!this.buffers.has('card_flip')) {
@@ -153,8 +178,20 @@ export class SoundManager {
         
         // 5. BGM (Dark Drone)
         if (!this.buffers.has('bgm_dungeon')) {
-             this.buffers.set('bgm_dungeon', createBuffer(5.0, (i, t) => {
-                return Math.sin(t * 55 * Math.PI * 2) * 0.05 + Math.sin(t * 58 * Math.PI * 2) * 0.05;
+             this.buffers.set('bgm_dungeon', createBuffer(10.0, (i, t) => {
+                // D Minor Cluster (Low D1, F1, A1)
+                const f1 = Math.sin(t * 36.71 * Math.PI * 2); // D1
+                const f2 = Math.sin(t * 43.65 * Math.PI * 2); // F1
+                const f3 = Math.sin(t * 55.00 * Math.PI * 2); // A1
+                
+                // Slow breathing modulation (0.2 Hz)
+                const breath = 0.5 + 0.5 * Math.sin(t * 0.2 * Math.PI * 2);
+                
+                // Pink-ish noise for "wind" texture
+                const noise = (Math.random() * 2 - 1) * 0.03;
+                
+                // Combine: Low rumble + chord + wind
+                return (f1 * 0.5 + f2 * 0.3 + f3 * 0.3) * 0.08 * breath + noise;
             }));
         }
 

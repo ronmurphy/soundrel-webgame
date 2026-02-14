@@ -1,4 +1,3 @@
-// <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -38,7 +37,8 @@ const game = {
     pendingPurchase: null, // Track item waiting for inventory space
     isBossFight: false, // Flag for boss state
     torchCharge: 20, // Torch fuel
-    anvil: [null, null] // Crafting slots
+    anvil: [null, null], // Crafting slots
+    currentTrack: null // Track currently playing BGM
 };
 
 let roomConfig = {}; // Stores custom transforms for GLB models
@@ -331,13 +331,14 @@ function preloadSounds() {
     audio.load('card_flip', 'assets/sounds/card_flip.ogg');
     audio.load('attack_slash', 'assets/sounds/attack_slash.ogg');
     audio.load('attack_blunt', 'assets/sounds/attack_blunt.ogg');
-    audio.load('bgm_dungeon', 'assets/sounds/bgm_dungeon.ogg');
+    audio.load('bg_1', 'assets/sounds/bg_1.ogg');
+    audio.load('bg_2', 'assets/sounds/bg_2.ogg');
+    audio.load('bg_3', 'assets/sounds/bg_3.ogg');
     // audio.load('footstep', 'assets/sounds/footstep.ogg');
     audio.load('card_shuffle', 'assets/sounds/card_shuffle.ogg');
 
     // Use code-generated sounds for missing files (like torch/bonfire):
     audio.loadPlaceholders();
-    // audio.loadPlaceholders();
 }
 
 let ghosts = []; // Active ghost sprites
@@ -1227,7 +1228,10 @@ function loadPlayerModel() {
 }
 
 // Initialize Audio on first interaction
-window.addEventListener('click', () => audio.init(), { once: true });
+window.addEventListener('click', () => {
+    audio.init();
+    applyAudioSettings();
+}, { once: true });
 
 function createFogRings() {
     // Remove existing rings
@@ -1728,6 +1732,24 @@ function update3DScene() {
             const targetPos = new THREE.Vector3(currentRoom.gx, 0, currentRoom.gy);
             controls.target.lerp(targetPos, 0.05);
         }
+    }
+}
+
+function updateMusicForFloor() {
+    if (!audio.initialized) return;
+    
+    let track = 'bg_1';
+    if (game.floor >= 4) track = 'bg_2';
+    if (game.floor >= 7) track = 'bg_3';
+
+    // Fallback: If custom track isn't loaded (or missing), use autogen drone
+    if (!audio.buffers.has(track)) track = 'bgm_dungeon';
+
+    if (game.currentTrack !== track) {
+        console.log(`Switching BGM to ${track}`);
+        audio.stopLoop('bgm', 1.5); // Fade out old
+        audio.startLoop('bgm', track, { volume: 0.4, isMusic: true });
+        game.currentTrack = track;
     }
 }
 
@@ -2687,6 +2709,7 @@ function finalizeStartDive() {
     game.backpack = new Array(24).fill(null); game.hotbar = new Array(6).fill(null);
     game.rooms = generateDungeon(); game.currentRoomIdx = 0; game.lastAvoided = false;
     game.bonfireUsed = false; game.merchantUsed = false;
+    game.currentTrack = null;
 
     // Grant Starting Items
     cData.items.forEach(i => {
@@ -2711,7 +2734,6 @@ function finalizeStartDive() {
     clear3DScene(); init3D();
     // Preload FX textures for particle effects
     preloadFXTextures();
-    preloadSounds();
     generateFloorCA(); // Generate Atmosphere and Floor
     updateAtmosphere(game.floor);
 
@@ -2724,7 +2746,7 @@ function finalizeStartDive() {
     controls.target.set(0, 0, 0);
 
     // Start BGM
-    audio.startLoop('bgm', 'bgm_dungeon', { volume: 0.4, isMusic: true });
+    updateMusicForFloor();
 
     // Initial Save
     saveGame();
@@ -2866,6 +2888,7 @@ function descendToNextFloor() {
     game.bonfireUsed = false; game.merchantUsed = false;
     game.pendingPurchase = null;
     game.isBossFight = false;
+    game.currentTrack = null; // Force music re-eval
 
     // Map Item Check
     const hasMap = game.hotbar.some(i => i && i.type === 'item' && i.id === 3);
@@ -2876,13 +2899,13 @@ function descendToNextFloor() {
     clear3DScene(); init3D();
     // Preload FX textures for particle effects
     preloadFXTextures();
-    preloadSounds();
     generateFloorCA();
     updateAtmosphere(game.floor);
 
     updateUI();
     logMsg(`Descending deeper... Floor ${game.floor}`);
     enterRoom(0);
+    updateMusicForFloor();
 
     // Checkpoint Save: Save state at start of new floor (after generation)
     if (game.mode === 'checkpoint') saveGame();
@@ -4593,6 +4616,30 @@ function setupLayout() {
     fsBtn.style.cssText = "position: absolute; top: 5px; right: 5px; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: none; z-index: 10;";
     controlBox.appendChild(fsBtn);
 
+    // Options Button (Top Left)
+    const optBtn = document.createElement('button');
+    optBtn.className = 'v2-btn';
+    optBtn.innerText = "⚙"; 
+    optBtn.title = "Options";
+    optBtn.onclick = showOptionsModal;
+    optBtn.style.cssText = "position: absolute; top: 5px; left: 5px; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: none; z-index: 10;";
+    controlBox.appendChild(optBtn);
+
+    // Help Button (Top Left, next to Options)
+    const helpBtn = document.createElement('button');
+    helpBtn.className = 'v2-btn';
+    helpBtn.innerText = "?"; 
+    helpBtn.title = "How to Play";
+    helpBtn.onclick = showHelpModal;
+    helpBtn.style.cssText = "position: absolute; top: 5px; left: 42px; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: none; z-index: 10;";
+    controlBox.appendChild(helpBtn);
+
+    // Version Label
+    const ver = document.createElement('div');
+    ver.innerText = "v1.0";
+    ver.style.cssText = "position:absolute; bottom:2px; right:5px; font-size:10px; color:#444; font-family:monospace;";
+    controlBox.appendChild(ver);
+
     // Move Title/Label
     const title = document.querySelector('.title-area');
     if (title) controlBox.appendChild(title);
@@ -4661,6 +4708,170 @@ function setupLayout() {
     window.dispatchEvent(new Event('resize'));
 }
 
+// --- OPTIONS & SETTINGS ---
+let gameSettings = {
+    masterVolume: 0.5,
+    musicMuted: false,
+    sfxMuted: false,
+    enhancedGraphics: false
+};
+
+function loadSettings() {
+    const s = localStorage.getItem('scoundrelSettings');
+    if (s) {
+        gameSettings = JSON.parse(s);
+        // Apply graphics setting if present
+        if (gameSettings.enhancedGraphics !== undefined) use3dModel = gameSettings.enhancedGraphics;
+    }
+}
+
+function saveSettings() {
+    localStorage.setItem('scoundrelSettings', JSON.stringify(gameSettings));
+}
+
+function applyAudioSettings() {
+    if (!audio.initialized) return;
+    audio.setMasterVolume(gameSettings.masterVolume);
+    audio.setMusicMute(gameSettings.musicMuted);
+    audio.setSFXMute(gameSettings.sfxMuted);
+}
+
+window.showOptionsModal = function() {
+    let modal = document.getElementById('optionsModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'optionsModal';
+        modal.className = 'modal-overlay';
+        modal.style.zIndex = '20000';
+        document.body.appendChild(modal);
+    }
+    
+    // Check for True Ending Unlock
+    const wins = JSON.parse(localStorage.getItem('scoundrelWins') || '{"m":false, "f":false}');
+    const isTrueEndingUnlocked = (wins.m && wins.f);
+
+    let graphicsOption = '';
+    if (isTrueEndingUnlocked) {
+        graphicsOption = `
+            <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px; border-top: 1px solid #444; padding-top: 15px;">
+                <input type="checkbox" id="enhancedGfx" ${gameSettings.enhancedGraphics ? 'checked' : ''} onchange="updateSetting('graphics', this.checked)">
+                <label for="enhancedGfx" style="color:var(--gold);">Enhanced Graphics</label>
+            </div>
+        `;
+    }
+    
+    modal.innerHTML = `
+        <div style="background:rgba(0,0,0,0.9); border:2px solid var(--gold); padding:30px; width:300px; text-align:center; color:#fff; font-family:'Cinzel'; position:relative;">
+            <h2 style="color:var(--gold); margin-top:0;">OPTIONS</h2>
+            
+            <div style="margin:20px 0; text-align:left;">
+                <label style="display:block; margin-bottom:5px;">Master Volume</label>
+                <input type="range" min="0" max="1" step="0.05" value="${gameSettings.masterVolume}" style="width:100%;" oninput="updateSetting('vol', this.value)">
+            </div>
+            
+            <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
+                <input type="checkbox" id="muteMusic" ${gameSettings.musicMuted ? 'checked' : ''} onchange="updateSetting('music', this.checked)">
+                <label for="muteMusic">Mute Music</label>
+            </div>
+            
+            <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
+                <input type="checkbox" id="muteSFX" ${gameSettings.sfxMuted ? 'checked' : ''} onchange="updateSetting('sfx', this.checked)">
+                <label for="muteSFX">Mute Sound Effects</label>
+            </div>
+
+            ${graphicsOption}
+
+            <button class="v2-btn" onclick="document.getElementById('optionsModal').style.display='none'" style="margin-top:20px; width:100%;">Close</button>
+        </div>
+    `;
+    modal.style.display = 'flex';
+};
+
+window.updateSetting = function(type, val) {
+    if (type === 'vol') gameSettings.masterVolume = parseFloat(val);
+    if (type === 'music') gameSettings.musicMuted = val;
+    if (type === 'sfx') gameSettings.sfxMuted = val;
+    if (type === 'graphics') {
+        gameSettings.enhancedGraphics = val;
+        show3dmodels(val);
+    }
+    
+    saveSettings();
+    if (type !== 'graphics') applyAudioSettings();
+};
+
+// --- HELP SYSTEM ---
+let currentHelpSlide = 0;
+const helpSlides = [
+    {
+        title: "Navigation",
+        img: "assets/images/help/help_map.png",
+        text: "Click on adjacent rooms or waypoints to move. You must clear a room (defeat monsters or use items) to pass through it safely. Waypoints (small spheres) are safe spots between rooms."
+    },
+    {
+        title: "The Room Encounter",
+        img: "assets/images/help/help_combat.png",
+        text: "When you enter a room, you are dealt 4 cards. You must choose 3 to clear the room. The last card is carried over to the next room. Choose wisely to manage your health and resources."
+    },
+    {
+        title: "Combat & Weapons",
+        img: "assets/images/help/help_weapon.png",
+        text: "Monsters deal damage equal to their value (J=11, Q=12, K=13, A=14). If you have a Weapon, you take damage = (Monster - Weapon). If Weapon >= Monster, you take 0 damage. However, killing a monster weaker than your last kill limits your weapon's max damage for the next fight."
+    },
+    {
+        title: "Items & Inventory",
+        img: "assets/images/help/help_items.png",
+        text: "Potions heal HP. Items in your backpack can be used at any time. Drag items to the 'Sell' slot to gain Soul Coins and Torch Fuel. Keep your torch lit to see further!"
+    }
+];
+
+window.showHelpModal = function() {
+    let modal = document.getElementById('helpModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'helpModal';
+        modal.className = 'modal-overlay';
+        modal.style.zIndex = '20001'; // Above options
+        document.body.appendChild(modal);
+    }
+    currentHelpSlide = 0;
+    updateHelpUI();
+    modal.style.display = 'flex';
+};
+
+window.updateHelpUI = function() {
+    const modal = document.getElementById('helpModal');
+    const slide = helpSlides[currentHelpSlide];
+    
+    modal.innerHTML = `
+        <div style="background:rgba(0,0,0,0.95); border:2px solid var(--gold); padding:20px; width:500px; max-width:90%; text-align:center; color:#fff; font-family:'Cinzel'; position:relative; display:flex; flex-direction:column; gap:15px;">
+            <h2 style="color:var(--gold); margin:0;">HOW TO PLAY</h2>
+            <div style="font-size:1.2rem; border-bottom:1px solid #444; padding-bottom:5px;">${slide.title}</div>
+            
+            <div style="width:100%; height:250px; background:#222; display:flex; align-items:center; justify-content:center; overflow:hidden; border:1px solid #444;">
+                <img src="${slide.img}" style="max-width:100%; max-height:100%; object-fit:contain;" onerror="this.style.display='none'; this.parentNode.innerText='(Image: ${slide.img})'">
+            </div>
+            
+            <div style="font-family:'Crimson Text'; font-size:1.1rem; line-height:1.4; min-height:80px;">${slide.text}</div>
+            
+            <div style="display:flex; justify-content:space-between; margin-top:10px;">
+                <button class="v2-btn" onclick="changeHelpSlide(-1)" ${currentHelpSlide === 0 ? 'disabled style="opacity:0.5"' : ''}>Previous</button>
+                <div style="align-self:center; color:#888;">${currentHelpSlide + 1} / ${helpSlides.length}</div>
+                <button class="v2-btn" onclick="changeHelpSlide(1)" ${currentHelpSlide === helpSlides.length - 1 ? 'disabled style="opacity:0.5"' : ''}>Next</button>
+            </div>
+
+            <button class="v2-btn" onclick="document.getElementById('helpModal').style.display='none'" style="position:absolute; top:10px; right:10px; width:30px; height:30px; padding:0;">✕</button>
+        </div>
+    `;
+};
+
+window.changeHelpSlide = function(delta) {
+    currentHelpSlide += delta;
+    if (currentHelpSlide < 0) currentHelpSlide = 0;
+    if (currentHelpSlide >= helpSlides.length) currentHelpSlide = helpSlides.length - 1;
+    updateHelpUI();
+};
+
 // --- ATTRACT MODE ---
 function initAttractMode() {
     console.log("Initializing Attract Mode...");
@@ -4671,7 +4882,8 @@ function initAttractMode() {
 
     game.floor = 1;
     game.rooms = generateDungeon();
-
+    
+    preloadSounds(); // Start loading audio immediately
     // Initialize 3D engine
     init3D();
 
@@ -4710,8 +4922,8 @@ function setupInventoryUI() {
                     <button class="v2-btn" onclick="sortInventory()" style="padding:2px 8px; font-size:0.8rem; margin-right: 12px;">Sort</button>
                 </div>
                 <div id="backpackGrid" class="backpack-grid"></div>
-                <div id="sellSlot" class="sell-slot" ondragover="event.preventDefault()" ondrop="handleDrop(event, 'sell', 0)" data-slot-type="sell" data-slot-idx="0">
-                    Drag here for Torch fuel + 1 Coin
+                <div id="sellSlot" class="sell-slot" ondragover="event.preventDefault()" ondragenter="event.preventDefault()" ondrop="handleDrop(event, 'sell', 0)" data-slot-type="sell" data-slot-idx="0" style="display:flex; align-items:center; justify-content:center; text-align:center;">
+                    <span style="pointer-events:none; user-select:none;">Drag here for Torch fuel + 1 Coin</span>
                 </div>
                 
                 <!-- Anvil Section -->
@@ -4940,7 +5152,12 @@ function updateItemDescription(item) {
 window.handleDrop = handleDrop; // Expose to window for HTML attribute access
 function handleDrop(e, targetType, targetIdx) {
     e.preventDefault();
-    const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+    let data;
+    try {
+        data = JSON.parse(e.dataTransfer.getData('text/plain'));
+    } catch (err) {
+        return; // Invalid drop data
+    }
     const srcType = data.source;
     const srcIdx = data.idx;
 
@@ -5111,7 +5328,6 @@ function loadGame() {
     clear3DScene();
     init3D();
     preloadFXTextures();
-    preloadSounds();
 
     // Re-Generate Floor Visuals (using loaded room data)
     // Note: generateFloorCA uses game.rooms, which we just loaded
@@ -5131,7 +5347,7 @@ function loadGame() {
     }
 
     // Start Audio
-    audio.startLoop('bgm', 'bgm_dungeon', { volume: 0.4, isMusic: true });
+    updateMusicForFloor();
 
     updateUI();
     logMsg("Game Loaded.");
@@ -5551,6 +5767,25 @@ window.blastLock = function () {
     }
 };
 
+// --- CINEMATIC MODE (For Trailer/Screenshots) ---
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'h' || e.key === 'H') {
+        const sidebar = document.querySelector('.sidebar');
+        const controls = document.querySelector('.control-box');
+        const logo = document.getElementById('gameLogo');
+        
+        const isHidden = sidebar.style.display === 'none';
+        
+        sidebar.style.display = isHidden ? 'block' : 'none';
+        if (controls) controls.style.display = isHidden ? 'block' : 'none';
+        if (logo) logo.style.display = isHidden ? 'block' : 'none';
+        
+        // Trigger resize to allow 3D canvas to fill the space (or revert)
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
+        console.log(`Cinematic Mode: ${isHidden ? 'OFF' : 'ON'}`);
+    }
+});
+
 // --- DEBUG CONSOLE COMMANDS ---
 window.setgame = function (mode, arg) {
     console.log(`Debug Command: ${mode}`, arg || '');
@@ -5902,6 +6137,7 @@ window.addEventListener('touchend', (e) => {
 });
 
 // Initialize Layout
+loadSettings();
 loadRoomConfig().then(() => {
     setupLayout();
     initAttractMode();
