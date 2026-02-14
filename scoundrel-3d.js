@@ -223,8 +223,8 @@ function generateDungeon() {
     const potentialTraps = rooms.filter(r => r.id !== 0 && !r.isFinal && !r.isWaypoint && !r.isSpecial && !r.isBonfire);
     shuffle(potentialTraps);
     const trapCount = 1 + (Math.random() > 0.5 ? 1 : 0);
-    for(let i=0; i<trapCount; i++) {
-        if(potentialTraps.length > 0) {
+    for (let i = 0; i < trapCount; i++) {
+        if (potentialTraps.length > 0) {
             const t = potentialTraps.pop();
             t.isTrap = true;
         }
@@ -235,16 +235,16 @@ function generateDungeon() {
     const potentialParents = rooms.filter(r => !r.isWaypoint && !r.isFinal);
     shuffle(potentialParents);
     let secretCreated = false;
-    
-    for(const p of potentialParents) {
-        if(secretCreated) break;
-        const dirs = shuffle([{x:1, y:0}, {x:-1, y:0}, {x:0, y:1}, {x:0, y:-1}]);
-        for(const d of dirs) {
+
+    for (const p of potentialParents) {
+        if (secretCreated) break;
+        const dirs = shuffle([{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]);
+        for (const d of dirs) {
             const nx = p.gx + d.x * 4;
             const ny = p.gy + d.y * 4;
             // Check collision with existing rooms/waypoints
             const collide = rooms.some(r => Math.abs(r.gx - nx) < 2 && Math.abs(r.gy - ny) < 2);
-            if(!collide) {
+            if (!collide) {
                 // Create Secret Room
                 const sRoom = {
                     id: roomCount++,
@@ -255,7 +255,7 @@ function generateDungeon() {
                     isWaypoint: false,
                     shape: 'rect', depth: 2, isRevealed: false
                 };
-                
+
                 // Create Hidden Waypoint
                 const wp = {
                     id: `wp_secret_${p.id}_${sRoom.id}`,
@@ -264,10 +264,10 @@ function generateDungeon() {
                     state: 'cleared', cards: [], connections: [p.id, sRoom.id],
                     isWaypoint: true, isHidden: true
                 };
-                
+
                 p.connections.push(wp.id);
                 sRoom.connections.push(wp.id);
-                
+
                 rooms.push(sRoom, wp);
                 secretCreated = true;
                 break;
@@ -389,7 +389,7 @@ function loadGLB(path, callback, scale = 1.0, configKey = null) {
     const setupInstance = (modelScene) => {
         // Use SkeletonUtils to properly clone SkinnedMeshes (Player) and hierarchy
         const model = SkeletonUtils.clone(modelScene);
-        
+
         model.traverse((child) => {
             if (child.isMesh) {
                 child.castShadow = true;
@@ -397,9 +397,9 @@ function loadGLB(path, callback, scale = 1.0, configKey = null) {
                 if (child.material) child.material.side = THREE.DoubleSide;
             }
         });
-        
+
         model.scale.set(scale, scale, scale);
-        
+
         if (configKey) model.userData.configKey = configKey;
 
         const key = configKey ? configKey.trim() : null;
@@ -437,7 +437,7 @@ function loadGLB(path, callback, scale = 1.0, configKey = null) {
     }
 
     console.log(`[GLB] Loading: ${path} (Scale: ${scale})`);
-    
+
     const promise = new Promise((resolve, reject) => {
         gltfLoader.load(path, (gltf) => {
             console.log(`[GLB] Loaded: ${path}`);
@@ -1149,16 +1149,21 @@ function init3D() {
 
     // Fog of War
     scene.fog = new THREE.FogExp2(0x000000, 0.05);
-    
+
     if (use3dModel) {
         // Load 3D Player Model
         loadPlayerModel();
     } else {
+        // Check for True Ending Unlock (Evil Mode)
+        const wins = JSON.parse(localStorage.getItem('scoundrelWins') || '{"m":false, "f":false}');
+        const isTrueEndingUnlocked = (wins.m && wins.f);
+        const prefix = isTrueEndingUnlocked ? '_evil_' : '_';
+
         // Load Walking Textures
-        walkAnims.m.up = loadTexture('assets/images/animations/m_walk_up.png');
-        walkAnims.m.down = loadTexture('assets/images/animations/m_walk_down.png');
-        walkAnims.f.up = loadTexture('assets/images/animations/f_walk_up.png');
-        walkAnims.f.down = loadTexture('assets/images/animations/f_walk_down.png');
+        walkAnims.m.up = loadTexture(`assets/images/animations/m${prefix}walk_up.png`);
+        walkAnims.m.down = loadTexture(`assets/images/animations/m${prefix}walk_down.png`);
+        walkAnims.f.up = loadTexture(`assets/images/animations/f${prefix}walk_up.png`);
+        walkAnims.f.down = loadTexture(`assets/images/animations/f${prefix}walk_down.png`);
 
         // Player Billboard
         const spriteMat = new THREE.SpriteMaterial({ map: walkAnims.m.up, transparent: true });
@@ -1182,14 +1187,14 @@ function loadPlayerModel() {
     // Check for True Ending Unlock
     const wins = JSON.parse(localStorage.getItem('scoundrelWins') || '{"m":false, "f":false}');
     const isTrueEndingUnlocked = (wins.m && wins.f);
-    
+
     const suffix = isTrueEndingUnlocked ? '_evil' : '';
     const path = `assets/images/glb/${game.sex === 'm' ? 'male' : 'female'}${suffix}-web.glb`;
     const configKey = path.split('/').pop();
 
     loadGLB(path, (model, animations) => {
         playerMesh = model;
-        
+
         playerMesh.position.set(0, 0.1, 0);
         scene.add(playerMesh);
 
@@ -1197,9 +1202,9 @@ function loadPlayerModel() {
         if (animations && animations.length > 0) {
             mixer = new THREE.AnimationMixer(playerMesh);
             actions = {};
-            
+
             console.log(`Animations loaded for ${game.sex}:`, animations.map(a => a.name));
-            
+
             // Auto-detect animations or fallback to index
             // Improved detection: Look for 'idle', 'stand', 'wait', or specific names like 'Idle_03'/'Idle_15'
             const idleClip = animations.find(a => /idle|stand|wait/i.test(a.name)) || animations.find(a => a.name === 'Idle_03' || a.name === 'Idle_15') || animations[0];
@@ -1207,12 +1212,12 @@ function loadPlayerModel() {
 
             if (walkClip) actions.walk = mixer.clipAction(walkClip);
             if (idleClip) actions.idle = mixer.clipAction(idleClip);
-            
+
             // Start Idle
             if (actions.idle) actions.idle.reset().play();
             else if (actions.walk) actions.walk.play();
         }
-        
+
         // Position correctly if game is running
         const currentRoom = game.rooms.find(r => r.id === game.currentRoomIdx);
         if (currentRoom) {
@@ -1284,7 +1289,7 @@ function on3DClick(event) {
                 enterRoom(roomIdx);
                 break;
             }
-            
+
             // Allow clicking SELF if it has an active event (Trap, Bonfire, Merchant)
             if (current && current.id === roomIdx && (current.isTrap || current.isBonfire || current.isSpecial) && current.state !== 'cleared') {
                 enterRoom(roomIdx);
@@ -1380,7 +1385,7 @@ function update3DScene() {
                         }
                         const mesh = new THREE.Mesh(geo, mat);
                         mesh.position.set(r.gx, r.isHidden ? 0.3 : 0.1, r.gy);
-                        
+
                         if (customModelPath) {
                             const configKey = customModelPath.split('/').pop();
                             loadGLB(customModelPath, (model) => {
@@ -1398,7 +1403,7 @@ function update3DScene() {
                     const mesh = waypointMeshes.get(r.id);
                     mesh.visible = true;
                     const isAdj = currentRoom && (currentRoom.id === r.id || currentRoom.connections.includes(r.id));
-                    
+
                     const targetEmissive = isAdj ? 0xd4af37 : 0x222222;
                     mesh.material.emissive.setHex(targetEmissive);
 
@@ -1476,17 +1481,17 @@ function update3DScene() {
                         // Create a container mesh (or placeholder)
                         const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, visible: !customModelPath });
                         const mesh = new THREE.Mesh(geo, mat);
-                        
+
                         if (customModelPath) {
                             // Use filename as config key (e.g., 'gothic_tower-web.glb')
                             const configKey = customModelPath.split('/').pop();
-                            
+
                             loadGLB(customModelPath, (model) => {
                                 // Only auto-align if NO config exists
                                 if (!roomConfig[configKey]) {
                                     // Fix Origin: Align bottom of model to floor using Bounding Box
                                     const box = new THREE.Box3().setFromObject(model);
-                                    
+
                                     // Determine floor level relative to container mesh
                                     let floorOffset = -rDepth / 2;
                                     if (r.isFinal || r.shape === 'dome' || r.isSecret) {
@@ -1498,8 +1503,8 @@ function update3DScene() {
 
                                 mesh.add(model);
                                 // Hide placeholder geometry but keep mesh for logic/positioning
-                                mesh.material.visible = false; 
-                                
+                                mesh.material.visible = false;
+
                                 // Special logic for Bonfire Tower Light
                                 if (r.isBonfire) {
                                     const fireLight = new THREE.PointLight(0xff6600, 500, 15);
@@ -1520,7 +1525,7 @@ function update3DScene() {
                         } else {
                             mesh.position.set(r.gx, rDepth / 2, r.gy); // Standard rooms raised slightly
                         }
-                        
+
                         // Apply the matrix once
                         mesh.updateMatrix();
 
@@ -1612,7 +1617,7 @@ function update3DScene() {
                             });
                             const portalMesh = new THREE.Mesh(portalGeo, portalMat);
                             portalMesh.rotation.x = -Math.PI / 2;
-                            portalMesh.position.y = -rDepth/2 + 0.2; // Slightly above floor
+                            portalMesh.position.y = -rDepth / 2 + 0.2; // Slightly above floor
                             mesh.add(portalMesh);
                             animatedMaterials.push(portalMat);
                         }
@@ -1621,7 +1626,7 @@ function update3DScene() {
                             // Start spatial sound for this bonfire
                             if (audio.initialized)
                                 audio.startLoop(`bonfire_${r.id}`, 'bonfire_loop', { volume: 0 });
-                            
+
                             // Force Idle Animation inside Bonfire Room (since it's visible)
                             if (currentRoom && currentRoom.id === r.id && use3dModel && actions.idle && actions.walk) {
                                 if (actions.walk.isRunning()) {
@@ -1661,7 +1666,7 @@ function update3DScene() {
                         targetColor = 0x444444; // Reset to dark
                         if (r.isFinal) { eCol = 0xff0000; eInt = (isVisible ? 2.5 : 0.5); }
                         else if (r.isBonfire) { eCol = 0xff8800; eInt = (isVisible ? 2.5 : 0.5); }
-                        else if (r.isSpecial) { 
+                        else if (r.isSpecial) {
                             // Only tint if NOT using 3D models (let the model texture show)
                             if (!use3dModel) { eCol = 0x8800ff; eInt = (isVisible ? 1.5 : 0.3); }
                         }
@@ -1673,12 +1678,12 @@ function update3DScene() {
 
                     // Add Holy Light FX for cleared rooms
                     if (r.state === 'cleared' && !r.isWaypoint && !r.isFinal && !mesh.userData.hasHolyLight) {
-                         addHolyLightFX(mesh, r.w, r.rDepth);
-                         mesh.userData.hasHolyLight = true;
+                        addHolyLightFX(mesh, r.w, r.rDepth);
+                        mesh.userData.hasHolyLight = true;
                     }
                 }
             }
-            
+
             // Secret Room Map Glow
             if (r.isSecret && r.mesh && hasMap) {
                 r.mesh.material.emissive.setHex(0x0044ff);
@@ -1813,7 +1818,7 @@ function animate3D() {
     }
 
     if (window.TWEEN) TWEEN.update();
-    
+
     // Update Animation Mixer
     if (use3dModel && mixer) {
         const delta = clock.getDelta();
@@ -1952,7 +1957,7 @@ function updateRoomVisuals() {
                 }
                 child.material.emissive.setHex(targetEmissive);
                 // Optional: Tint the texture color too, but be careful not to wash it out
-                child.material.color.setHex(targetColor); 
+                child.material.color.setHex(targetColor);
             }
         });
     });
@@ -1998,7 +2003,7 @@ function addHolyLightFX(mesh, width, depth) {
     fxMesh.position.y = 1.5; // Rise from floor
     mesh.add(fxMesh);
     animatedMaterials.push(mat);
-    
+
     // Add a small point light
     const light = new THREE.PointLight(0xaaccff, 100, 8);
     light.position.set(0, 1.5, 0);
@@ -2080,7 +2085,7 @@ function getThemeForFloor(floor) {
 
 function updateAtmosphere(floor) {
     const theme = getThemeForFloor(floor);
-    
+
     // Darker, cleaner atmosphere (No colored fog)
     const black = new THREE.Color(0x050505);
     scene.background = black;
@@ -2206,7 +2211,7 @@ function generateFloorCA() {
                 return 0;
             }
         }
-        
+
         // 2. Flatten along ALL paths (visible and secret)
         for (const p of paths) {
             if (distToSegment(vx, vz, p.x1, p.z1, p.x2, p.z2) < 0.8) return 0;
@@ -2355,7 +2360,7 @@ function generateFloorCA() {
     // Determine emissive properties based on theme (Performance-friendly Glow)
     let emissiveColor = 0x000000;
     let emissiveIntensity = 0.0;
-    
+
     if (theme.name === 'Magma') {
         emissiveColor = 0xff4400;
         emissiveIntensity = 0.5;
@@ -2595,11 +2600,11 @@ function showClassSelection() {
     modal.style.flexDirection = 'column';
     modal.style.alignItems = 'center';
     modal.style.justifyContent = 'center';
-    
+
     let selectedClass = 'knight';
     let selectedMode = 'checkpoint';
 
-    const iconStyle = (idx) => `width:64px; height:64px; margin:0 auto 10px; background-image:url('assets/images/classes.png'); background-size:900% 100%; background-position:${(idx/9)*112.5}% 0%; border:2px solid var(--gold); background-color:rgba(0,0,0,0.5); box-shadow: 0 0 10px rgba(0,0,0,0.5);`;
+    const iconStyle = (idx) => `width:64px; height:64px; margin:0 auto 10px; background-image:url('assets/images/classes.png'); background-size:900% 100%; background-position:${(idx / 9) * 112.5}% 0%; border:2px solid var(--gold); background-color:rgba(0,0,0,0.5); box-shadow: 0 0 10px rgba(0,0,0,0.5);`;
 
     modal.innerHTML = `
         <h2 style="font-family:'Cinzel'; font-size:2.5rem; color:var(--gold); margin-bottom:20px;">Select Class</h2>
@@ -2671,9 +2676,9 @@ function finalizeStartDive() {
 
     // Apply Class Stats
     const cData = CLASS_DATA[game.classId];
-    game.hp = cData.hp; 
+    game.hp = cData.hp;
     game.maxHp = cData.hp;
-    
+
     game.floor = 1; game.deck = createDeck();
     game.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
     game.soulCoins = 0; game.ap = 0; game.maxAp = 0;
@@ -2689,7 +2694,7 @@ function finalizeStartDive() {
         // Resolve ID to full object if it's a reference
         if (i.type === 'armor' && typeof i.id === 'number') item = { ...ARMOR_DATA[i.id], type: 'armor' };
         else if (i.type === 'item' && typeof i.id === 'number') item = { ...ITEM_DATA[i.id], type: 'item' };
-        
+
         // Auto-equip if possible, else backpack
         if (item.type === 'weapon') {
             game.equipment.weapon = item;
@@ -2720,7 +2725,7 @@ function finalizeStartDive() {
 
     // Start BGM
     audio.startLoop('bgm', 'bgm_dungeon', { volume: 0.4, isMusic: true });
-    
+
     // Initial Save
     saveGame();
     enterRoom(0);
@@ -2786,7 +2791,7 @@ function startIntermission() {
         card.className = 'card shop-item';
 
         const asset = getAssetData(item.type, item.id || item.val, null);
-        
+
         const tint = item.isCursed ? 'filter: sepia(1) hue-rotate(60deg) saturate(3) contrast(1.2);' : '';
         const sheetCount = asset.sheetCount || 9;
         const bgSize = `${sheetCount * 100}% 100%`;
@@ -2807,7 +2812,7 @@ function startIntermission() {
                 }
                 game.soulCoins -= item.cost;
                 document.getElementById('shopCoinDisplay').innerText = game.soulCoins;
-                
+
                 // Handle Cursed Ring Passive immediately if bought
                 if (item.id === 'cursed_ring') {
                     game.maxHp += 10; game.hp += 10;
@@ -2849,7 +2854,7 @@ function startIntermission() {
     nextBtn.onclick = () => {
         nextBtn.innerText = "Descend"; // Reset text
         nextBtn.onclick = startIntermission; // Reset handler to intermission
-        
+
         descendToNextFloor();
     };
 }
@@ -3055,30 +3060,30 @@ function startSoulBrokerEncounter() {
     game.chosenCount = 0;
 
     logMsg("The Soul Broker reveals his true form!");
-    
+
     // Narrative Popup (Optional, using log for now)
-    spawnFloatingText("THE FINAL DEBT", window.innerWidth/2, window.innerHeight/2 - 100, '#d4af37');
+    spawnFloatingText("THE FINAL DEBT", window.innerWidth / 2, window.innerHeight / 2 - 100, '#d4af37');
 
     // The Soul Broker Boss
     // Diamond formation with 3 Guardians as minions (Level 2 stats ~19)
     game.combatCards = [
-        { 
+        {
             type: 'monster', val: 19, suit: '💀', name: "Abyssal Maw", bossSlot: 'boss-weapon',
-            customAsset: 'animations/guardian_abyssal_maw.png', customBgSize: '2500% 100%', isAnimated: true 
+            customAsset: 'animations/guardian_abyssal_maw.png', customBgSize: '2500% 100%', isAnimated: true
         },
-        { 
+        {
             type: 'monster', val: 19, suit: '💀', name: "Ironclad Sentinel", bossSlot: 'boss-armor',
-            customAsset: 'animations/guardian_ironclad_sentinel.png', customBgSize: '2500% 100%', isAnimated: true 
+            customAsset: 'animations/guardian_ironclad_sentinel.png', customBgSize: '2500% 100%', isAnimated: true
         },
-        { 
+        {
             type: 'monster', val: 19, suit: '💀', name: "Gargoyle", bossSlot: 'boss-potion',
-            customAsset: 'animations/guardian_gargoyle.png', customBgSize: '2500% 100%', isAnimated: true 
+            customAsset: 'animations/guardian_gargoyle.png', customBgSize: '2500% 100%', isAnimated: true
         },
-        { 
-            type: 'monster', val: 30, suit: '👺', name: "The Soul Broker", 
-            bossSlot: 'boss-guardian', 
-            customAnim: 'final', 
-            isBroker: true 
+        {
+            type: 'monster', val: 30, suit: '👺', name: "The Soul Broker",
+            bossSlot: 'boss-guardian',
+            customAnim: 'final',
+            isBroker: true
         }
     ];
 
@@ -3243,7 +3248,7 @@ function triggerPlayerAttackAnim(x, y, weapon) {
     // Occultist Spell FX
     if (weapon && game.classId === 'occultist' && weapon.isSpell) {
         const val = weapon.val;
-        
+
         // Trigger Magic Circle Shader
         let circleColor = [1, 1, 1];
         if (val === 2 || val === 7 || val === 11) circleColor = [1.0, 0.5, 0.0]; // Orange/Red
@@ -3257,10 +3262,10 @@ function triggerPlayerAttackAnim(x, y, weapon) {
         else if (val === 12) circleColor = [0.6, 0.0, 0.8]; // Dark Purple
         else if (val === 13) circleColor = [0.9, 0.9, 1.0]; // White
         magicFX.trigger(x, y, circleColor);
-        
+
         // Fire Spells (2: Fire Bolt, 7: Fireball, 9: Comet Fall, 11: Fireball)
         if (val === 2 || val === 7 || val === 9 || val === 11) {
-             spawnAboveModalTexture('flame_03.png', x, y, 1, {
+            spawnAboveModalTexture('flame_03.png', x, y, 1, {
                 size: 300, spread: 0, decay: 0.05,
                 tint: '#ff5500', blend: 'lighter', intensity: 1.8
             });
@@ -3272,7 +3277,7 @@ function triggerPlayerAttackAnim(x, y, weapon) {
         }
         // Ice (3: Ice Dagger)
         else if (val === 3) {
-             spawnAboveModalTexture('slash_02.png', x, y, 2, {
+            spawnAboveModalTexture('slash_02.png', x, y, 2, {
                 size: 200, spread: 20, decay: 0.08,
                 tint: '#00ffff', blend: 'lighter', intensity: 1.5
             });
@@ -3284,7 +3289,7 @@ function triggerPlayerAttackAnim(x, y, weapon) {
         }
         // Poison (4: Poison Dart)
         else if (val === 4) {
-             spawnAboveModalTexture('circle_03.png', x, y, 1, {
+            spawnAboveModalTexture('circle_03.png', x, y, 1, {
                 size: 250, spread: 0, decay: 0.04,
                 tint: '#00ff00', blend: 'lighter', intensity: 1.2
             });
@@ -3296,7 +3301,7 @@ function triggerPlayerAttackAnim(x, y, weapon) {
         }
         // Lightning (5: Lightning, 6: Ball Lightning)
         else if (val === 5 || val === 6) {
-             spawnAboveModalTexture('trace_01.png', x, y, 4, {
+            spawnAboveModalTexture('trace_01.png', x, y, 4, {
                 size: 250, spread: 40, decay: 0.1,
                 tint: '#ffffaa', blend: 'lighter', intensity: 2.0
             });
@@ -3308,7 +3313,7 @@ function triggerPlayerAttackAnim(x, y, weapon) {
         }
         // Void/Eldritch (8: Abyssal Rift, 10: Eldritch Annihilation, 12+)
         else {
-             spawnAboveModalTexture('twirl_01.png', x, y, 1, {
+            spawnAboveModalTexture('twirl_01.png', x, y, 1, {
                 size: 350, spread: 0, decay: 0.03,
                 tint: '#aa00ff', blend: 'lighter', intensity: 1.6
             });
@@ -3316,7 +3321,7 @@ function triggerPlayerAttackAnim(x, y, weapon) {
                 size: 200, spread: 0, decay: 0.05,
                 tint: '#ff00ff', blend: 'lighter', intensity: 1.0
             });
-             spawnAboveModalTexture('spark_01.png', x, y, 10, {
+            spawnAboveModalTexture('spark_01.png', x, y, 10, {
                 sizeRange: [10, 40], spread: 60, decay: 0.04,
                 tint: '#ff88ff', blend: 'lighter'
             });
@@ -3356,7 +3361,7 @@ function pickCard(idx, event) {
 
     let card = game.combatCards[idx];
     let cardEl = event.target.closest('.card');
-    
+
     const cardRect = cardEl.getBoundingClientRect();
     const centerX = cardRect.left + cardRect.width / 2;
     const centerY = cardRect.top + cardRect.height / 2;
@@ -3480,7 +3485,7 @@ function pickCard(idx, event) {
 
             // 1. Player Attack Phase (Visuals)
             triggerPlayerAttackAnim(centerX, centerY, game.equipment.weapon);
-            
+
             let attackSound = 'attack_blunt';
             if (game.equipment.weapon) {
                 if (game.equipment.weapon.isSpell) {
@@ -3522,11 +3527,11 @@ function pickCard(idx, event) {
                 } else if (game.equipment.weapon && !willBreak) {
                     // slay with weapon: small sparks
                     spawnAboveModalTexture('spark_01.png', centerX, centerY, 12, { tint: '#ccc', blend: 'lighter', sizeRange: [8, 36], intensity: 1.2 });
-                    
+
                     // Cursed Blade Effect: Heals on kill? Or just drains? 
                     // "Bloodthirst" implies healing, but user said "more like a bloodthirst weapon" (drain).
                     // Let's stick to the drain on entry for now.
-                    
+
                     game.slainStack.push(card);
                 }
 
@@ -3658,13 +3663,13 @@ function pickCard(idx, event) {
                 logMsg(`Merchant's Repair: ${msg}`);
             } else if (gift.type === 'armor') {
                 if (!addToBackpack(gift)) {
-                     spawnFloatingText("Backpack Full!", window.innerWidth / 2, window.innerHeight / 2, '#ff0000');
-                     cardEl.style.pointerEvents = 'auto'; cardEl.style.transform = 'none'; cardEl.style.opacity = '1';
-                     return;
+                    spawnFloatingText("Backpack Full!", window.innerWidth / 2, window.innerHeight / 2, '#ff0000');
+                    cardEl.style.pointerEvents = 'auto'; cardEl.style.transform = 'none'; cardEl.style.opacity = '1';
+                    return;
                 }
                 logMsg(`Merchant's Blessing: Looted ${gift.name}.`);
             }
-            
+
             // Handle Cursed Items from Merchant
             if (gift.isCursed && gift.id === 'cursed_ring') {
                 game.maxHp += 10; game.hp += 10;
@@ -3811,7 +3816,7 @@ function avoidRoom() {
     const hasBurden = game.hotbar.some(i => i && i.id === 'cursed_ring');
     if (hasBurden) {
         logMsg("The Ring of Burden prevents your escape!");
-        spawnFloatingText("CANNOT FLEE!", window.innerWidth/2, window.innerHeight/2, '#adff2f');
+        spawnFloatingText("CANNOT FLEE!", window.innerWidth / 2, window.innerHeight / 2, '#adff2f');
         return;
     }
 
@@ -3912,7 +3917,7 @@ function showTrapUI() {
     overlay.style.display = 'flex';
     document.getElementById('combatContainer').style.display = 'none';
     document.getElementById('bonfireUI').style.display = 'none';
-    
+
     let trapUI = document.getElementById('trapUI');
     if (!trapUI) {
         trapUI = document.createElement('div');
@@ -3941,7 +3946,7 @@ function showTrapUI() {
     `;
 }
 
-window.handleTrap = function(action) {
+window.handleTrap = function (action) {
     if (action === 'damage') {
         takeDamage(5);
         logMsg("You brute-forced the trap. Took 5 damage.");
@@ -4113,14 +4118,14 @@ function updateUI() {
         weaponDurEl.parentNode.appendChild(div);
     }
 
-        // Inject Torch Fuel UI into Dock/Modal (Vertical Bar)
+    // Inject Torch Fuel UI into Dock/Modal (Vertical Bar)
     const statSubgrid = document.querySelector('.player-combat-area .stat-subgrid');
     if (statSubgrid && !document.getElementById('torchFuelDock')) {
         const torchCol = document.createElement('div');
         torchCol.id = 'torchFuelDock';
         torchCol.className = 'stat-col torch';
         torchCol.style.cssText = "flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; margin-left: 20px; justify-content: flex-end;";
-        
+
         torchCol.innerHTML = `
             <div class="stat-label" style="font-size: 0.7rem; margin-bottom: 5px; color: #ffaa44;">FUEL</div>
             <div style="position: relative; width: 14px; height: 42px; background: #111; border: 1px solid #444;">
@@ -4130,7 +4135,7 @@ function updateUI() {
         `;
         statSubgrid.appendChild(torchCol);
     }
-    
+
     const coinEl = document.getElementById('soulCoinsValueSidebar');
     if (coinEl) coinEl.innerText = game.soulCoins;
     const coinModalEl = document.getElementById('soulCoinsValueModal');
@@ -4148,7 +4153,7 @@ function updateUI() {
         const pct = Math.min(100, (game.torchCharge / maxFuel) * 100);
         torchBar.style.height = `${pct}%`;
         torchVal.innerText = game.torchCharge;
-        
+
         if (game.torchCharge <= 5) {
             torchVal.style.color = '#ff4444';
             torchBar.style.background = '#ff4444';
@@ -4160,7 +4165,7 @@ function updateUI() {
 
     // const totalRooms = game.rooms ? game.rooms.filter(r => !r.isWaypoint).length : 0;
     // const clearedRooms = game.rooms ? game.rooms.filter(r => !r.isWaypoint && r.state === 'cleared').length : 0;
-        // Only count MANDATORY rooms for progress (Monsters & Traps)
+    // Only count MANDATORY rooms for progress (Monsters & Traps)
     // Exclude Waypoints, Specials (Merchants/Secret), and Bonfires
     const mandatoryRooms = game.rooms ? game.rooms.filter(r => !r.isWaypoint && !r.isSpecial && !r.isBonfire) : [];
     const totalRooms = mandatoryRooms.length;
@@ -4171,7 +4176,7 @@ function updateUI() {
     // if (progressEl) progressEl.innerText = `${clearedRooms} / ${totalRooms}`;
     // const progressModalEl = document.getElementById('progressValueModal');
     // if (progressModalEl) progressModalEl.innerText = `${clearedRooms} / ${totalRooms}`;
-        if (progressEl) progressEl.innerText = `${clearedRooms} / ${totalRooms}`;
+    if (progressEl) progressEl.innerText = `${clearedRooms} / ${totalRooms}`;
     const progressModalEl = document.getElementById('progressValueModal');
     if (progressModalEl) progressModalEl.innerText = `${clearedRooms} / ${totalRooms}`;
 
@@ -4264,7 +4269,7 @@ function updateUI() {
 
             // Broken Armor Tint (Red) - only if it's armor and we are at the floor
             let tint = (item.type === 'armor' && isArmorBroken) ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
-            
+
             const sheetCount = asset.sheetCount || 9;
             const bgSize = `${sheetCount * 100}% 100%`;
             const bgPos = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
@@ -4313,7 +4318,7 @@ function updateUI() {
                 const bgSize = `${sheetCount * 100}% 100%`;
                 const bgPos = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
                 let tint = (item.type === 'armor' && isArmorBroken) ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
-                
+
                 if (item.isCursed) {
                     tint = 'filter: sepia(1) hue-rotate(60deg) saturate(3) contrast(1.2);';
                 }
@@ -4446,13 +4451,13 @@ function getAssetData(type, value, suit, extra) {
             file = 'armor.png';
             v = extra.id;
         } else {
-                if (extra.type === 'weapon') {
-                    if (extra.id === 'cursed_blade') file = 'diamond.png';
-                    else
+            if (extra.type === 'weapon') {
+                if (extra.id === 'cursed_blade') file = 'diamond.png';
+                else
                     file = (game.classId === 'occultist') ? 'occultist.png' : 'diamond.png';
-                } else {
-                    file = 'heart.png';
-                }
+            } else {
+                file = 'heart.png';
+            }
             v = extra.val; s = extra.suit;
         }
     }
@@ -4477,11 +4482,11 @@ function getAssetData(type, value, suit, extra) {
     } else if (type === 'armor' || type === 'item') {
         if (file === 'items.png') sheetCount = ITEMS_SHEET_COUNT;
         cellIdx = value; // Direct mapping 0-8
-        
+
         // Special mapping for Cursed Ring if it's in items.png
         if (value === 'cursed_ring') {
             // If you add the ring as the 10th item (index 9)
-            cellIdx = 9; 
+            cellIdx = 9;
         }
     } else if (type === 'weapon' || type === 'class-icon') {
         if (value === 'cursed_blade') {
@@ -4551,7 +4556,7 @@ document.getElementById('descendBtn').onclick = startIntermission;
 document.getElementById('bonfireNotNowBtn').onclick = closeCombat;
 
 // Toggle Inventory (Bound to Weapon Icon click in setupLayout or here)
-window.toggleInventory = function() {
+window.toggleInventory = function () {
     const modal = document.getElementById('inventoryModal');
     if (modal.style.display === 'flex') {
         modal.style.display = 'none';
@@ -4582,7 +4587,7 @@ function setupLayout() {
     // Add Fullscreen Button (Top Right Corner)
     const fsBtn = document.createElement('button');
     fsBtn.className = 'v2-btn';
-    fsBtn.innerText = "⛶"; 
+    fsBtn.innerText = "⛶";
     fsBtn.title = "Toggle Fullscreen";
     fsBtn.onclick = toggleFullscreen;
     fsBtn.style.cssText = "position: absolute; top: 5px; right: 5px; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: none; z-index: 10;";
@@ -4613,7 +4618,7 @@ function setupLayout() {
     const btnContainer = document.createElement('div');
     btnContainer.className = 'btn-group';
     btnContainer.style.marginTop = '10px';
-    
+
     // Add Continue Button if save exists
     if (hasSave()) {
         const contBtn = document.createElement('button');
@@ -4626,7 +4631,7 @@ function setupLayout() {
 
     if (newGameBtn) btnContainer.appendChild(newGameBtn);
     if (viewBtn) btnContainer.appendChild(viewBtn);
-    
+
     controlBox.appendChild(btnContainer);
 
     // 2. Transform Player Combat Area into Always-Visible Dock
@@ -4666,10 +4671,10 @@ function initAttractMode() {
 
     game.floor = 1;
     game.rooms = generateDungeon();
-    
+
     // Initialize 3D engine
     init3D();
-    
+
     // Generate floor and atmosphere
     generateFloorCA();
     updateAtmosphere(1);
@@ -4677,7 +4682,7 @@ function initAttractMode() {
     // Center player/torch for lighting
     if (use3dModel && playerMesh) playerMesh.position.set(0, 0.1, 0);
     if (!use3dModel && playerSprite) playerSprite.position.set(0, 0.75, 0);
-    
+
     // Ensure logo is visible
     const logo = document.getElementById('gameLogo');
     if (logo) logo.style.opacity = '1';
@@ -4734,30 +4739,30 @@ function setupInventoryUI() {
     document.body.appendChild(modal);
 }
 
-window.forgeItems = function() {
+window.forgeItems = function () {
     const i1 = game.anvil[0];
     const i2 = game.anvil[1];
 
     if (!i1 || !i2) {
-        spawnFloatingText("Need 2 items!", window.innerWidth/2, window.innerHeight/2, '#ff0000');
+        spawnFloatingText("Need 2 items!", window.innerWidth / 2, window.innerHeight / 2, '#ff0000');
         return;
     }
     if (i1.type !== i2.type) {
-        spawnFloatingText("Types must match!", window.innerWidth/2, window.innerHeight/2, '#ff0000');
+        spawnFloatingText("Types must match!", window.innerWidth / 2, window.innerHeight / 2, '#ff0000');
         return;
     }
     if (i1.type !== 'weapon' && i1.type !== 'potion') {
-        spawnFloatingText("Only Weapons/Potions!", window.innerWidth/2, window.innerHeight/2, '#ff0000');
+        spawnFloatingText("Only Weapons/Potions!", window.innerWidth / 2, window.innerHeight / 2, '#ff0000');
         return;
     }
 
     // Logic: New Val = v1 + v2 - 1 (Capped at 16)
     const newVal = Math.min(16, i1.val + i2.val - 1);
-    
+
     // Randomly consume one
     const survivorIdx = Math.random() < 0.5 ? 0 : 1;
     const survivor = survivorIdx === 0 ? i1 : i2;
-    
+
     survivor.val = newVal;
     if (survivor.type === 'weapon') {
         survivor.name = survivor.name.split(' (')[0] + ` (${newVal})`; // Update name val
@@ -4767,26 +4772,26 @@ window.forgeItems = function() {
     }
 
     game.anvil = [survivor, null]; // Keep survivor in slot 0
-    spawnFloatingText("Forged!", window.innerWidth/2, window.innerHeight/2, '#00ff00');
+    spawnFloatingText("Forged!", window.innerWidth / 2, window.innerHeight / 2, '#00ff00');
     updateUI();
 };
 
-window.sortInventory = function() {
+window.sortInventory = function () {
     // Sort logic: Type Priority (Weapon > Armor > Potion > Item) -> Value (High to Low)
     const typePriority = { 'weapon': 1, 'armor': 2, 'potion': 3, 'item': 4 };
-    
+
     game.backpack.sort((a, b) => {
         if (!a && !b) return 0;
         if (!a) return 1; // nulls last
         if (!b) return -1;
-        
+
         const typeA = typePriority[a.type] || 5;
         const typeB = typePriority[b.type] || 5;
-        
+
         if (typeA !== typeB) return typeA - typeB;
         return b.val - a.val; // Descending value
     });
-    
+
     updateUI();
 };
 
@@ -4821,7 +4826,7 @@ function renderInventoryUI() {
         div.style.backgroundImage = `url('assets/images/${asset.file}')`;
         div.style.backgroundSize = `${sheetCount * 100}% 100%`;
         div.style.backgroundPosition = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
-        
+
         if (item.type === 'weapon' && item.durability !== undefined && item.durability !== Infinity) {
             div.innerHTML = `<div class="item-durability">${item.durability}</div>`;
         }
@@ -4830,13 +4835,13 @@ function renderInventoryUI() {
         div.ondragstart = (e) => {
             e.dataTransfer.setData('text/plain', JSON.stringify({ source, idx }));
         };
-        
+
         // Touch Drag Support
         div.ontouchstart = (e) => {
             if (e.touches.length > 1) return;
             const touch = e.touches[0];
             touchDragData = { source, idx };
-            
+
             touchDragGhost = div.cloneNode(true);
             touchDragGhost.style.position = 'fixed';
             touchDragGhost.style.zIndex = '10000';
@@ -4862,7 +4867,7 @@ function renderInventoryUI() {
         el.innerHTML = '';
         el.ondragover = (e) => e.preventDefault();
         el.ondrop = (e) => handleDrop(e, 'equipment', slot);
-        
+
         const item = game.equipment[slot];
         if (item) {
             el.appendChild(createItemEl(item, 'equipment', slot));
@@ -4954,10 +4959,10 @@ function handleDrop(e, targetType, targetIdx) {
         else if (srcType === 'backpack') game.backpack[srcIdx] = null;
         else if (srcType === 'hotbar') game.hotbar[srcIdx] = null;
         else if (srcType === 'anvil') game.anvil[srcIdx] = null;
-        
+
         // Add Torch Fuel + Coin
         game.soulCoins++;
-        
+
         let fuelAmount = (item.val || 5);
         // Special case: Spectral Lantern (ID 1) gives massive fuel
         if (item.id === 1) {
@@ -4967,7 +4972,7 @@ function handleDrop(e, targetType, targetIdx) {
         game.torchCharge += fuelAmount;
         spawnFloatingText(`+${fuelAmount} Fuel`, e.clientX, e.clientY - 30, '#ffaa00');
         spawnFloatingText("+1 Soul Coin", e.clientX, e.clientY, '#d4af37');
-        
+
         if (item.type === 'armor') recalcAP();
         updateUI();
         return;
@@ -5015,12 +5020,12 @@ function handleDrop(e, targetType, targetIdx) {
     if (targetItem) {
         // Validate reverse swap for equipment
         if (srcType === 'equipment') {
-             if (srcIdx === 'weapon' && targetItem.type !== 'weapon') {
-                 // Can't swap non-weapon into weapon slot, undo
-                 // (Simplified: just put item back and fail)
-                 // For now, assume valid swap or overwrite
-             }
-             game.equipment[srcIdx] = targetItem;
+            if (srcIdx === 'weapon' && targetItem.type !== 'weapon') {
+                // Can't swap non-weapon into weapon slot, undo
+                // (Simplified: just put item back and fail)
+                // For now, assume valid swap or overwrite
+            }
+            game.equipment[srcIdx] = targetItem;
         }
         else if (srcType === 'backpack') game.backpack[srcIdx] = targetItem;
         else if (srcType === 'hotbar') game.hotbar[srcIdx] = targetItem;
@@ -5074,9 +5079,9 @@ function saveGame() {
 function loadGame() {
     const json = localStorage.getItem('scoundrelSave');
     if (!json) return;
-    
+
     const data = JSON.parse(json);
-    
+
     // Restore State
     Object.assign(game, data);
 
@@ -5088,7 +5093,7 @@ function loadGame() {
             game.weaponDurability = Infinity;
         }
     }
-    
+
     // Hide Attract Mode
     isAttractMode = false;
     const logo = document.getElementById('gameLogo');
@@ -5107,7 +5112,7 @@ function loadGame() {
     init3D();
     preloadFXTextures();
     preloadSounds();
-    
+
     // Re-Generate Floor Visuals (using loaded room data)
     // Note: generateFloorCA uses game.rooms, which we just loaded
     generateFloorCA();
@@ -5118,7 +5123,7 @@ function loadGame() {
     if (currentRoom) {
         if (use3dModel && playerMesh) playerMesh.position.set(currentRoom.gx, 0.1, currentRoom.gy);
         else if (playerSprite) playerSprite.position.set(currentRoom.gx, 0.75, currentRoom.gy);
-        
+
         // Snap Camera
         camera.position.set(20, 20, 20);
         camera.lookAt(0, 0, 0);
@@ -5130,7 +5135,7 @@ function loadGame() {
 
     updateUI();
     logMsg("Game Loaded.");
-    
+
     // If loaded into a room that isn't cleared, trigger it
     enterRoom(game.currentRoomIdx);
 }
@@ -5172,7 +5177,7 @@ async function startEndingSequence() {
     const wins = JSON.parse(localStorage.getItem('scoundrelWins') || '{"m":false, "f":false}');
     wins[game.sex] = true;
     localStorage.setItem('scoundrelWins', JSON.stringify(wins));
-    
+
     isTrueEnding = (wins.m && wins.f);
 
     showStoryModal();
@@ -5191,7 +5196,7 @@ function showStoryModal() {
 
 function updateStoryPanel() {
     if (!storyData) return;
-    
+
     const modal = document.getElementById('introModal');
     let panel, imgPath, text;
     let isLastStep = false;
@@ -5239,7 +5244,7 @@ function updateStoryPanel() {
     `;
 }
 
-window.nextStoryStep = function() {
+window.nextStoryStep = function () {
     // If we just showed the true ending, finish
     if (isEnding && isTrueEnding && currentStoryStep >= storyData.ending_panels.length) {
         endStory();
@@ -5249,10 +5254,10 @@ window.nextStoryStep = function() {
     updateStoryPanel();
 };
 
-window.endStory = function() {
+window.endStory = function () {
     const modal = document.getElementById('introModal');
     if (modal) modal.style.display = 'none';
-    
+
     if (!isEnding) {
         finalizeStartDive();
     } else {
@@ -5284,31 +5289,31 @@ function startLockpickGame(room) {
     // Initialize Puzzle
     const size = 6;
     const grid = [];
-    for(let y=0; y<size; y++) {
+    for (let y = 0; y < size; y++) {
         const row = [];
-        for(let x=0; x<size; x++) row.push(0); 
+        for (let x = 0; x < size; x++) row.push(0);
         grid.push(row);
     }
 
     // --- LOGIC PUZZLE GENERATOR (Guaranteed Solvable) ---
     const edges = [];
-    for(let i=0; i<size; i++) {
-        edges.push({x: i, y: -1, dir: {x:0, y:1}}); // Top
-        edges.push({x: i, y: size, dir: {x:0, y:-1}}); // Bottom
-        edges.push({x: -1, y: i, dir: {x:1, y:0}}); // Left
-        edges.push({x: size, y: i, dir: {x:-1, y:0}}); // Right
+    for (let i = 0; i < size; i++) {
+        edges.push({ x: i, y: -1, dir: { x: 0, y: 1 } }); // Top
+        edges.push({ x: i, y: size, dir: { x: 0, y: -1 } }); // Bottom
+        edges.push({ x: -1, y: i, dir: { x: 1, y: 0 } }); // Left
+        edges.push({ x: size, y: i, dir: { x: -1, y: 0 } }); // Right
     }
-    
+
     const start = edges[Math.floor(Math.random() * edges.length)];
     let curr = { x: start.x + start.dir.x, y: start.y + start.dir.y };
     let dir = { ...start.dir };
-    
+
     const pathCells = new Set();
     let end = null;
     let steps = 0;
 
     // Walk a path
-    while(steps < 30) {
+    while (steps < 30) {
         if (curr.x < 0 || curr.x >= size || curr.y < 0 || curr.y >= size) {
             if (steps > 2) {
                 // Found an exit. Calculate direction pointing back to grid for the receiver.
@@ -5335,16 +5340,16 @@ function startLockpickGame(room) {
     }
 
     if (!end) {
-        end = { 
-            x: start.x + start.dir.x * (size+1), 
-            y: start.y + start.dir.y * (size+1),
+        end = {
+            x: start.x + start.dir.x * (size + 1),
+            y: start.y + start.dir.y * (size + 1),
             dir: { x: -start.dir.x, y: -start.dir.y }
         };
     }
 
     // Place Walls
-    for(let y=0; y<size; y++) {
-        for(let x=0; x<size; x++) {
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
             if (!pathCells.has(`${x},${y}`) && Math.random() < 0.25) grid[y][x] = 1;
         }
     }
@@ -5407,34 +5412,34 @@ function renderLockpickGame() {
     const itemsTex = loadTexture('assets/images/items.png').image;
     const bgTileX = 6 * 128; // Sprite #6
     const wallTileX = 3 * 128; // Sprite #3
-    
-    for(let y=0; y<size; y++) {
-        for(let x=0; x<size; x++) {
+
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
             // Draw Background
             if (blockTex && blockTex.complete) {
-                ctx.drawImage(blockTex, bgTileX, 0, 128, 128, x*cellSize, y*cellSize, cellSize, cellSize);
+                ctx.drawImage(blockTex, bgTileX, 0, 128, 128, x * cellSize, y * cellSize, cellSize, cellSize);
             } else {
                 ctx.fillStyle = '#222';
-                ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
+                ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
                 ctx.strokeStyle = '#444';
-                ctx.strokeRect(x*cellSize, y*cellSize, cellSize, cellSize);
+                ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
             }
 
             const cell = grid[y][x];
-            const cx = x*cellSize + cellSize/2;
-            const cy = y*cellSize + cellSize/2;
+            const cx = x * cellSize + cellSize / 2;
+            const cy = y * cellSize + cellSize / 2;
 
             if (cell === 1) { // Wall
-                if (blockTex && blockTex.complete) ctx.drawImage(blockTex, wallTileX, 0, 128, 128, x*cellSize, y*cellSize, cellSize, cellSize);
-                else { ctx.fillStyle = '#555'; ctx.fillRect(x*cellSize+4, y*cellSize+4, cellSize-8, cellSize-8); }
+                if (blockTex && blockTex.complete) ctx.drawImage(blockTex, wallTileX, 0, 128, 128, x * cellSize, y * cellSize, cellSize, cellSize);
+                else { ctx.fillStyle = '#555'; ctx.fillRect(x * cellSize + 4, y * cellSize + 4, cellSize - 8, cellSize - 8); }
             } else if (cell === 2) { // Mirror /
                 ctx.strokeStyle = '#00ffff';
                 ctx.lineWidth = 4;
-                ctx.beginPath(); ctx.moveTo(x*cellSize+10, y*cellSize+cellSize-10); ctx.lineTo(x*cellSize+cellSize-10, y*cellSize+10); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(x * cellSize + 10, y * cellSize + cellSize - 10); ctx.lineTo(x * cellSize + cellSize - 10, y * cellSize + 10); ctx.stroke();
             } else if (cell === 3) { // Mirror \
                 ctx.strokeStyle = '#00ffff';
                 ctx.lineWidth = 4;
-                ctx.beginPath(); ctx.moveTo(x*cellSize+10, y*cellSize+10); ctx.lineTo(x*cellSize+cellSize-10, y*cellSize+cellSize-10); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(x * cellSize + 10, y * cellSize + 10); ctx.lineTo(x * cellSize + cellSize - 10, y * cellSize + cellSize - 10); ctx.stroke();
             }
         }
     }
@@ -5445,9 +5450,9 @@ function renderLockpickGame() {
         const gx = pt.x + pt.dir.x; const gy = pt.y + pt.dir.y; // Draw in adjacent valid cell
         const px = gx * cellSize; const py = gy * cellSize;
         if (itemsTex && itemsTex.complete) ctx.drawImage(itemsTex, spriteIdx * 128, 0, 128, 128, px, py, cellSize, cellSize);
-        else { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(px + cellSize/2, py + cellSize/2, cellSize/3, 0, Math.PI*2); ctx.fill(); }
+        else { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(px + cellSize / 2, py + cellSize / 2, cellSize / 3, 0, Math.PI * 2); ctx.fill(); }
     };
-    
+
     drawPort(start, 2, '#00ff00'); // Lantern
     drawPort(end, 6, '#ff0000');   // Mirror
 
@@ -5456,11 +5461,11 @@ function renderLockpickGame() {
     ctx.lineWidth = 2;
     ctx.shadowBlur = 10;
     ctx.shadowColor = '#00ff00';
-    
+
     let curr = { x: start.x + start.dir.x, y: start.y + start.dir.y };
     let dir = { ...start.dir };
-    let path = [{x: (start.x+0.5)*cellSize, y: (start.y+0.5)*cellSize}];
-    
+    let path = [{ x: (start.x + 0.5) * cellSize, y: (start.y + 0.5) * cellSize }];
+
     const beamTex = loadFXImage('trace_01.png');
 
     // Calculate Receiver Tile (Inside Grid)
@@ -5470,29 +5475,29 @@ function renderLockpickGame() {
     let steps = 0;
     let won = false;
 
-    while(steps < 100) {
+    while (steps < 100) {
         // Check Win (Hit Receiver Tile)
         if (curr.x === rx && curr.y === ry) {
             won = true;
-            path.push({x: (curr.x+0.5)*cellSize, y: (curr.y+0.5)*cellSize});
+            path.push({ x: (curr.x + 0.5) * cellSize, y: (curr.y + 0.5) * cellSize });
             break;
         }
         if (curr.x < 0 || curr.x >= size || curr.y < 0 || curr.y >= size) {
-            path.push({x: (curr.x+0.5)*cellSize, y: (curr.y+0.5)*cellSize}); // Off screen
+            path.push({ x: (curr.x + 0.5) * cellSize, y: (curr.y + 0.5) * cellSize }); // Off screen
             break;
         }
 
-        path.push({x: (curr.x+0.5)*cellSize, y: (curr.y+0.5)*cellSize});
+        path.push({ x: (curr.x + 0.5) * cellSize, y: (curr.y + 0.5) * cellSize });
 
         const cell = grid[curr.y][curr.x];
         if (cell === 1) break; // Hit wall
         if (cell === 2) { // / Mirror
             // (1,0) -> (0,-1) | (-1,0) -> (0,1) | (0,1) -> (-1,0) | (0,-1) -> (1,0)
-            const oldDir = {...dir};
+            const oldDir = { ...dir };
             dir.x = -oldDir.y;
             dir.y = -oldDir.x;
         } else if (cell === 3) { // \ Mirror
-            const oldDir = {...dir};
+            const oldDir = { ...dir };
             dir.x = oldDir.y;
             dir.y = oldDir.x;
         }
@@ -5505,7 +5510,7 @@ function renderLockpickGame() {
     // Draw Beam
     ctx.beginPath();
     ctx.moveTo(path[0].x, path[0].y);
-    for(let i=1; i<path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+    for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
@@ -5520,12 +5525,12 @@ function renderLockpickGame() {
     }
 }
 
-window.cancelLockpick = function() {
+window.cancelLockpick = function () {
     document.getElementById('lockpickUI').style.display = 'none';
     closeCombat(); // Reset state
 };
 
-window.blastLock = function() {
+window.blastLock = function () {
     // Check for Bomb Item
     const bombIdx = game.hotbar.findIndex(i => i && i.type === 'item' && i.id === 0);
     if (bombIdx !== -1) {
@@ -5536,7 +5541,7 @@ window.blastLock = function() {
     }
     takeDamage(5);
     updateUI();
-    
+
     if (game.hp > 0) {
         document.getElementById('lockpickUI').style.display = 'none';
         lockpickState.room.isLocked = false;
@@ -5547,9 +5552,9 @@ window.blastLock = function() {
 };
 
 // --- DEBUG CONSOLE COMMANDS ---
-window.setgame = function(mode, arg) {
+window.setgame = function (mode, arg) {
     console.log(`Debug Command: ${mode}`, arg || '');
-    switch(mode.toLowerCase()) {
+    switch (mode.toLowerCase()) {
         case 'finalboss':
             game.floor = 9;
             if (!game.activeRoom) game.activeRoom = game.rooms[0];
@@ -5612,10 +5617,10 @@ window.setgame = function(mode, arg) {
     }
 };
 
-window.use3dmodels = function(bool) {
+window.use3dmodels = function (bool) {
     use3dModel = bool;
     console.log(`3D Models: ${use3dModel}`);
-    
+
     // Ensure config is loaded before reloading scene
     const reloadScene = () => {
         const currentRoom = game.rooms.find(r => r.id === game.currentRoomIdx);
@@ -5623,7 +5628,7 @@ window.use3dmodels = function(bool) {
         init3D();
         generateFloorCA();
         updateAtmosphere(game.floor);
-        
+
         // Restore position
         if (currentRoom) {
             if (use3dModel && playerMesh) playerMesh.position.set(currentRoom.gx, 0.1, currentRoom.gy);
@@ -5640,18 +5645,18 @@ window.use3dmodels = function(bool) {
 }
 window.show3dmodels = window.use3dmodels; // Alias
 
-window.setAnimSpeed = function(speed) {
+window.setAnimSpeed = function (speed) {
     globalAnimSpeed = speed;
     console.log(`Animation Speed: ${globalAnimSpeed}`);
 };
 
 // --- MAP EDITOR ---
-window.editmap = function(bool) {
+window.editmap = function (bool) {
     isEditMode = bool;
     console.log(`Edit Mode: ${isEditMode}`);
-    
+
     if (scene && scene.fog) scene.fog.density = isEditMode ? 0 : 0.045;
-    
+
     let ui = document.getElementById('editorUI');
     if (isEditMode) {
         controls.minZoom = 0.1; // Allow zooming closer
@@ -5659,7 +5664,7 @@ window.editmap = function(bool) {
             ui = document.createElement('div');
             ui.id = 'editorUI';
             ui.style.cssText = "position:fixed; bottom:20px; right:20px; width:320px; background:rgba(0,0,0,0.9); border:2px solid #0ff; padding:15px; color:#fff; font-family:monospace; z-index:10000; display:flex; flex-direction:column; gap:8px; font-size:12px;";
-            
+
             const row = (label, id, min, max, step, def) => `
                 <div style="display:flex; align-items:center; justify-content:space-between;">
                     <label style="width:60px;">${label}</label>
@@ -5684,7 +5689,7 @@ window.editmap = function(bool) {
                 <button class="v2-btn" onclick="saveRoomConfig()" style="margin-top:10px; padding:5px;">Save Config (JSON)</button>
             `;
             document.body.appendChild(ui);
-            
+
             // Bind inputs
             ['edPosX', 'edPosY', 'edPosZ', 'edRotY', 'edScale', 'edScaleY'].forEach(id => {
                 document.getElementById(id).addEventListener('input', (e) => {
@@ -5698,7 +5703,7 @@ window.editmap = function(bool) {
         if (ui) ui.style.display = 'none';
         if (selectedMesh) {
             // Reset highlight
-            selectedMesh.traverse(c => { if(c.isMesh && c.material.emissive) c.material.emissive.setHex(0x000000); });
+            selectedMesh.traverse(c => { if (c.isMesh && c.material.emissive) c.material.emissive.setHex(0x000000); });
             if (currentAxesHelper) {
                 if (currentAxesHelper.parent) currentAxesHelper.parent.remove(currentAxesHelper);
                 currentAxesHelper = null;
@@ -5709,7 +5714,7 @@ window.editmap = function(bool) {
     }
 };
 
-window.resetField = function(id, def) {
+window.resetField = function (id, def) {
     if (!selectedMesh) return;
     const el = document.getElementById(id);
     if (el) {
@@ -5731,12 +5736,12 @@ function handleEditClick(event) {
     for (let i = 0; i < intersects.length; i++) {
         // Find the root GLB model (usually a Group inside the Room Mesh)
         let obj = intersects[i].object;
-        while(obj.parent && obj.parent !== scene && !obj.userData.roomId) {
+        while (obj.parent && obj.parent !== scene && !obj.userData.roomId) {
             // Check if this is a loaded GLB root (usually a Group)
-            if (obj.type === 'Group' || obj.type === 'Scene') break; 
+            if (obj.type === 'Group' || obj.type === 'Scene') break;
             obj = obj.parent;
         }
-        
+
         // If we found a GLB inside a room mesh
         if (obj && obj.parent && obj.parent.userData && obj.parent.userData.roomId !== undefined) {
             // Check for Door Warning
@@ -5755,7 +5760,7 @@ function handleEditClick(event) {
 function selectEditorMesh(mesh) {
     if (selectedMesh) {
         // Reset old highlight
-        selectedMesh.traverse(c => { if(c.isMesh && c.material.emissive) c.material.emissive.setHex(0x000000); });
+        selectedMesh.traverse(c => { if (c.isMesh && c.material.emissive) c.material.emissive.setHex(0x000000); });
         if (currentAxesHelper) {
             if (currentAxesHelper.parent) currentAxesHelper.parent.remove(currentAxesHelper);
             currentAxesHelper = null;
@@ -5763,8 +5768,8 @@ function selectEditorMesh(mesh) {
     }
     selectedMesh = mesh;
     // Highlight new
-    selectedMesh.traverse(c => { if(c.isMesh && c.material.emissive) c.material.emissive.setHex(0x00ffff); });
-    
+    selectedMesh.traverse(c => { if (c.isMesh && c.material.emissive) c.material.emissive.setHex(0x00ffff); });
+
     // Add Axes Helper (Red=X, Green=Y, Blue=Z)
     currentAxesHelper = new THREE.AxesHelper(2.5);
     currentAxesHelper.material.depthTest = false; // See through walls
@@ -5773,7 +5778,7 @@ function selectEditorMesh(mesh) {
 
     const key = mesh.userData.configKey || "Unknown Model";
     document.getElementById('editorTarget').innerText = `Selected: ${key}`;
-    
+
     // Update UI values
     const updateInput = (id, val) => {
         const el = document.getElementById(id);
@@ -5793,18 +5798,18 @@ function selectEditorMesh(mesh) {
 
 function applyEditorTransform() {
     if (!selectedMesh) return;
-    
+
     const px = parseFloat(document.getElementById('edPosX').value);
     const py = parseFloat(document.getElementById('edPosY').value);
     const pz = parseFloat(document.getElementById('edPosZ').value);
     const ry = parseFloat(document.getElementById('edRotY').value);
     const s = parseFloat(document.getElementById('edScale').value);
     const sy = parseFloat(document.getElementById('edScaleY').value);
-    
+
     selectedMesh.position.set(px, py, pz);
     selectedMesh.rotation.y = ry;
     selectedMesh.scale.set(s, sy, s); // X and Z linked to Scale, Y independent
-    
+
     // Update Config Object
     // We need to know WHICH file this is. 
     // Since we don't store the filename on the mesh, we have to infer or store it during load.
@@ -5812,26 +5817,26 @@ function applyEditorTransform() {
     // For now, let's just log it.
 }
 
-window.saveRoomConfig = function() {
+window.saveRoomConfig = function () {
     if (!selectedMesh) return;
-    
+
     // Auto-detect key or prompt
     let key = selectedMesh.userData.configKey;
     if (!key) {
         key = prompt("Enter filename key (e.g., gothic_tower-web.glb):");
         if (!key) return;
     }
-    
+
     roomConfig[key] = {
         pos: { x: selectedMesh.position.x, y: selectedMesh.position.y, z: selectedMesh.position.z },
         rot: { x: selectedMesh.rotation.x, y: selectedMesh.rotation.y, z: selectedMesh.rotation.z },
         scale: { x: selectedMesh.scale.x, y: selectedMesh.scale.y, z: selectedMesh.scale.z }
     };
-    
+
     console.log("Updated Config:", JSON.stringify(roomConfig, null, 2));
-    
+
     // Download
-    const blob = new Blob([JSON.stringify(roomConfig, null, 2)], {type : 'application/json'});
+    const blob = new Blob([JSON.stringify(roomConfig, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = 'room_config.json';
@@ -5866,26 +5871,26 @@ window.addEventListener('touchmove', (e) => {
 window.addEventListener('touchend', (e) => {
     if (!touchDragGhost) return;
     const touch = e.changedTouches[0];
-    
+
     // Hide ghost momentarily to find element below it
     touchDragGhost.style.display = 'none';
     const elemBelow = document.elementFromPoint(touch.clientX, touch.clientY);
-    
+
     document.body.removeChild(touchDragGhost);
     touchDragGhost = null;
-    
+
     if (elemBelow && touchDragMoved) {
         const slot = elemBelow.closest('[data-slot-type]');
         if (slot) {
             const targetType = slot.dataset.slotType;
             let targetIdx = slot.dataset.slotIdx;
-            
+
             // Convert index to number for arrays
             if (targetType === 'backpack' || targetType === 'hotbar' || targetType === 'anvil') targetIdx = parseInt(targetIdx);
-            
+
             // Mock event for handleDrop
             const mockEvent = {
-                preventDefault: () => {},
+                preventDefault: () => { },
                 clientX: touch.clientX, clientY: touch.clientY,
                 dataTransfer: { getData: () => JSON.stringify(touchDragData) }
             };
