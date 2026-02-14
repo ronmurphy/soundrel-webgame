@@ -356,6 +356,7 @@ const clock = new THREE.Clock();
 let globalAnimSpeed = 0.5; // Slowed down default animation speed
 let isEditMode = false;
 let selectedMesh = null;
+let currentAxesHelper = null;
 const textureLoader = new THREE.TextureLoader();
 const glbCache = new Map(); // Cache for loaded GLB assets
 const loadingPromises = new Map(); // Deduplicate in-flight loads
@@ -1353,10 +1354,10 @@ function update3DScene() {
             const isVisible = isAttractMode || (dist < vRad);
             if (isVisible) r.isRevealed = true;
 
-            if (r.isRevealed) {
+            if (r.isRevealed || isEditMode) {
                 if (r.isWaypoint) {
                     // Hidden Waypoint Logic
-                    if (r.isHidden) {
+                    if (r.isHidden && !isEditMode) {
                         // Only visible if player is in a connected room (parent)
                         const isConnected = currentRoom && currentRoom.connections.includes(r.id);
                         if (!isConnected) return; // Skip rendering
@@ -1434,14 +1435,12 @@ function update3DScene() {
                             customScale = 2.0; // Increased size
                             const rad = Math.min(rw, rh) * 0.4;
                             geo = new THREE.CylinderGeometry(rad, rad, rDepth, 16);
-                        } else if (r.isSpecial && !r.isFinal) { // Merchant/Special
-                            if (r.isSecret) {
-                                // Secret Room: Large Boulder/Mound
-                                geo = new THREE.DodecahedronGeometry(Math.min(rw, rh) * 0.9, 1);
-                            } else {
-                                // Merchant: Octagonal Room
-                                const rad = Math.min(rw, rh) * 0.45;
-                                geo = new THREE.CylinderGeometry(rad, rad * 0.8, rDepth, 8);
+                        } else if (r.isSecret) {
+                            // Secret Room: Large Boulder/Mound or Custom GLB
+                            geo = new THREE.DodecahedronGeometry(Math.min(rw, rh) * 0.9, 1);
+                            if (use3dModel) {
+                                customModelPath = 'assets/images/glb/room_secret-web.glb';
+                                customScale = 0.5;
                             }
                         } else {
                             // Varied Shapes
@@ -1662,7 +1661,10 @@ function update3DScene() {
                         targetColor = 0x444444; // Reset to dark
                         if (r.isFinal) { eCol = 0xff0000; eInt = (isVisible ? 2.5 : 0.5); }
                         else if (r.isBonfire) { eCol = 0xff8800; eInt = (isVisible ? 2.5 : 0.5); }
-                        else if (r.isSpecial) { eCol = 0x8800ff; eInt = (isVisible ? 1.5 : 0.3); }
+                        else if (r.isSpecial) { 
+                            // Only tint if NOT using 3D models (let the model texture show)
+                            if (!use3dModel) { eCol = 0x8800ff; eInt = (isVisible ? 1.5 : 0.3); }
+                        }
                     }
 
                     if (mesh.material.color.getHex() !== targetColor) mesh.material.color.setHex(targetColor);
@@ -1705,7 +1707,7 @@ function update3DScene() {
                     const distToMid = Math.sqrt(Math.pow(midX - playerObj.position.x, 2) + Math.pow(midZ - playerObj.position.z, 2));
                     const isDir = distToMid < vRad;
                     if (isDir) { r.correveals = r.correveals || {}; r.correveals[corridorId] = true; }
-                    mesh.visible = (r.correveals && r.correveals[corridorId]);
+                    mesh.visible = (r.correveals && r.correveals[corridorId]) || isEditMode;
                     if (mesh.visible) mesh.material.emissiveIntensity = (isDir ? 0.3 : 0.05);
                 }
             });
@@ -2045,7 +2047,7 @@ function updateAtmosphere(floor) {
     const black = new THREE.Color(0x050505);
     scene.background = black;
     // Black fog creates "fade to darkness" LOD effect
-    scene.fog = new THREE.FogExp2(0x000000, 0.045);
+    scene.fog = new THREE.FogExp2(0x000000, isEditMode ? 0 : 0.045);
 
     // Update ambient and hemisphere lights to match mood
     const amb = scene.children.find(c => c.isAmbientLight);
@@ -5610,6 +5612,8 @@ window.editmap = function(bool) {
     isEditMode = bool;
     console.log(`Edit Mode: ${isEditMode}`);
     
+    if (scene && scene.fog) scene.fog.density = isEditMode ? 0 : 0.045;
+    
     let ui = document.getElementById('editorUI');
     if (isEditMode) {
         controls.minZoom = 0.1; // Allow zooming closer
@@ -5657,6 +5661,10 @@ window.editmap = function(bool) {
         if (selectedMesh) {
             // Reset highlight
             selectedMesh.traverse(c => { if(c.isMesh && c.material.emissive) c.material.emissive.setHex(0x000000); });
+            if (currentAxesHelper) {
+                if (currentAxesHelper.parent) currentAxesHelper.parent.remove(currentAxesHelper);
+                currentAxesHelper = null;
+            }
             selectedMesh = null;
         }
         controls.minZoom = 0.5; // Reset zoom
@@ -5693,6 +5701,13 @@ function handleEditClick(event) {
         
         // If we found a GLB inside a room mesh
         if (obj && obj.parent && obj.parent.userData && obj.parent.userData.roomId !== undefined) {
+            // Check for Door Warning
+            if (obj.userData.configKey && obj.userData.configKey.includes('door')) {
+                if (!confirm("⚠️ WARNING: Doors are auto-positioned by the game logic.\n\nEditing this will create a static override for ALL doors, which may break their alignment in other rooms.\n\nAre you sure you want to edit the door config?")) {
+                    return;
+                }
+            }
+
             selectEditorMesh(obj);
             break;
         }
@@ -5703,11 +5718,21 @@ function selectEditorMesh(mesh) {
     if (selectedMesh) {
         // Reset old highlight
         selectedMesh.traverse(c => { if(c.isMesh && c.material.emissive) c.material.emissive.setHex(0x000000); });
+        if (currentAxesHelper) {
+            if (currentAxesHelper.parent) currentAxesHelper.parent.remove(currentAxesHelper);
+            currentAxesHelper = null;
+        }
     }
     selectedMesh = mesh;
     // Highlight new
     selectedMesh.traverse(c => { if(c.isMesh && c.material.emissive) c.material.emissive.setHex(0x00ffff); });
     
+    // Add Axes Helper (Red=X, Green=Y, Blue=Z)
+    currentAxesHelper = new THREE.AxesHelper(2.5);
+    currentAxesHelper.material.depthTest = false; // See through walls
+    currentAxesHelper.renderOrder = 999; // Draw on top
+    selectedMesh.add(currentAxesHelper);
+
     const key = mesh.userData.configKey || "Unknown Model";
     document.getElementById('editorTarget').innerText = `Selected: ${key}`;
     
