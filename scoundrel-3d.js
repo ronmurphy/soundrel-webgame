@@ -6292,10 +6292,11 @@ class Standee extends THREE.Group {
         // Card Dimensions in 3D (Approx based on GLB scale)
         const cardW = 1.0;
         const cardH = 1.75; // 1346/770 ratio
+        const pxTo3D = 1.0 / 770; // Conversion factor for WYSIWYG
 
         // Helper to create a layer mesh
-        const createLayer = (tex, zOffset) => {
-            const geo = new THREE.PlaneGeometry(cardW, cardH);
+        const createLayer = (tex, zOffset, width = cardW, height = cardH) => {
+            const geo = new THREE.PlaneGeometry(width, height);
             const mat = new THREE.MeshBasicMaterial({
                 map: tex,
                 transparent: true,
@@ -6304,6 +6305,7 @@ class Standee extends THREE.Group {
             });
             const mesh = new THREE.Mesh(geo, mat);
             mesh.position.set(0, 1.0, zOffset); // Center vertically approx
+            mesh.renderOrder = 1; // Base render order, will be overridden
             return mesh;
         };
 
@@ -6315,31 +6317,33 @@ class Standee extends THREE.Group {
         const layers = layout.layers || ['art', 'frame', 'text'];
 
         layers.forEach((layerName, idx) => {
-            const z = idx * 0.01; // Small Z separation
+            const z = idx * 0.02; // Increased Z separation slightly
             if (layerName === 'frame') {
                 const mesh = createLayer(frameTex, z);
+                mesh.renderOrder = idx + 10; // Force draw order
                 this.layersGroup.add(mesh);
             } else if (layerName === 'text') {
                 const mesh = createLayer(textTex, z);
+                mesh.renderOrder = idx + 10;
                 this.layersGroup.add(mesh);
             } else if (layerName === 'art') {
-                const mesh = createLayer(artTex, z);
-
-                // Apply Config Transforms (Map 770x1346 canvas coords to 3D space)
-                // Canvas Center is (385, 673)
-                // 3D Width is 1.0, Height is 1.75
-                // Scale factor = 1.0 / 770
-                const scaleFactor = 1.0 / 770;
+                // Use square geometry for sprite to avoid distortion
+                const mesh = createLayer(artTex, z, 1.0, 1.0);
+                mesh.renderOrder = idx + 10;
 
                 if (layout.art) {
                     const artScale = layout.art.scale || 1.0;
-                    mesh.scale.set(artScale, artScale, 1.0);
+                    // Base sprite size is 128px
+                    const spriteSize = 128 * artScale;
+                    const scale3D = spriteSize * pxTo3D;
+
+                    mesh.scale.set(scale3D, scale3D, 1.0);
 
                     const artY = layout.art.y !== undefined ? layout.art.y : 673;
                     // Invert Y (Canvas 0 is top, 3D +Y is up)
                     // Delta from center in pixels
                     const dyPx = 673 - artY;
-                    const dy3D = dyPx * scaleFactor * 1.3; // 1.3 fudge factor for aspect ratio
+                    const dy3D = dyPx * pxTo3D;
                     mesh.position.y += dy3D;
                 }
 
