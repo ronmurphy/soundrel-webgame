@@ -10,6 +10,7 @@ import { HorizontalTiltShiftShader } from 'three/addons/shaders/HorizontalTiltSh
 import { VerticalTiltShiftShader } from 'three/addons/shaders/VerticalTiltShiftShader.js';
 import { SoundManager } from './sound-manager.js';
 import { MagicCircleFX } from './magic-circle.js';
+import { CombatTerrain, updateCombatVisibility } from './combat-mechanics.js';
 
 // --- CORE GAME STATE ---
 const game = {
@@ -326,6 +327,7 @@ let decorationMeshes = []; // Store instanced meshes for cleanup
 let treePositions = []; // Store tree locations for FX
 let animatedMaterials = []; // Track shaders that need time updates
 
+let globalFloorMesh = null; // Reference for terrain manipulation
 // Audio State
 const audio = new SoundManager();
 const magicFX = new MagicCircleFX();
@@ -1957,6 +1959,11 @@ function animate3D() {
         const activeCam = isCombatView ? combatCamera : camera;
         const lockpickActive = document.getElementById('lockpickUI') && document.getElementById('lockpickUI').style.display !== 'none';
         
+        // Combat Visibility Culling (Hide things blocking the camera)
+        if (isCombatView && playerMesh) {
+            updateCombatVisibility(isCombatView, playerMesh.position, game.rooms, doorMeshes, waypointMeshes, corridorMeshes);
+        }
+
         // Disable Tilt-Shift in Combat/Puzzle to ensure clarity
         if (gameSettings.tiltShiftMode === 'threejs' && composer && !isCombatView && !lockpickActive) {
             renderPass.camera = activeCam;
@@ -2559,6 +2566,7 @@ function generateFloorCA() {
     floorMesh.matrixAutoUpdate = false;
     floorMesh.updateMatrix();
 
+    globalFloorMesh = floorMesh;
     scene.add(floorMesh);
 
     // ========================================
@@ -2628,6 +2636,7 @@ function clear3DScene() {
     decorationMeshes = [];
     treePositions = [];
     animatedMaterials = [];
+    globalFloorMesh = null;
 
     // Clear ghosts
     ghosts.forEach(g => scene.remove(g));
@@ -3370,6 +3379,23 @@ function showCombat() {
                 };
             }
             entity.setArt(assetData);
+
+            // Add simple text label under sprite
+            const valStr = (c.type === 'monster' || c.type === 'weapon' || c.type === 'potion') ? `${c.val}` : '';
+            
+            let labelColor = '#ffffff';
+            if (c.type === 'monster') {
+                if (c.bossSlot || c.val > 14) labelColor = '#ffd700'; // Gold (Guardians/Boss)
+                else if (c.val >= 11) labelColor = '#aa00ff'; // Purple (11-14)
+                else if (c.val >= 9) labelColor = '#008800'; // Dark Green (9-10)
+                else if (c.val >= 6) labelColor = '#ffaa00'; // Orange (6-8)
+            } else if (c.type === 'weapon') {
+                labelColor = '#ff4444'; // Red
+            } else if (c.type === 'potion' || c.type === 'item' || c.type === 'gift') {
+                labelColor = '#44ff44'; // Nice Green
+            }
+            const suitLabel = c.suit ? `${c.suit}: ` : 'Val: ';
+            entity.setLabel(c.name, valStr ? `${suitLabel}${valStr}` : '', labelColor);
             
             // Staggered "V" Layout
             // 0: Left Outer (Row 2) -> right*-1.5 + fwd*1.5
@@ -6261,6 +6287,35 @@ class OpenChest extends THREE.Group {
             }
         }
     }
+
+    setLabel(text, subtext, color = '#ffffff') {
+        if (this.labelSprite) this.remove(this.labelSprite);
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        
+        ctx.font = 'bold 18px Arial';
+        ctx.fillStyle = color;
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 2;
+        ctx.strokeText(text, 128, 50);
+        ctx.fillText(text, 128, 50);
+
+        if (subtext) {
+            ctx.font = 'bold 14px Arial';
+            ctx.strokeText(subtext, 128, 80);
+            ctx.fillText(subtext, 128, 80);
+        }
+        
+        const tex = new THREE.CanvasTexture(canvas);
+        const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, fog: false });
+        this.labelSprite = new THREE.Sprite(mat);
+        this.labelSprite.position.set(0, 0.6, 0); // Below the icon
+        this.labelSprite.scale.set(1.5, 0.75, 1);
+        this.add(this.labelSprite);
+    }
 }
 
 function enterCombatView() {
@@ -6275,6 +6330,11 @@ function enterCombatView() {
     // Add Combat Group to Scene
     scene.add(combatGroup);
     
+    // Flatten Terrain for clean arena
+    if (globalFloorMesh && playerMesh) {
+        CombatTerrain.flattenAround(globalFloorMesh, playerMesh.position.x, playerMesh.position.z);
+    }
+
     // Note: Actual camera movement and entity spawning will happen in showCombat
     // when we know where the player is and what enemies to spawn.
 }
@@ -6288,6 +6348,11 @@ function exitCombatView() {
     controls.target.copy(savedCamState.target);
     controls.update();
     
+    // Restore Terrain
+    if (globalFloorMesh) {
+        CombatTerrain.restore(globalFloorMesh);
+    }
+
     // Optional: Tween Ortho camera back if we moved it, but we mostly moved Perspective camera.
     // We just switch active camera in render loop, so instant switch back is fine for "exiting mind space".
 }
