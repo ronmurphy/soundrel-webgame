@@ -11,6 +11,7 @@ import { VerticalTiltShiftShader } from 'three/addons/shaders/VerticalTiltShiftS
 import { SoundManager } from './sound-manager.js';
 import { MagicCircleFX } from './magic-circle.js';
 import { CombatTerrain, updateCombatVisibility } from './combat-mechanics.js';
+import { CardDesigner } from './card-designer.js';
 
 // --- CORE GAME STATE ---
 const game = {
@@ -332,6 +333,12 @@ let globalFloorMesh = null; // Reference for terrain manipulation
 const audio = new SoundManager();
 const magicFX = new MagicCircleFX();
 
+// Card Designer
+const cardDesigner = new CardDesigner();
+window.cardDesigner = cardDesigner; // Expose for HTML callbacks
+window.openCardDesigner = () => cardDesigner.open();
+window.editcards = () => cardDesigner.open();
+
 function preloadSounds() {
     // Placeholders - You will need to add these files to assets/sounds/
     audio.load('torch_loop', 'assets/sounds/torch.ogg');
@@ -347,6 +354,23 @@ function preloadSounds() {
 
     // Use code-generated sounds for missing files (like torch/bonfire):
     audio.loadPlaceholders();
+
+    // Preload Images
+    preloadCardImages();
+}
+
+function preloadCardImages() {
+    const images = [
+        'club.png', 'spade.png', 'heart.png', 'diamond.png',
+        'skull.png', 'menace.png', 'items.png', 'armor.png',
+        'cards/card_frame_common.png', 'cards/card_frame_uncommon.png',
+        'cards/card_frame_rare.png', 'cards/card_frame_boss.png'
+    ];
+    images.forEach(file => {
+        const img = new Image();
+        img.src = `assets/images/${file}`;
+        img.onerror = () => console.error(`[Preload] Failed to load asset: assets/images/${file}`);
+    });
 }
 
 let ghosts = []; // Active ghost sprites
@@ -4883,6 +4907,7 @@ function getAssetData(type, value, suit, extra) {
     const isStrip = !file.includes('rest');
     return { file, uv: getUVForCell(cellIdx, sheetCount), isStrip, sheetCount };
 }
+window.getAssetData = getAssetData; // Expose for Card Designer
 
 function applyTextureToMesh(mesh, type, value, suit) {
     const asset = getAssetData(type, value, suit);
