@@ -2785,6 +2785,14 @@ function startDive() {
     const logo = document.getElementById('gameLogo');
     if (logo) logo.style.opacity = '0';
 
+    // Hide Control Box
+    const cb = document.querySelector('.control-box');
+    if (cb) cb.style.display = 'none';
+
+    // Show Gameplay Options Button
+    const gpOpt = document.getElementById('gameplayOptionsBtn');
+    if (gpOpt) gpOpt.style.display = 'flex';
+
     document.getElementById('avatarModal').style.display = 'flex';
 }
 window.startDive = startDive;
@@ -5080,7 +5088,14 @@ function setupLayout() {
     // 1. Create Floating Control Box
     const controlBox = document.createElement('div');
     controlBox.className = 'control-box';
+    controlBox.style.display = 'none'; // HIDDEN by default per V3 design
     document.body.appendChild(controlBox);
+
+    // Setup Gameplay Options Button
+    const gpOpt = document.getElementById('gameplayOptionsBtn');
+    if (gpOpt) {
+        gpOpt.onclick = showOptionsModal;
+    }
 
     // Add Fullscreen Button (Top Right Corner)
     const fsBtn = document.createElement('button');
@@ -5285,7 +5300,13 @@ window.showOptionsModal = function () {
 
             ${graphicsOption}
 
-            <button class="v2-btn" onclick="document.getElementById('optionsModal').style.display='none'" style="margin-top:20px; width:100%;">Close</button>
+            <div style="border-top:1px solid #444; margin-top:20px; padding-top:10px;">
+                <button class="v2-btn" onclick="showHelpModal()" style="width:100%; margin-bottom:10px;">How to Play</button>
+                <div style="display:flex; gap:10px;">
+                    <button class="v2-btn" onclick="if(confirm('Abandon current run?')){ initAttractMode(); document.getElementById('optionsModal').style.display='none'; }" style="flex:1; background:#440000; color:#ffaaaa;">Abandon</button>
+                    <button class="v2-btn" onclick="document.getElementById('optionsModal').style.display='none'" style="flex:1;">Close</button>
+                </div>
+            </div>
         </div>
     `;
     modal.style.display = 'flex';
@@ -5404,6 +5425,65 @@ window.changeHelpSlide = function (delta) {
 function initAttractMode() {
     console.log("Initializing Attract Mode...");
     isAttractMode = true;
+
+    // Hide Control Box & Gameplay Options (Control box always hidden)
+    const cb = document.querySelector('.control-box');
+    if (cb) cb.style.display = 'none';
+    
+    // (Gameplay options will be enabled below for unified button)
+
+    // Show Attraction Overlay and Setup Interactions
+    const overlay = document.getElementById('attractionOverlay');
+    if (overlay) {
+        overlay.style.display = 'block';
+        
+        // Handle Overlay Click -> Open Start Menu
+        overlay.onclick = (e) => {
+             // Don't trigger if clicked on the options button itself (even global one)
+             if (e.target.closest('#gameplayOptionsBtn')) return;
+             document.getElementById('startMenuModal').style.display = 'flex';
+        };
+    }
+    
+    // Ensure Global Options Button is Visible
+    const gpOpt = document.getElementById('gameplayOptionsBtn');
+    if (gpOpt) gpOpt.style.display = 'flex';
+
+    // Handle Start Menu Buttons
+    const startBtn = document.getElementById('startNewDiveBtn');
+    if (startBtn) {
+        startBtn.onclick = () => {
+             document.getElementById('startMenuModal').style.display = 'none';
+             if (overlay) overlay.style.display = 'none';
+             // if (cb) cb.style.display = 'flex'; // HIDDEN
+             startDive();
+        };
+    }
+
+    const contBtn = document.getElementById('continueDiveBtn');
+    if (contBtn) {
+         if (hasSave()) {
+             contBtn.style.display = 'block';
+             contBtn.onclick = () => {
+                 document.getElementById('startMenuModal').style.display = 'none';
+                 if (overlay) overlay.style.display = 'none';
+                 // if (cb) cb.style.display = 'flex'; // HIDDEN
+                 
+                 // Show Gameplay Options Button
+                 const gpOpt = document.getElementById('gameplayOptionsBtn');
+                 if (gpOpt) gpOpt.style.display = 'flex';
+
+                 // Hide Logo
+                 const logo = document.getElementById('gameLogo');
+                 if (logo) logo.style.opacity = '0';
+
+                 loadGame();
+             };
+         } else {
+             contBtn.style.display = 'none';
+         }
+    }
+
     // Hide Dock during attract mode
     const combatArea = document.querySelector('.player-combat-area');
     if (combatArea) combatArea.style.display = 'none';
@@ -5822,6 +5902,17 @@ function saveGame() {
 }
 
 function loadGame() {
+    // Ensure UI is in correct state for gameplay
+    const cb = document.querySelector('.control-box');
+    if (cb) cb.style.display = 'none';
+
+    const gpOpt = document.getElementById('gameplayOptionsBtn');
+    if (gpOpt) gpOpt.style.display = 'flex';
+
+    // Hide Logo
+    const logo = document.getElementById('gameLogo');
+    if (logo) logo.style.opacity = '0';
+
     const json = localStorage.getItem('scoundrelSave');
     if (!json) return;
 
@@ -5841,7 +5932,7 @@ function loadGame() {
 
     // Hide Attract Mode
     isAttractMode = false;
-    const logo = document.getElementById('gameLogo');
+    // const logo = document.getElementById('gameLogo'); // Redundant
     if (logo) logo.style.opacity = '0';
     const combatArea = document.querySelector('.player-combat-area');
     if (combatArea) combatArea.style.display = 'flex';
