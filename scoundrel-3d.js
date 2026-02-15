@@ -338,6 +338,8 @@ const cardDesigner = new CardDesigner();
 window.cardDesigner = cardDesigner; // Expose for HTML callbacks
 window.openCardDesigner = () => cardDesigner.open();
 window.editcards = () => cardDesigner.open();
+window.carddesigner = () => cardDesigner.open(); // Added alias
+
 
 function preloadSounds() {
     // Placeholders - You will need to add these files to assets/sounds/
@@ -1185,10 +1187,10 @@ function init3D() {
     vTilt = new ShaderPass(VerticalTiltShiftShader);
     hTilt.enabled = false;
     vTilt.enabled = false;
-    
+
     composer.addPass(hTilt);
     composer.addPass(vTilt);
-    
+
     updateTiltShiftUniforms();
 
     const aspect = container.clientWidth / container.clientHeight;
@@ -1402,7 +1404,7 @@ function on3DClick(event) {
     for (let i = 0; i < intersects.length; i++) {
         let obj = intersects[i].object;
         const current = game.rooms.find(r => r.id === game.currentRoomIdx);
-        
+
         // Check for Room Mesh Interaction
         if (obj.userData && obj.userData.roomId !== undefined) {
             const roomIdx = obj.userData.roomId;
@@ -1412,7 +1414,7 @@ function on3DClick(event) {
                 enterRoom(roomIdx);
                 break;
             }
-            
+
             // Self-Interaction (Trap, Bonfire, Merchant) in Combat View
             if (isCombatView && current && current.id === roomIdx && (current.isTrap || current.isBonfire || current.isSpecial) && current.state !== 'cleared') {
                 enterRoom(roomIdx);
@@ -1785,7 +1787,7 @@ function update3DScene() {
                         addLocalFog(mesh);
                     }
                     const mesh = roomMeshes.get(r.id);
-                    
+
                     // Fix visibility fighting with showCombat
                     if (isCombatView && game.activeRoom && r.id === game.activeRoom.id) {
                         mesh.visible = false;
@@ -1877,7 +1879,7 @@ function update3DScene() {
 
 function updateMusicForFloor() {
     if (!audio.initialized) return;
-    
+
     let track = 'bg_1';
     if (game.floor >= 4) track = 'bg_2';
     if (game.floor >= 7) track = 'bg_3';
@@ -1982,7 +1984,7 @@ function animate3D() {
     if (now - lastRenderTime >= RENDER_INTERVAL) {
         const activeCam = isCombatView ? combatCamera : camera;
         const lockpickActive = document.getElementById('lockpickUI') && document.getElementById('lockpickUI').style.display !== 'none';
-        
+
         // Combat Visibility Culling (Hide things blocking the camera)
         if (isCombatView && playerMesh) {
             updateCombatVisibility(isCombatView, playerMesh.position, game.rooms, doorMeshes, waypointMeshes, corridorMeshes);
@@ -2249,9 +2251,9 @@ function takeDamage(amount) {
         actions.idle.stop();
         if (actions.walk) actions.walk.stop();
         if (actions.attack) actions.attack.stop();
-        
+
         actions.hit.reset().play();
-        
+
         const onHitFinish = (e) => {
             if (e.action === actions.hit) {
                 actions.hit.stop();
@@ -3302,10 +3304,10 @@ function showCombat() {
         const alreadyInCombat = isCombatView;
         enterCombatView();
         overlay.style.background = 'rgba(0,0,0,0)'; // Transparent modal
-        
+
         // Clear previous 3D entities
-        while(combatGroup.children.length > 0){ 
-            combatGroup.remove(combatGroup.children[0]); 
+        while (combatGroup.children.length > 0) {
+            combatGroup.remove(combatGroup.children[0]);
         }
         combatEntities = [];
 
@@ -3331,13 +3333,13 @@ function showCombat() {
         // Determine Orientation (Face a corridor if possible)
         let forward = new THREE.Vector3(0, 0, 1); // Default +Z
         if (game.activeRoom && game.activeRoom.connections && game.activeRoom.connections.length > 0) {
-             // Pick the first connection to face
-             const targetId = game.activeRoom.connections[0];
-             const target = game.rooms.find(r => r.id === targetId);
-             if (target) {
-                 // Calculate direction from current room center to target room center
-                 forward.set(target.gx - anchorX, 0, target.gy - anchorZ).normalize();
-             }
+            // Pick the first connection to face
+            const targetId = game.activeRoom.connections[0];
+            const target = game.rooms.find(r => r.id === targetId);
+            if (target) {
+                // Calculate direction from current room center to target room center
+                forward.set(target.gx - anchorX, 0, target.gy - anchorZ).normalize();
+            }
         }
         const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
 
@@ -3373,7 +3375,7 @@ function showCombat() {
         game.combatCards.forEach((c, i) => {
             // Use OpenChest for EVERYTHING (Monsters & Items)
             const entity = new OpenChest();
-            
+
             let assetData = getAssetData(c.type, c.val, c.suit, c.type === 'gift' ? c.actualGift : null);
 
             // Override for Animated Monsters
@@ -3385,7 +3387,7 @@ function showCombat() {
 
                 const clampedVal = Math.min(c.val, 14);
                 const rankName = { 1: '1', 2: '1', 3: '1', 4: '2', 5: '2', 6: '3', 7: '3', 8: '4', 9: '4', 10: '5', 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' }[clampedVal];
-                
+
                 assetData = {
                     file: `animations/${suitName}_${rankName}.png`,
                     uv: { u: 0, v: 0 },
@@ -3394,7 +3396,7 @@ function showCombat() {
                     isAnimated: true
                 };
             } else if (c.customAsset) {
-                 assetData = {
+                assetData = {
                     file: c.customAsset,
                     uv: { u: 0, v: 0 },
                     isStrip: true,
@@ -3406,7 +3408,7 @@ function showCombat() {
 
             // Add simple text label under sprite
             const valStr = (c.type === 'monster' || c.type === 'weapon' || c.type === 'potion') ? `${c.val}` : '';
-            
+
             let labelColor = '#ffffff';
             if (c.type === 'monster') {
                 if (c.bossSlot || c.val > 14) labelColor = '#ffd700'; // Gold (Guardians/Boss)
@@ -3420,7 +3422,7 @@ function showCombat() {
             }
             const suitLabel = c.suit ? `${c.suit}: ` : 'Val: ';
             entity.setLabel(c.name, valStr ? `${suitLabel}${valStr}` : '', labelColor);
-            
+
             // Staggered "V" Layout
             // 0: Left Outer (Row 2) -> right*-1.5 + fwd*1.5
             // 1: Left Inner (Row 1) -> right*-0.5 + fwd*2.5
@@ -3433,10 +3435,10 @@ function showCombat() {
 
             entity.position.copy(new THREE.Vector3(anchorX, 0, anchorZ).addScaledVector(right, xOff).addScaledVector(forward, zOff));
             entity.lookAt(anchorX, 0, anchorZ); // Face player
-            
+
             // UserData for Raycasting
             entity.userData = { cardIdx: i, isCombatEntity: true };
-            
+
             combatGroup.add(entity);
             combatEntities.push(entity);
         });
@@ -3713,7 +3715,7 @@ function pickCard(idx, event) {
 
     let card = game.combatCards[idx];
     let cardEl = event ? event.target.closest('.card') : document.querySelectorAll('.card')[idx];
-    
+
     // Safety check if DOM element is missing
     if (!cardEl) return;
 
@@ -3846,7 +3848,7 @@ function pickCard(idx, event) {
                 actions.idle.stop();
                 if (actions.walk) actions.walk.stop();
                 actions.attack.reset().play();
-                
+
                 const onAttackFinish = (e) => {
                     if (e.action === actions.attack) {
                         actions.attack.stop();
@@ -4213,7 +4215,7 @@ function closeCombat() {
     audio.setMusicMuffled(false); // Unmuffle music
     const mp = document.getElementById('merchantPortrait');
     if (mp) mp.style.display = 'none';
-    
+
     if (use3dModel) {
         // Restore Room Mesh Visibility
         if (game.activeRoom && roomMeshes.has(game.activeRoom.id)) {
@@ -4957,10 +4959,10 @@ function toggleFullscreen() {
     }
 }
 
-window.toggleControlBox = function(show) {
+window.toggleControlBox = function (show) {
     const box = document.querySelector('.control-box');
     const restoreBtn = document.getElementById('restoreControlBtn');
-    
+
     if (show) {
         if (box) box.style.display = 'flex';
         if (restoreBtn) restoreBtn.style.display = 'none';
@@ -4977,7 +4979,7 @@ function setupLayout() {
     const controlBox = document.createElement('div');
     controlBox.className = 'control-box';
     document.body.appendChild(controlBox);
-    
+
     // Add Fullscreen Button (Top Right Corner)
     const fsBtn = document.createElement('button');
     fsBtn.className = 'v2-btn';
@@ -4999,7 +5001,7 @@ function setupLayout() {
     // Options Button (Top Left)
     const optBtn = document.createElement('button');
     optBtn.className = 'v2-btn';
-    optBtn.innerText = "⚙"; 
+    optBtn.innerText = "⚙";
     optBtn.title = "Options";
     optBtn.onclick = showOptionsModal;
     optBtn.style.cssText = "position: absolute; top: 5px; left: 5px; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: none; z-index: 10;";
@@ -5008,7 +5010,7 @@ function setupLayout() {
     // Help Button (Top Left, next to Options)
     const helpBtn = document.createElement('button');
     helpBtn.className = 'v2-btn';
-    helpBtn.innerText = "?"; 
+    helpBtn.innerText = "?";
     helpBtn.title = "How to Play";
     helpBtn.onclick = showHelpModal;
     helpBtn.style.cssText = "position: absolute; top: 5px; left: 42px; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: none; z-index: 10;";
@@ -5126,7 +5128,7 @@ function applyAudioSettings() {
     audio.setSFXMute(gameSettings.sfxMuted);
 }
 
-window.showOptionsModal = function() {
+window.showOptionsModal = function () {
     let modal = document.getElementById('optionsModal');
     if (!modal) {
         modal = document.createElement('div');
@@ -5135,7 +5137,7 @@ window.showOptionsModal = function() {
         modal.style.zIndex = '20000';
         document.body.appendChild(modal);
     }
-    
+
     // Check for True Ending Unlock
     const wins = JSON.parse(localStorage.getItem('scoundrelWins') || '{"m":false, "f":false}');
     const isTrueEndingUnlocked = (wins.m && wins.f);
@@ -5149,7 +5151,7 @@ window.showOptionsModal = function() {
             </div>
         `;
     }
-    
+
     modal.innerHTML = `
         <div style="background:rgba(0,0,0,0.9); border:2px solid var(--gold); padding:30px; width:300px; text-align:center; color:#fff; font-family:'Cinzel'; position:relative;">
             <h2 style="color:var(--gold); margin-top:0; margin-bottom:20px;">OPTIONS</h2>
@@ -5187,7 +5189,7 @@ window.showOptionsModal = function() {
     modal.style.display = 'flex';
 };
 
-window.updateSetting = function(type, val) {
+window.updateSetting = function (type, val) {
     if (type === 'vol') gameSettings.masterVolume = parseFloat(val);
     if (type === 'music') gameSettings.musicMuted = val;
     if (type === 'sfx') gameSettings.sfxMuted = val;
@@ -5200,7 +5202,7 @@ window.updateSetting = function(type, val) {
         gameSettings.tiltShiftMode = mode;
         applyTiltShiftMode(mode);
     }
-    
+
     saveSettings();
     if (type !== 'graphics') applyAudioSettings();
 };
@@ -5249,7 +5251,7 @@ const helpSlides = [
     }
 ];
 
-window.showHelpModal = function() {
+window.showHelpModal = function () {
     let modal = document.getElementById('helpModal');
     if (!modal) {
         modal = document.createElement('div');
@@ -5263,10 +5265,10 @@ window.showHelpModal = function() {
     modal.style.display = 'flex';
 };
 
-window.updateHelpUI = function() {
+window.updateHelpUI = function () {
     const modal = document.getElementById('helpModal');
     const slide = helpSlides[currentHelpSlide];
-    
+
     modal.innerHTML = `
         <div style="background:rgba(0,0,0,0.95); border:2px solid var(--gold); padding:20px; width:500px; max-width:90%; text-align:center; color:#fff; font-family:'Cinzel'; position:relative; display:flex; flex-direction:column; gap:15px;">
             <h2 style="color:var(--gold); margin:0;">HOW TO PLAY</h2>
@@ -5289,7 +5291,7 @@ window.updateHelpUI = function() {
     `;
 };
 
-window.changeHelpSlide = function(delta) {
+window.changeHelpSlide = function (delta) {
     currentHelpSlide += delta;
     if (currentHelpSlide < 0) currentHelpSlide = 0;
     if (currentHelpSlide >= helpSlides.length) currentHelpSlide = helpSlides.length - 1;
@@ -5306,7 +5308,7 @@ function initAttractMode() {
 
     game.floor = 1;
     game.rooms = generateDungeon();
-    
+
     preloadSounds(); // Start loading audio immediately
     // Initialize 3D engine
     init3D();
@@ -6202,7 +6204,7 @@ class Standee extends THREE.Group {
         // Load the Standee GLB
         loadGLB('assets/images/glb/standee-web.glb', (model) => {
             this.add(model);
-            
+
             // Find the face for art (Material named 'CardFace' OR Mesh named 'CardFace')
             model.traverse((child) => {
                 if (child.isMesh && (child.name === 'CardFace' || (child.material && child.material.name === 'CardFace'))) {
@@ -6211,7 +6213,7 @@ class Standee extends THREE.Group {
                     this.artMesh.material.color.setHex(0xffffff); // Ensure white base
                     this.artMesh.material.transparent = true;
                     this.artMesh.material.fog = false; // Ignore fog to stay bright
-                    
+
                     // Apply any texture that was set before the model loaded
                     if (this.pendingTex) {
                         this.applyTex(this.pendingTex, this.pendingConfig);
@@ -6233,7 +6235,7 @@ class Standee extends THREE.Group {
             u: assetData.uv.u,
             sheetCount: this.frameCount
         };
-        
+
         if (this.artMesh) {
             this.applyTex(tex, config);
         } else {
@@ -6272,22 +6274,22 @@ class OpenChest extends THREE.Group {
         this.isAnimated = false;
         this.frameCount = 1;
         this.currentFrame = 0;
-        
+
         // Load Chest GLB
         loadGLB('assets/images/glb/openchest-web.glb', (model) => {
             this.add(model);
         }, 1.0);
-        
+
         // Floating Item Sprite (The "Card")
         const spriteMat = new THREE.SpriteMaterial({ color: 0xffffff, transparent: true, fog: false });
         this.icon = new THREE.Sprite(spriteMat);
         this.icon.position.set(0, 1.5, 0); // Adjust height based on model
         this.icon.scale.set(0.8, 0.8, 1);
         this.add(this.icon);
-        
+
         this.floatOffset = Math.random() * 100;
     }
-    
+
     setArt(assetData) {
         const tex = getClonedTexture(`assets/images/${assetData.file}`);
         this.isAnimated = assetData.isAnimated || false;
@@ -6299,7 +6301,7 @@ class OpenChest extends THREE.Group {
         }
         this.icon.material.map = tex;
     }
-    
+
     update(time) {
         // Gentle bobbing animation for the icon
         this.icon.position.y = 1.5 + Math.sin(time * 3 + this.floatOffset) * 0.1;
@@ -6315,11 +6317,11 @@ class OpenChest extends THREE.Group {
 
     setLabel(text, subtext, color = '#ffffff') {
         if (this.labelSprite) this.remove(this.labelSprite);
-        
+
         const canvas = document.createElement('canvas');
         canvas.width = 256; canvas.height = 128;
         const ctx = canvas.getContext('2d');
-        
+
         ctx.font = 'bold 18px Arial';
         ctx.fillStyle = color;
         ctx.textAlign = 'center';
@@ -6333,7 +6335,7 @@ class OpenChest extends THREE.Group {
             ctx.strokeText(subtext, 128, 80);
             ctx.fillText(subtext, 128, 80);
         }
-        
+
         const tex = new THREE.CanvasTexture(canvas);
         const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, fog: false });
         this.labelSprite = new THREE.Sprite(mat);
@@ -6346,15 +6348,15 @@ class OpenChest extends THREE.Group {
 function enterCombatView() {
     if (isCombatView || !use3dModel) return;
     isCombatView = true;
-    
+
     // Save Camera State
     savedCamState.pos.copy(camera.position);
     savedCamState.target.copy(controls.target);
     savedCamState.zoom = camera.zoom;
-    
+
     // Add Combat Group to Scene
     scene.add(combatGroup);
-    
+
     // Flatten Terrain for clean arena
     if (globalFloorMesh && playerMesh) {
         CombatTerrain.flattenAround(globalFloorMesh, playerMesh.position.x, playerMesh.position.z);
@@ -6372,7 +6374,7 @@ function exitCombatView() {
     controls.object = camera; // Switch controls back to Ortho camera
     controls.target.copy(savedCamState.target);
     controls.update();
-    
+
     // Restore Terrain
     if (globalFloorMesh) {
         CombatTerrain.restore(globalFloorMesh);
@@ -6388,13 +6390,13 @@ window.addEventListener('keydown', (e) => {
         const sidebar = document.querySelector('.sidebar');
         const controls = document.querySelector('.control-box');
         const logo = document.getElementById('gameLogo');
-        
+
         const isHidden = sidebar.style.display === 'none';
-        
+
         sidebar.style.display = isHidden ? 'block' : 'none';
         if (controls) controls.style.display = isHidden ? 'block' : 'none';
         if (logo) logo.style.display = isHidden ? 'block' : 'none';
-        
+
         // Trigger resize to allow 3D canvas to fill the space (or revert)
         setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
         console.log(`Cinematic Mode: ${isHidden ? 'OFF' : 'ON'}`);

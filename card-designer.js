@@ -5,25 +5,26 @@ export class CardDesigner {
         this.canvas = null;
         this.ctx = null;
         this.images = {}; // Image cache
-        
-        // Preview State (What we are looking at right now)
+
+        // Preview State (Data to render)
         this.previewState = {
-            artPath: 'assets/images/animations/club_1.png', // Default to an animation
-            artIndex: 0, // Frame 0
-            sheetCount: 25, // Default to 25 frames for animations
-            textName: "Goblin Grunt",
+            artPath: 'assets/images/animations/club_1.png',
+            artIndex: 0,
+            sheetCount: 25, // Default for animations
+            textName: "Name Holder",
             textSuit: "♣",
-            textVal: "3"
+            textVal: "1"
         };
 
         this.currentTemplate = 'common';
+        this.showGrid = false;
 
-        // High-Res Configuration (770 x 1346)
-        // Defaults based on standard poker card layout scaled up
+        // Configuration for each rarity
+        // Layers: Order of drawing (0 is bottom, last is top)
         this.config = {
             common: {
                 frame: 'assets/images/cards/card_frame_common.png',
-                artBehind: true,
+                layers: ['art', 'frame', 'text'], // Standard: Art behind frame, Text on top
                 name: { x: 385, y: 1120, size: 70, color: '#ffffff', stroke: '#000000', strokeWidth: 6, font: 'Cinzel' },
                 suit: { x: 100, y: 120, size: 120, color: '#ffffff', stroke: '#000000', strokeWidth: 4 },
                 val: { x: 670, y: 120, size: 120, color: '#ffffff', stroke: '#000000', strokeWidth: 4 },
@@ -31,7 +32,7 @@ export class CardDesigner {
             },
             uncommon: {
                 frame: 'assets/images/cards/card_frame_uncommon.png',
-                artBehind: true,
+                layers: ['art', 'frame', 'text'],
                 name: { x: 385, y: 1120, size: 70, color: '#ffaa00', stroke: '#000000', strokeWidth: 6, font: 'Cinzel' },
                 suit: { x: 100, y: 120, size: 120, color: '#ffaa00', stroke: '#000000', strokeWidth: 4 },
                 val: { x: 670, y: 120, size: 120, color: '#ffaa00', stroke: '#000000', strokeWidth: 4 },
@@ -39,7 +40,7 @@ export class CardDesigner {
             },
             rare: {
                 frame: 'assets/images/cards/card_frame_rare.png',
-                artBehind: true,
+                layers: ['art', 'frame', 'text'],
                 name: { x: 385, y: 1120, size: 80, color: '#aa00ff', stroke: '#000000', strokeWidth: 8, font: 'Cinzel' },
                 suit: { x: 100, y: 120, size: 130, color: '#aa00ff', stroke: '#000000', strokeWidth: 5 },
                 val: { x: 670, y: 120, size: 130, color: '#aa00ff', stroke: '#000000', strokeWidth: 5 },
@@ -47,7 +48,7 @@ export class CardDesigner {
             },
             boss: {
                 frame: 'assets/images/cards/card_frame_boss.png',
-                artBehind: true,
+                layers: ['art', 'frame', 'text'], // Boss frame might need to be on top of art?
                 name: { x: 385, y: 1150, size: 90, color: '#ffd700', stroke: '#440000', strokeWidth: 10, font: 'Cinzel' },
                 suit: { x: 100, y: 120, size: 140, color: '#ffd700', stroke: '#000000', strokeWidth: 6 },
                 val: { x: 670, y: 120, size: 140, color: '#ffd700', stroke: '#000000', strokeWidth: 6 },
@@ -65,61 +66,96 @@ export class CardDesigner {
         this.modal = document.createElement('div');
         this.modal.style.cssText = `
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95); z-index: 30000; display: none;
-            flex-direction: row; align-items: center; justify-content: center;
-            font-family: monospace; color: #fff;
+            background: rgba(10,10,10,0.98); z-index: 30000; display: none;
+            flex-direction: row; align-items: flex-start; justify-content: center;
+            font-family: monospace; color: #fff; padding: 20px; box-sizing: border-box;
         `;
 
         // Left: Canvas Preview
         const previewContainer = document.createElement('div');
-        previewContainer.style.cssText = "margin-right: 40px; border: 2px solid #444; background: #000; display:flex; align-items:center; justify-content:center;";
-        
+        previewContainer.style.cssText = "margin-right: 20px; display:flex; flex-direction:column; align-items:center;";
+
         this.canvas = document.createElement('canvas');
         this.canvas.width = 770;
-        this.canvas.height = 1346; 
-        // Display at 50% scale to fit screen
-        this.canvas.style.width = "385px"; 
-        this.canvas.style.height = "673px";
+        this.canvas.height = 1346;
+        // Display at scale to fit screen
+        const scale = Math.min(1, (window.innerHeight - 100) / 1346);
+        this.canvas.style.width = `${770 * scale}px`;
+        this.canvas.style.height = `${1346 * scale}px`;
+        this.canvas.style.border = "2px solid #444";
+        this.canvas.style.background = "url('assets/images/block.png')"; // Checkerboard bg
         this.canvas.style.imageRendering = "pixelated";
-        
+
         this.ctx = this.canvas.getContext('2d');
         previewContainer.appendChild(this.canvas);
 
+        const gridToggle = document.createElement('div');
+        gridToggle.innerHTML = `<label><input type="checkbox" id="cd_grid"> Show Grid</label>`;
+        gridToggle.style.marginTop = "10px";
+        previewContainer.appendChild(gridToggle);
+
         // Right: Controls
         const controls = document.createElement('div');
-        controls.style.cssText = "width: 360px; background: #222; padding: 20px; border: 1px solid #d4af37; height: 90%; overflow-y: auto; display:flex; flex-direction:column; gap:10px;";
-        
+        controls.style.cssText = "width: 400px; background: #222; padding: 20px; border: 1px solid #d4af37; height: 100%; overflow-y: auto; display:flex; flex-direction:column; gap:15px;";
+
+        // Generate Animation Options
+        let animOptions = '';
+        ['club', 'spade'].forEach(suit => {
+            for (let i = 1; i <= 14; i++) {
+                let name = i;
+                if (i === 11) name = 'jack'; if (i === 12) name = 'queen'; if (i === 13) name = 'king'; if (i === 14) name = 'ace';
+                animOptions += `<option value="animations/${suit}_${name}.png">${suit} ${name}</option>`;
+            }
+        });
+        // Add Bosses
+        animOptions += `<option value="animations/guardian_abyssal_maw.png">Guardian Maw</option>`;
+        animOptions += `<option value="animations/guardian_ironclad_sentinel.png">Guardian Sentinel</option>`;
+        animOptions += `<option value="animations/guardian_gargoyle.png">Guardian Gargoyle</option>`;
+
         controls.innerHTML = `
-            <h2 style="color: #d4af37; margin: 0 0 10px 0; text-align:center;">Card Designer</h2>
+            <h2 style="color: #d4af37; margin: 0; text-align:center; border-bottom:1px solid #444; padding-bottom:10px;">Card Designer</h2>
             
-            <div style="background:#333; padding:10px; border-radius:4px;">
-                <label>Template (Rarity):</label>
+            <!-- Template & Data -->
+            <div class="cd-section">
+                <label>Rarity Template:</label>
                 <select id="cd_template" style="width: 100%; padding: 5px; background: #111; color: #fff; border: 1px solid #555;">
                     <option value="common">Common (1-5)</option>
                     <option value="uncommon">Uncommon (6-10)</option>
                     <option value="rare">Rare (11-14)</option>
                     <option value="boss">Boss</option>
                 </select>
-            </div>
-
-            <div style="background:#333; padding:10px; border-radius:4px;">
-                <label>Card Data:</label>
-                <div style="display:flex; gap:5px; margin-bottom:5px;">
+                
+                <div style="display:flex; gap:5px; margin-top:5px;">
                     <input type="text" id="cd_text_name" placeholder="Name" value="${this.previewState.textName}" style="flex:2; padding:5px;">
                     <input type="text" id="cd_text_val" placeholder="Val" value="${this.previewState.textVal}" style="flex:1; padding:5px;">
                     <input type="text" id="cd_text_suit" placeholder="Suit" value="${this.previewState.textSuit}" style="flex:1; padding:5px;">
                 </div>
             </div>
 
-            <div style="background:#333; padding:10px; border-radius:4px;">
-                <label>Preview Art:</label>
+            <!-- Frame & Layering -->
+            <div class="cd-section" style="background:#333; padding:10px; border-radius:4px;">
+                <label style="color:#88ccff;">Frame Image:</label>
+                <select id="cd_frame_select" style="width: 100%; padding: 5px; margin-bottom:5px; background: #111; color: #fff; border: 1px solid #555;">
+                    <option value="cards/card_frame_common.png">Common Frame</option>
+                    <option value="cards/card_frame_uncommon.png">Uncommon Frame</option>
+                    <option value="cards/card_frame_rare.png">Rare Frame</option>
+                    <option value="cards/card_frame_boss.png">Boss Frame</option>
+                </select>
+
+                <label style="color:#88ccff;">Layer Order:</label>
+                <select id="cd_layer_select" style="width: 100%; padding: 5px; background: #111; color: #fff; border: 1px solid #555;">
+                    <option value="art,frame,text">Standard (Art -> Frame -> Text)</option>
+                    <option value="frame,art,text">Window (Frame -> Art -> Text)</option>
+                    <option value="art,text,frame">Overlay (Art -> Text -> Frame)</option>
+                </select>
+            </div>
+
+            <!-- Art Controls -->
+            <div class="cd-section" style="background:#333; padding:10px; border-radius:4px;">
+                <label style="color:#88ff88;">Sprite Art:</label>
                 <select id="cd_art_select" style="width: 100%; padding: 5px; background: #111; color: #fff; border: 1px solid #555; margin-bottom:5px;">
                     <optgroup label="Animations (25 Frames)">
-                        <option value="animations/club_1.png">Club 1 (Beast)</option>
-                        <option value="animations/club_jack.png">Club Jack (Boss)</option>
-                        <option value="animations/spade_1.png">Spade 1 (Undead)</option>
-                        <option value="animations/spade_king.png">Spade King (Boss)</option>
-                        <option value="animations/guardian_abyssal_maw.png">Guardian Maw</option>
+                        ${animOptions}
                     </optgroup>
                     <optgroup label="Static Assets">
                         <option value="diamond.png">Diamonds (Weapons)</option>
@@ -128,20 +164,21 @@ export class CardDesigner {
                         <option value="armor.png">Armor</option>
                     </optgroup>
                 </select>
-                <div style="display:flex; justify-content:space-between; font-size:11px; color:#aaa;">
-                    <span>Frame Index</span>
-                    <span id="val_art_idx">0</span>
-                </div>
-                <input type="range" id="cd_art_idx" min="0" max="24" value="0" style="width:100%">
                 
-                <div style="display:flex; justify-content:space-between; font-size:11px; color:#aaa;">
-                    <span>Sheet Count</span>
-                    <span id="val_sheet_count">25</span>
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1">
+                        <label style="font-size:10px;">Frame Index</label>
+                        <input type="range" id="cd_art_idx" min="0" max="24" value="0" style="width:100%">
+                    </div>
+                    <div style="flex:1">
+                        <label style="font-size:10px;">Sheet Count</label>
+                        <input type="number" id="cd_sheet_count" value="25" style="width:100%; background:#111; color:#fff; border:1px solid #555;">
+                    </div>
                 </div>
-                <input type="range" id="cd_sheet_count" min="1" max="25" value="25" style="width:100%">
             </div>
             
-            <div id="cd_sliders">
+            <!-- Dynamic Sliders -->
+            <div id="cd_sliders" style="flex-grow:1; overflow-y:auto;">
                 <!-- Sliders injected here -->
             </div>
 
@@ -157,13 +194,33 @@ export class CardDesigner {
         document.body.appendChild(this.modal);
 
         // Bind Events
+        this.bindEvents();
+        this.refreshControls();
+    }
+
+    bindEvents() {
         document.getElementById('cd_close').onclick = () => this.close();
         document.getElementById('cd_import').onclick = () => this.importJSON();
         document.getElementById('cd_save').onclick = () => this.exportJSON();
-        
+
+        document.getElementById('cd_grid').onchange = (e) => {
+            this.showGrid = e.target.checked;
+            this.draw();
+        };
+
         document.getElementById('cd_template').onchange = (e) => {
             this.currentTemplate = e.target.value;
             this.refreshControls();
+            this.draw();
+        };
+
+        // Frame & Layer
+        document.getElementById('cd_frame_select').onchange = (e) => {
+            this.config[this.currentTemplate].frame = `assets/images/${e.target.value}`;
+            this.draw();
+        };
+        document.getElementById('cd_layer_select').onchange = (e) => {
+            this.config[this.currentTemplate].layers = e.target.value.split(',');
             this.draw();
         };
 
@@ -180,7 +237,7 @@ export class CardDesigner {
                 this.draw();
             };
         });
-        
+
         // Art Controls
         document.getElementById('cd_art_select').onchange = (e) => {
             this.previewState.artPath = `assets/images/${e.target.value}`;
@@ -188,27 +245,21 @@ export class CardDesigner {
             if (e.target.value.includes('animations')) {
                 this.previewState.sheetCount = 25;
                 document.getElementById('cd_sheet_count').value = 25;
-                document.getElementById('val_sheet_count').innerText = 25;
             } else {
                 this.previewState.sheetCount = 9; // Standard strips
                 document.getElementById('cd_sheet_count').value = 9;
-                document.getElementById('val_sheet_count').innerText = 9;
             }
             this.draw();
         };
 
         document.getElementById('cd_art_idx').oninput = (e) => {
             this.previewState.artIndex = parseInt(e.target.value);
-            document.getElementById('val_art_idx').innerText = e.target.value;
             this.draw();
         };
         document.getElementById('cd_sheet_count').oninput = (e) => {
             this.previewState.sheetCount = parseInt(e.target.value);
-            document.getElementById('val_sheet_count').innerText = e.target.value;
             this.draw();
         };
-
-        this.refreshControls();
     }
 
     autoSelectTemplate(valStr) {
@@ -233,9 +284,19 @@ export class CardDesigner {
             const res = await fetch('assets/images/cards/card_layout.json?v=' + Date.now());
             if (res.ok) {
                 const data = await res.json();
-                // Merge loaded config with defaults to ensure missing keys don't break
-                this.config = { ...this.config, ...data };
+                // Merge deeper to preserve defaults if JSON is partial
+                Object.keys(data).forEach(key => {
+                    if (this.config[key]) {
+                        this.config[key] = { ...this.config[key], ...data[key] };
+                    } else {
+                        this.config[key] = data[key];
+                    }
+                });
                 console.log("Card Designer: Loaded external layout config.");
+                if (this.active) {
+                    this.refreshControls();
+                    this.draw();
+                }
             }
         } catch (e) {
             console.log("Card Designer: Using default layout.");
@@ -247,11 +308,19 @@ export class CardDesigner {
         container.innerHTML = '';
         const cfg = this.config[this.currentTemplate];
 
+        // Update static selectors to match config
+        const framePath = cfg.frame ? cfg.frame.replace('assets/images/', '') : '';
+        const frameSel = document.getElementById('cd_frame_select');
+        if (frameSel && framePath) frameSel.value = framePath;
+
+        const layerSel = document.getElementById('cd_layer_select');
+        if (layerSel && cfg.layers) layerSel.value = cfg.layers.join(',');
+
         const addControl = (category, obj, key, min, max, step = 1) => {
             const div = document.createElement('div');
             div.style.marginBottom = '5px';
             div.innerHTML = `
-                <div style="display:flex; justify-content:space-between; font-size:12px; color:#aaa;">
+                <div style="display:flex; justify-content:space-between; font-size:11px; color:#aaa;">
                     <span>${category} ${key}</span>
                     <span id="val_${category}_${key}">${obj[key]}</span>
                 </div>
@@ -261,63 +330,49 @@ export class CardDesigner {
             container.appendChild(div);
         };
 
-        const addSection = (title) => {
+        const addSection = (title, color) => {
             const h = document.createElement('h4');
             h.innerText = title;
-            h.style.cssText = "margin:15px 0 5px 0; color:#ddd; border-bottom:1px solid #444; font-size:14px;";
+            h.style.cssText = `margin:15px 0 5px 0; color:${color}; border-bottom:1px solid #444; font-size:14px;`;
             container.appendChild(h);
         };
 
         // Art Settings
-        addSection("Art Placement");
-        const cbDiv = document.createElement('div');
-        cbDiv.style.marginBottom = '10px';
-        cbDiv.innerHTML = `
-            <div style="display:flex; align-items:center; font-size:12px; color:#aaa;">
-                <input type="checkbox" id="cb_artBehind" ${cfg.artBehind ? 'checked' : ''} 
-                    onchange="window.cardDesigner.updateValue('root', 'artBehind', this.checked)">
-                <label for="cb_artBehind" style="margin-left:5px; color:#fff;">Art Behind Frame</label>
-            </div>
-        `;
-        container.appendChild(cbDiv);
+        addSection("Art Placement", "#88ff88");
         addControl('art', cfg.art, 'y', 0, 1346);
         addControl('art', cfg.art, 'scale', 0.1, 10.0, 0.1);
 
         // Text Settings
-        addSection("Name Text");
+        addSection("Name Text", "#ffffff");
         addControl('name', cfg.name, 'x', 0, 770);
         addControl('name', cfg.name, 'y', 0, 1346);
         addControl('name', cfg.name, 'size', 10, 200);
 
-        addSection("Suit Icon");
+        addSection("Suit Icon", "#ff8888");
         addControl('suit', cfg.suit, 'x', 0, 770);
         addControl('suit', cfg.suit, 'y', 0, 1346);
         addControl('suit', cfg.suit, 'size', 10, 200);
 
-        addSection("Value Text");
+        addSection("Value Text", "#8888ff");
         addControl('val', cfg.val, 'x', 0, 770);
         addControl('val', cfg.val, 'y', 0, 1346);
         addControl('val', cfg.val, 'size', 10, 200);
     }
 
     updateValue(group, key, val) {
-        if (group === 'root') {
-            this.config[this.currentTemplate][key] = val;
-        } else {
-            this.config[this.currentTemplate][group][key] = parseFloat(val);
-        }
+        this.config[this.currentTemplate][group][key] = parseFloat(val);
         this.draw();
     }
 
     loadImage(path) {
         if (!path) return null;
         if (this.images[path]) return this.images[path];
-        
+
         const img = new Image();
         img.src = path;
         img.onload = () => this.draw();
         img.onerror = () => console.error(`[CardDesigner] FAILED to load: ${path}`);
-        
+
         this.images[path] = img;
         return img;
     }
@@ -342,10 +397,6 @@ export class CardDesigner {
 
         // Clear Canvas
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        
-        // Fill black background to see transparency
-        ctx.fillStyle = '#000'; 
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // Helper: Draw Art
         const drawArt = () => {
@@ -353,18 +404,14 @@ export class CardDesigner {
             ctx.save();
             ctx.translate(385, cfg.art.y); // Center X is 385
             ctx.scale(cfg.art.scale, cfg.art.scale);
-            
+
             if (artImg && artImg.complete && artImg.naturalWidth > 0) {
-                // Sprite Sheet Logic
-                // If sheetCount is 25, width of one cell is totalWidth / 25
                 const sw = artImg.width / this.previewState.sheetCount;
                 const sh = artImg.height;
                 const sx = this.previewState.artIndex * sw;
-                
-                // Draw centered at origin (which is translated to 385, art.y)
-                ctx.drawImage(artImg, sx, 0, sw, sh, -sw/2, -sh/2, sw, sh);
+                ctx.drawImage(artImg, sx, 0, sw, sh, -sw / 2, -sh / 2, sw, sh);
             } else {
-                // Placeholder box
+                // Placeholder
                 ctx.fillStyle = '#333';
                 ctx.fillRect(-64, -64, 128, 128);
                 ctx.fillStyle = '#555';
@@ -380,41 +427,61 @@ export class CardDesigner {
             if (frameImg && frameImg.complete && frameImg.naturalWidth > 0) {
                 ctx.drawImage(frameImg, 0, 0, this.canvas.width, this.canvas.height);
             } else {
-                // Fallback frame
-                ctx.strokeStyle = this.currentTemplate === 'rare' ? 'gold' : '#888';
-                ctx.lineWidth = 10;
-                ctx.strokeRect(5, 5, 760, 1336);
+                ctx.strokeStyle = '#f00';
+                ctx.lineWidth = 5;
+                ctx.strokeRect(0, 0, this.canvas.width, this.canvas.height);
             }
         };
-
-        // Layering
-        if (cfg.artBehind) {
-            drawArt();
-            drawFrame();
-        } else {
-            drawFrame();
-            drawArt();
-        }
 
         // Helper: Draw Text
-        const drawText = (text, settings) => {
-            ctx.font = `bold ${settings.size}px ${settings.font || 'Arial'}`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            
-            if (settings.strokeWidth > 0) {
-                ctx.strokeStyle = settings.stroke || '#000';
-                ctx.lineWidth = settings.strokeWidth;
-                ctx.strokeText(text, settings.x, settings.y);
-            }
-            
-            ctx.fillStyle = settings.color;
-            ctx.fillText(text, settings.x, settings.y);
+        const drawText = () => {
+            const renderTxt = (text, settings) => {
+                ctx.font = `bold ${settings.size}px ${settings.font || 'Arial'}`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                if (settings.shadow > 0) {
+                    ctx.shadowColor = "black";
+                    ctx.shadowBlur = settings.shadow;
+                } else {
+                    ctx.shadowBlur = 0;
+                }
+
+                if (settings.strokeWidth > 0) {
+                    ctx.strokeStyle = settings.stroke || '#000';
+                    ctx.lineWidth = settings.strokeWidth;
+                    ctx.strokeText(text, settings.x, settings.y);
+                }
+
+                ctx.fillStyle = settings.color;
+                ctx.fillText(text, settings.x, settings.y);
+                ctx.shadowBlur = 0; // Reset
+            };
+
+            renderTxt(this.previewState.textName, cfg.name);
+            renderTxt(this.previewState.textSuit, cfg.suit);
+            renderTxt(this.previewState.textVal, cfg.val);
         };
 
-        drawText(this.previewState.textName, cfg.name);
-        drawText(this.previewState.textSuit, cfg.suit);
-        drawText(this.previewState.textVal, cfg.val);
+        // Render Layers based on Order
+        const layers = cfg.layers || ['art', 'frame', 'text'];
+        layers.forEach(layer => {
+            if (layer === 'art') drawArt();
+            if (layer === 'frame') drawFrame();
+            if (layer === 'text') drawText();
+        });
+
+        // Draw Grid Overlay
+        if (this.showGrid) {
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            // Center Line
+            ctx.moveTo(385, 0); ctx.lineTo(385, 1346);
+            // Horizontal Lines
+            for (let y = 0; y < 1346; y += 100) { ctx.moveTo(0, y); ctx.lineTo(770, y); }
+            ctx.stroke();
+        }
     }
 
     exportJSON() {
