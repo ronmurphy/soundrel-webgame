@@ -421,7 +421,7 @@ function loadGLB(path, callback, scale = 1.0, configKey = null) {
             if (c.rot) model.rotation.set(c.rot.x, c.rot.y, c.rot.z);
             if (c.scale) {
                 model.scale.set(c.scale.x, c.scale.y, c.scale.z);
-                console.debug(`[GLB] Applied CONFIG scale for ${key}:`, model.scale);
+                // console.debug(`[GLB] Applied CONFIG scale for ${key}:`, model.scale);
             } else {
                 console.debug(`[GLB] Config found but NO scale for ${key}, using default:`, scale);
             }
@@ -448,7 +448,7 @@ function loadGLB(path, callback, scale = 1.0, configKey = null) {
         return;
     }
 
-    console.log(`[GLB] Loading: ${path} (Scale: ${scale})`);
+    // console.log(`[GLB] Loading: ${path} (Scale: ${scale})`);
 
     const promise = new Promise((resolve, reject) => {
         gltfLoader.load(path, (gltf) => {
@@ -2752,6 +2752,7 @@ function startDive() {
 
     document.getElementById('avatarModal').style.display = 'flex';
 }
+window.startDive = startDive;
 window.selectAvatar = (sex) => {
     game.sex = sex;
     document.getElementById('avatarModal').style.display = 'none';
@@ -4460,6 +4461,7 @@ function updateUI() {
                 <div id="torchBarDock" style="position: absolute; bottom: 0; left: 0; width: 100%; height: 100%; background: #ffaa44; transition: height 0.3s;"></div>
             </div>
             <div id="torchValueDock" style="font-size: 0.9rem; color: #fff; margin-top: 2px; font-weight: bold; text-shadow: 0 1px 2px #000;">20</div>
+            <button id="restoreControlBtn" class="v2-btn" onclick="toggleControlBox(true)" title="Restore Controls" style="display:none; padding:0; width:24px; height:24px; min-height:24px; font-size:12px; margin-top:5px; line-height:1; align-items:center; justify-content:center; box-shadow:none; border:1px solid #444;">▲</button>
         `;
         statSubgrid.appendChild(torchCol);
     }
@@ -4904,6 +4906,19 @@ function toggleFullscreen() {
     }
 }
 
+window.toggleControlBox = function(show) {
+    const box = document.querySelector('.control-box');
+    const restoreBtn = document.getElementById('restoreControlBtn');
+    
+    if (show) {
+        if (box) box.style.display = 'flex';
+        if (restoreBtn) restoreBtn.style.display = 'none';
+    } else {
+        if (box) box.style.display = 'none';
+        if (restoreBtn) restoreBtn.style.display = 'flex';
+    }
+};
+
 // --- LAYOUT SETUP ---
 function setupLayout() {
     console.log("Initializing Custom Layout...");
@@ -4920,6 +4935,15 @@ function setupLayout() {
     fsBtn.onclick = toggleFullscreen;
     fsBtn.style.cssText = "position: absolute; top: 5px; right: 5px; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: none; z-index: 10;";
     controlBox.appendChild(fsBtn);
+
+    // Minimize Button (Left of Fullscreen)
+    const minBtn = document.createElement('button');
+    minBtn.className = 'v2-btn';
+    minBtn.innerText = "▼";
+    minBtn.title = "Minimize Controls";
+    minBtn.onclick = () => toggleControlBox(false);
+    minBtn.style.cssText = "position: absolute; top: 5px; right: 42px; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1.0rem; box-shadow: none; z-index: 10;";
+    controlBox.appendChild(minBtn);
 
     // Options Button (Top Left)
     const optBtn = document.createElement('button');
@@ -4975,6 +4999,15 @@ function setupLayout() {
         contBtn.style.width = '100%';
         controlBox.appendChild(contBtn);
     }
+
+    // Add New Dive Button
+    const newBtn = document.createElement('button');
+    newBtn.className = 'v2-btn';
+    newBtn.innerText = "New Dive";
+    newBtn.onclick = startDive;
+    newBtn.style.width = '100%';
+    newBtn.style.marginTop = '5px';
+    controlBox.appendChild(newBtn);
 
     // Reposition Control Box to Bottom Left (above Dock)
     controlBox.style.top = 'auto';
@@ -5096,10 +5129,6 @@ window.showOptionsModal = function() {
             </div>
 
             ${graphicsOption}
-
-            <div style="margin-top:30px; border-top:1px solid #444; padding-top:20px;">
-                <button class="v2-btn" onclick="document.getElementById('optionsModal').style.display='none'; startDive();" style="width:100%; background:#800; color:#fff;">NEW DIVE</button>
-            </div>
 
             <button class="v2-btn" onclick="document.getElementById('optionsModal').style.display='none'" style="margin-top:20px; width:100%;">Close</button>
         </div>

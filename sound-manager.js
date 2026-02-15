@@ -48,7 +48,7 @@ export class SoundManager {
             const arrayBuffer = await response.arrayBuffer();
             const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
             this.buffers.set(name, audioBuffer);
-            console.log(`Sound loaded: ${name}`);
+            // console.log(`Sound loaded: ${name}`);
         } catch (error) {
             console.warn(`SoundManager: Could not load ${name} from ${url}`, error);
         }
