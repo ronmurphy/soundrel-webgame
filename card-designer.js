@@ -24,7 +24,7 @@ export class CardDesigner {
         this.config = {
             common: {
                 frame: 'assets/images/cards/card_frame_common.png',
-                layers: ['art', 'frame', 'text'], // Standard: Art behind frame, Text on top
+                layers: ['frame', 'art', 'text'], // Pop-out: Art on top of frame
                 name: { x: 385, y: 1120, size: 70, color: '#ffffff', stroke: '#000000', strokeWidth: 6, font: 'Cinzel' },
                 suit: { x: 100, y: 120, size: 120, color: '#ffffff', stroke: '#000000', strokeWidth: 4 },
                 val: { x: 670, y: 120, size: 120, color: '#ffffff', stroke: '#000000', strokeWidth: 4 },
@@ -32,7 +32,7 @@ export class CardDesigner {
             },
             uncommon: {
                 frame: 'assets/images/cards/card_frame_uncommon.png',
-                layers: ['art', 'frame', 'text'],
+                layers: ['frame', 'art', 'text'],
                 name: { x: 385, y: 1120, size: 70, color: '#ffaa00', stroke: '#000000', strokeWidth: 6, font: 'Cinzel' },
                 suit: { x: 100, y: 120, size: 120, color: '#ffaa00', stroke: '#000000', strokeWidth: 4 },
                 val: { x: 670, y: 120, size: 120, color: '#ffaa00', stroke: '#000000', strokeWidth: 4 },
@@ -83,7 +83,7 @@ export class CardDesigner {
         this.canvas.style.width = `${770 * scale}px`;
         this.canvas.style.height = `${1346 * scale}px`;
         this.canvas.style.border = "2px solid #444";
-        this.canvas.style.background = "url('assets/images/block.png')"; // Checkerboard bg
+        // this.canvas.style.background = "url('assets/images/block.png')"; // Checkerboard bg
         this.canvas.style.imageRendering = "pixelated";
 
         this.ctx = this.canvas.getContext('2d');
@@ -134,19 +134,10 @@ export class CardDesigner {
 
             <!-- Frame & Layering -->
             <div class="cd-section" style="background:#333; padding:10px; border-radius:4px;">
-                <label style="color:#88ccff;">Frame Image:</label>
-                <select id="cd_frame_select" style="width: 100%; padding: 5px; margin-bottom:5px; background: #111; color: #fff; border: 1px solid #555;">
-                    <option value="cards/card_frame_common.png">Common Frame</option>
-                    <option value="cards/card_frame_uncommon.png">Uncommon Frame</option>
-                    <option value="cards/card_frame_rare.png">Rare Frame</option>
-                    <option value="cards/card_frame_boss.png">Boss Frame</option>
-                </select>
-
                 <label style="color:#88ccff;">Layer Order:</label>
                 <select id="cd_layer_select" style="width: 100%; padding: 5px; background: #111; color: #fff; border: 1px solid #555;">
-                    <option value="art,frame,text">Standard (Art -> Frame -> Text)</option>
-                    <option value="frame,art,text">Window (Frame -> Art -> Text)</option>
-                    <option value="art,text,frame">Overlay (Art -> Text -> Frame)</option>
+                    <option value="art,frame,text">Standard (Art Behind Frame)</option>
+                    <option value="frame,art,text">Pop-out (Art Over Frame)</option>
                 </select>
             </div>
 
@@ -215,10 +206,6 @@ export class CardDesigner {
         };
 
         // Frame & Layer
-        document.getElementById('cd_frame_select').onchange = (e) => {
-            this.config[this.currentTemplate].frame = `assets/images/${e.target.value}`;
-            this.draw();
-        };
         document.getElementById('cd_layer_select').onchange = (e) => {
             this.config[this.currentTemplate].layers = e.target.value.split(',');
             this.draw();
@@ -309,9 +296,9 @@ export class CardDesigner {
         const cfg = this.config[this.currentTemplate];
 
         // Update static selectors to match config
-        const framePath = cfg.frame ? cfg.frame.replace('assets/images/', '') : '';
-        const frameSel = document.getElementById('cd_frame_select');
-        if (frameSel && framePath) frameSel.value = framePath;
+        // const framePath = cfg.frame ? cfg.frame.replace('assets/images/', '') : '';
+        // const frameSel = document.getElementById('cd_frame_select');
+        // if(frameSel && framePath) frameSel.value = framePath;
 
         const layerSel = document.getElementById('cd_layer_select');
         if (layerSel && cfg.layers) layerSel.value = cfg.layers.join(',');
