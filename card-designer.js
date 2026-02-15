@@ -271,12 +271,20 @@ export class CardDesigner {
             const res = await fetch('assets/images/cards/card_layout.json?v=' + Date.now());
             if (res.ok) {
                 const data = await res.json();
-                // Merge deeper to preserve defaults if JSON is partial
-                Object.keys(data).forEach(key => {
-                    if (this.config[key]) {
-                        this.config[key] = { ...this.config[key], ...data[key] };
+                // Deep merge to preserve defaults if JSON is partial
+                Object.keys(data).forEach(rarity => {
+                    if (this.config[rarity]) {
+                        Object.keys(data[rarity]).forEach(prop => {
+                            // If it's a nested object (like name, suit, val, art), merge it
+                            if (typeof data[rarity][prop] === 'object' && !Array.isArray(data[rarity][prop]) && this.config[rarity][prop]) {
+                                this.config[rarity][prop] = { ...this.config[rarity][prop], ...data[rarity][prop] };
+                            } else {
+                                // Otherwise overwrite (strings, arrays like layers)
+                                this.config[rarity][prop] = data[rarity][prop];
+                            }
+                        });
                     } else {
-                        this.config[key] = data[key];
+                        this.config[rarity] = data[rarity];
                     }
                 });
                 console.log("Card Designer: Loaded external layout config.");
@@ -423,26 +431,32 @@ export class CardDesigner {
         // Helper: Draw Text
         const drawText = () => {
             const renderTxt = (text, settings) => {
-                ctx.font = `bold ${settings.size}px ${settings.font || 'Arial'}`;
+                if (!settings) return;
+                ctx.save();
+
+                const size = settings.size || 40;
+                const font = settings.font || 'Cinzel';
+                const x = settings.x !== undefined ? settings.x : this.canvas.width / 2;
+                const y = settings.y !== undefined ? settings.y : this.canvas.height / 2;
+
+                ctx.font = `bold ${size}px ${font}, Arial, sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
 
                 if (settings.shadow > 0) {
                     ctx.shadowColor = "black";
                     ctx.shadowBlur = settings.shadow;
-                } else {
-                    ctx.shadowBlur = 0;
                 }
 
                 if (settings.strokeWidth > 0) {
                     ctx.strokeStyle = settings.stroke || '#000';
                     ctx.lineWidth = settings.strokeWidth;
-                    ctx.strokeText(text, settings.x, settings.y);
+                    ctx.strokeText(text, x, y);
                 }
 
-                ctx.fillStyle = settings.color;
-                ctx.fillText(text, settings.x, settings.y);
-                ctx.shadowBlur = 0; // Reset
+                ctx.fillStyle = settings.color || '#fff';
+                ctx.fillText(text, x, y);
+                ctx.restore();
             };
 
             renderTxt(this.previewState.textName, cfg.name);
