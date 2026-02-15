@@ -1,93 +1,173 @@
 {
   "common": {
-    "art": {
-      "x": 0,
-      "y": -0.03,
-      "s": 0.64
-    },
+    "frame": "assets/images/cards/card_frame_common.png",
+    "layers": [
+      "frame",
+      "art",
+      "text"
+    ],
     "name": {
-      "x": -0.1,
-      "y": 0.57,
+      "x": 380,
+      "y": 284,
+      "size": 70,
+      "color": "#ffffff",
+      "stroke": "#000000",
+      "strokeWidth": 6,
+      "font": "Cinzel",
       "s": 60
     },
-    "val": {
-      "x": -0.56,
-      "y": -0.57,
+    "suit": {
+      "x": 627,
+      "y": 1060,
+      "size": 120,
+      "color": "#ffffff",
+      "stroke": "#000000",
+      "strokeWidth": 4,
       "s": 100
     },
-    "suit": {
-      "x": 0.64,
-      "y": 0.58,
+    "val": {
+      "x": 169,
+      "y": 1068,
+      "size": 120,
+      "color": "#ffffff",
+      "stroke": "#000000",
+      "strokeWidth": 4,
       "s": 100
+    },
+    "art": {
+      "x": 0,
+      "y": 666,
+      "scale": 4.3,
+      "s": 0.64
     },
     "artBehind": false
   },
   "uncommon": {
-    "art": {
-      "x": 0,
-      "y": -0.06,
-      "s": 0.51
-    },
+    "frame": "assets/images/cards/card_frame_uncommon.png",
+    "layers": [
+      "frame",
+      "art",
+      "text"
+    ],
     "name": {
-      "x": 0.05,
-      "y": 0.52,
+      "x": 370,
+      "y": 316,
+      "size": 29,
+      "color": "#ffaa00",
+      "stroke": "#000000",
+      "strokeWidth": 6,
+      "font": "Cinzel",
       "s": 41
     },
-    "val": {
-      "x": -0.52,
-      "y": 0.52,
+    "suit": {
+      "x": 582,
+      "y": 324,
+      "size": 120,
+      "color": "#ffaa00",
+      "stroke": "#000000",
+      "strokeWidth": 4,
       "s": 100
     },
-    "suit": {
-      "x": 0.55,
-      "y": 0.53,
+    "val": {
+      "x": 187,
+      "y": 324,
+      "size": 78,
+      "color": "#ffaa00",
+      "stroke": "#000000",
+      "strokeWidth": 4,
       "s": 100
+    },
+    "art": {
+      "x": 0,
+      "y": 722,
+      "scale": 3.6,
+      "s": 0.51
     },
     "artBehind": false
   },
   "rare": {
-    "art": {
-      "x": 0,
-      "y": -0.11,
-      "s": 0.7
-    },
+    "frame": "assets/images/cards/card_frame_rare.png",
+    "layers": [
+      "art",
+      "frame",
+      "text"
+    ],
     "name": {
-      "x": 0.01,
-      "y": 0.83,
+      "x": 374,
+      "y": 109,
+      "size": 38,
+      "color": "#aa00ff",
+      "stroke": "#000000",
+      "strokeWidth": 8,
+      "font": "Cinzel",
       "s": 42
     },
-    "val": {
-      "x": 0,
-      "y": 0.58,
+    "suit": {
+      "x": 183,
+      "y": 284,
+      "size": 112,
+      "color": "#aa00ff",
+      "stroke": "#000000",
+      "strokeWidth": 5,
       "s": 100
     },
-    "suit": {
-      "x": -0.52,
-      "y": 0.59,
+    "val": {
+      "x": 388,
+      "y": 288,
+      "size": 130,
+      "color": "#aa00ff",
+      "stroke": "#000000",
+      "strokeWidth": 5,
       "s": 100
+    },
+    "art": {
+      "x": 0,
+      "y": 762,
+      "scale": 4.8,
+      "s": 0.7
     },
     "artBehind": true
   },
   "boss": {
-    "art": {
-      "x": 0.03,
-      "y": -0.03,
-      "s": 0.67
-    },
+    "frame": "assets/images/cards/card_frame_boss.png",
+    "layers": [
+      "art",
+      "frame",
+      "text"
+    ],
     "name": {
-      "x": 0,
-      "y": 0.6,
+      "x": 404,
+      "y": 268,
+      "size": 33,
+      "color": "#ffd700",
+      "stroke": "#440000",
+      "strokeWidth": 10,
+      "font": "Cinzel",
       "s": 33
     },
-    "val": {
-      "x": -0.56,
-      "y": 0.55,
+    "suit": {
+      "x": 607,
+      "y": 304,
+      "size": 118,
+      "color": "#ffd700",
+      "stroke": "#000000",
+      "strokeWidth": 6,
       "s": 100
     },
-    "suit": {
-      "x": 0.57,
-      "y": 0.56,
+    "val": {
+      "x": 167,
+      "y": 308,
+      "size": 89,
+      "color": "#ffd700",
+      "stroke": "#000000",
+      "strokeWidth": 6,
       "s": 100
+    },
+    "art": {
+      "x": 0.03,
+      "y": 690,
+      "scale": 4.1,
+      "s": 0.67
     },
     "artBehind": true
   }

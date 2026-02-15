@@ -3373,8 +3373,12 @@ function showCombat() {
 
         // Spawn 3D Entities
         game.combatCards.forEach((c, i) => {
-            // Use OpenChest for EVERYTHING (Monsters & Items)
-            const entity = new OpenChest();
+            let entity;
+            if (c.type === 'monster') {
+                entity = new Standee();
+            } else {
+                entity = new OpenChest();
+            }
 
             let assetData = getAssetData(c.type, c.val, c.suit, c.type === 'gift' ? c.actualGift : null);
 
@@ -3404,7 +3408,12 @@ function showCombat() {
                     isAnimated: c.isAnimated || false
                 };
             }
-            entity.setArt(assetData);
+
+            if (c.type === 'monster') {
+                entity.assemble(c, assetData);
+            } else {
+                entity.setArt(assetData);
+            }
 
             // Add simple text label under sprite
             const valStr = (c.type === 'monster' || c.type === 'weapon' || c.type === 'potion') ? `${c.val}` : '';
@@ -3421,7 +3430,11 @@ function showCombat() {
                 labelColor = '#44ff44'; // Nice Green
             }
             const suitLabel = c.suit ? `${c.suit}: ` : 'Val: ';
-            entity.setLabel(c.name, valStr ? `${suitLabel}${valStr}` : '', labelColor);
+
+            // Only add floating label for non-monsters (monsters have text on card)
+            if (c.type !== 'monster') {
+                entity.setLabel(c.name, valStr ? `${suitLabel}${valStr}` : '', labelColor);
+            }
 
             // Staggered "V" Layout
             // 0: Left Outer (Row 2) -> right*-1.5 + fwd*1.5
@@ -6201,6 +6214,9 @@ class Standee extends THREE.Group {
         this.frameCount = 1;
         this.currentFrame = 0;
 
+        this.frameMesh = null;
+        this.textMesh = null;
+
         // Load the Standee GLB
         loadGLB('assets/images/glb/standee-web.glb', (model) => {
             this.add(model);
@@ -6209,52 +6225,130 @@ class Standee extends THREE.Group {
             model.traverse((child) => {
                 if (child.isMesh && (child.name === 'CardFace' || (child.material && child.material.name === 'CardFace'))) {
                     this.artMesh = child;
-                    this.artMesh.material = this.artMesh.material.clone(); // Unique material instance
-                    this.artMesh.material.color.setHex(0xffffff); // Ensure white base
-                    this.artMesh.material.transparent = true;
-                    this.artMesh.material.fog = false; // Ignore fog to stay bright
-
-                    // Apply any texture that was set before the model loaded
-                    if (this.pendingTex) {
-                        this.applyTex(this.pendingTex, this.pendingConfig);
-                        this.pendingTex = null;
-                        this.pendingConfig = null;
-                    }
+                    this.artMesh.visible = false; // Hide original face, we will build layers on top
                 }
             });
         }, 1.0);
     }
 
-    setArt(assetData) {
-        const tex = getClonedTexture(`assets/images/${assetData.file}`);
+    assemble(card, assetData) {
+        // 1. Determine Rarity & Config
+        const val = card.val;
+        let rarity = 'common';
+        if (val >= 6 && val <= 10) rarity = 'uncommon';
+        else if (val >= 11 && val <= 14) rarity = 'rare';
+        else if (val > 14) rarity = 'boss';
+
+        // Access config from the global CardDesigner instance
+        const layout = window.cardDesigner.config[rarity] || window.cardDesigner.config['common'];
+
+        // 2. Setup Art Texture (Animated)
+        const artTex = getClonedTexture(`assets/images/${assetData.file}`);
         this.isAnimated = assetData.isAnimated || false;
         this.frameCount = assetData.sheetCount || 1;
 
-        const config = {
-            isStrip: assetData.isStrip,
-            u: assetData.uv.u,
-            sheetCount: this.frameCount
+        if (assetData.isStrip) {
+            artTex.repeat.set(1 / this.frameCount, 1);
+            artTex.offset.set(assetData.uv.u, 0);
+        } else {
+            artTex.repeat.set(1, 1);
+        }
+
+        // 3. Setup Frame Texture
+        const frameTex = getClonedTexture(layout.frame);
+
+        // 4. Generate Text Texture
+        const textCanvas = document.createElement('canvas');
+        textCanvas.width = 770; textCanvas.height = 1346;
+        const ctx = textCanvas.getContext('2d');
+
+        // Helper to draw text (copied logic from CardDesigner)
+        const drawTxt = (txt, settings) => {
+            if (!settings) return;
+            ctx.save();
+            const size = settings.size || 40;
+            const font = settings.font || 'Cinzel';
+            ctx.font = `bold ${size}px ${font}, Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            if (settings.shadow > 0) { ctx.shadowColor = "black"; ctx.shadowBlur = settings.shadow; }
+            if (settings.strokeWidth > 0) {
+                ctx.strokeStyle = settings.stroke || '#000';
+                ctx.lineWidth = settings.strokeWidth;
+                ctx.strokeText(txt, settings.x, settings.y);
+            }
+            ctx.fillStyle = settings.color || '#fff';
+            ctx.fillText(txt, settings.x, settings.y);
+            ctx.restore();
         };
 
-        if (this.artMesh) {
-            this.applyTex(tex, config);
-        } else {
-            this.pendingTex = tex;
-            this.pendingConfig = config;
-        }
+        drawTxt(card.name, layout.name);
+        drawTxt(card.suit, layout.suit);
+        drawTxt(`${card.val}`, layout.val);
+
+        const textTex = new THREE.CanvasTexture(textCanvas);
+
+        // 5. Build Layers
+        // Card Dimensions in 3D (Approx based on GLB scale)
+        const cardW = 1.0;
+        const cardH = 1.75; // 1346/770 ratio
+
+        // Helper to create a layer mesh
+        const createLayer = (tex, zOffset) => {
+            const geo = new THREE.PlaneGeometry(cardW, cardH);
+            const mat = new THREE.MeshBasicMaterial({
+                map: tex,
+                transparent: true,
+                side: THREE.DoubleSide,
+                depthWrite: false // Important for transparency stacking
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(0, 1.0, zOffset); // Center vertically approx
+            return mesh;
+        };
+
+        // Clear old layers
+        if (this.layersGroup) this.remove(this.layersGroup);
+        this.layersGroup = new THREE.Group();
+        this.add(this.layersGroup);
+
+        const layers = layout.layers || ['art', 'frame', 'text'];
+
+        layers.forEach((layerName, idx) => {
+            const z = idx * 0.01; // Small Z separation
+            if (layerName === 'frame') {
+                const mesh = createLayer(frameTex, z);
+                this.layersGroup.add(mesh);
+            } else if (layerName === 'text') {
+                const mesh = createLayer(textTex, z);
+                this.layersGroup.add(mesh);
+            } else if (layerName === 'art') {
+                const mesh = createLayer(artTex, z);
+
+                // Apply Config Transforms (Map 770x1346 canvas coords to 3D space)
+                // Canvas Center is (385, 673)
+                // 3D Width is 1.0, Height is 1.75
+                // Scale factor = 1.0 / 770
+                const scaleFactor = 1.0 / 770;
+
+                if (layout.art) {
+                    const artScale = layout.art.scale || 1.0;
+                    mesh.scale.set(artScale, artScale, 1.0);
+
+                    const artY = layout.art.y !== undefined ? layout.art.y : 673;
+                    // Invert Y (Canvas 0 is top, 3D +Y is up)
+                    // Delta from center in pixels
+                    const dyPx = 673 - artY;
+                    const dy3D = dyPx * scaleFactor * 1.3; // 1.3 fudge factor for aspect ratio
+                    mesh.position.y += dy3D;
+                }
+
+                this.artMesh = mesh; // Save ref for animation
+                this.layersGroup.add(mesh);
+            }
+        });
     }
 
-    applyTex(tex, config) {
-        if (config.isStrip) {
-            tex.repeat.set(1 / config.sheetCount, 1);
-            tex.offset.set(config.u, 0);
-        } else {
-            tex.repeat.set(1, 1);
-            tex.offset.set(0, 0);
-        }
-        this.artMesh.material.map = tex;
-        this.artMesh.material.needsUpdate = true;
-    }
 
     update(time) {
         if (this.isAnimated && this.artMesh && this.artMesh.material.map) {
