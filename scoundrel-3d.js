@@ -2958,6 +2958,8 @@ function startIntermission() {
     document.getElementById('descendBtn').style.display = 'none';
 
     enemyArea.innerHTML = '';
+    // Ensure layouts are reset for shop
+    enemyArea.classList.remove('boss-grid', 'layout-linear', 'layout-scatter');
 
     // Soul Broker & Coins UI
     const brokerContainer = document.createElement('div');
@@ -2976,8 +2978,12 @@ function startIntermission() {
     // Defer update slightly to ensure layout is settled
     requestAnimationFrame(updateMerchantPortraitPosition);
 
+    enemyArea.classList.remove('boss-grid', 'layout-linear', 'layout-scatter', 'layout-corners', 'layout-introverted', 'layout-diagonal');
+    enemyArea.classList.add('layout-merchant'); // Force 2x2 grid
+
     const itemsContainer = document.createElement('div');
-    itemsContainer.style.cssText = "display:flex; justify-content:center; gap:15px; flex-wrap:wrap; width:100%;";
+    // We let CSS grid handle layout now
+    itemsContainer.style.cssText = "display:contents;"; 
     enemyArea.appendChild(itemsContainer);
 
     // Render Shop Items (Random selection of 4)
@@ -3175,8 +3181,24 @@ function enterRoom(id) {
 
         game.combatCards = room.generatedContent; // Load persistent gifts
         game.chosenCount = 0; game.potionsUsedThisTurn = false;
-        logMsg(`Merchant encountered! Pick your blessing.`);
+        
+        // --- Merchant (Gift) Room Setup ---
+        logMsg(`Merchant's Gift: Choose one item freely.`);
+        
+        // Force Merchant Layout (2x2 Grid)
+        const enemyArea = document.getElementById('enemyArea');
+        enemyArea.classList.remove('boss-grid', 'layout-linear', 'layout-scatter', 'layout-corners', 'layout-introverted', 'layout-diagonal');
+        enemyArea.classList.add('layout-merchant');
+
         showCombat();
+        // Update header after showCombat() might have reset it
+        document.getElementById('combatMessage').innerText = "The Merchant's Gift";
+        // Ensure Merchant Portrait is visible
+        const mp = ensureMerchantPortrait();
+        mp.innerHTML = `<img src="assets/images/visualnovel/merchant_front.png">`;
+        requestAnimationFrame(updateMerchantPortraitPosition);
+        
+        mp.style.display = 'flex';
         return;
     }
     if (room.isBonfire && room.state !== 'cleared') {
@@ -3459,10 +3481,37 @@ function showCombat() {
         overlay.style.background = 'rgba(0,0,0,0.85)';
     }
 
+    const isGiftRoom = game.combatCards.length > 0 && game.combatCards[0].type === 'gift';
+
     if (game.isBossFight) {
+        enemyArea.classList.remove('layout-merchant');
         enemyArea.classList.add('boss-grid');
     } else {
         enemyArea.classList.remove('boss-grid');
+        
+        // Randomize Card Layout for Standard Encounters (2D Mode mostly)
+        // Reset classes
+        enemyArea.classList.remove('layout-linear', 'layout-scatter', 'layout-corners', 'layout-introverted', 'layout-diagonal');
+
+        if (isGiftRoom) {
+            // Apply forced merchant layout
+            if (!enemyArea.classList.contains('layout-merchant')) {
+                enemyArea.classList.add('layout-merchant');
+            }
+        } else {
+            // Ensure merchant layout is GONE for normal fights
+            enemyArea.classList.remove('layout-merchant');
+
+            if (!use3dModel) {
+                // Random pick
+                const layouts = ['layout-linear', 'layout-scatter', 'layout-corners', 'layout-introverted', 'layout-diagonal'];
+                const pick = layouts[Math.floor(Math.random() * layouts.length)];
+                enemyArea.classList.add(pick);
+            } else {
+                 // Default to linear if 3D (overlay should generally stay out of way, or standard)
+                 enemyArea.classList.add('layout-linear');
+            }
+        }
     }
 
     game.combatCards.forEach((c, idx) => {
@@ -3478,7 +3527,8 @@ function showCombat() {
         let animClass = "";
 
         // 3D Mode: Hide the 2D card visuals but keep element for layout/clicking
-        if (use3dModel) {
+        // EXCEPTION: Merchant Gift Room (layout-merchant) uses 2D UI cards
+        if (use3dModel && !enemyArea.classList.contains('layout-merchant')) {
             card.style.opacity = '0';
             card.style.pointerEvents = 'none'; // Allow clicking through to 3D scene
         }
@@ -3534,7 +3584,15 @@ function showCombat() {
     const msgEl = document.getElementById('combatMessage');
     if (game.activeRoom && game.activeRoom.state === 'cleared') {
         if (game.activeRoom.isFinal) {
-            const allCleared = game.rooms.every(r => r.isWaypoint || r.state === 'cleared' || r.state === 'boss_active');
+            // Updated AllCleared Logic: Matches HUD (Exclude Bonfires/Specials)
+            const allCleared = game.rooms.every(r => 
+                r.isWaypoint || 
+                r.isSpecial || 
+                r.isBonfire || 
+                r.state === 'cleared' || 
+                r.state === 'boss_active'
+            );
+
             if (allCleared) {
                 msgEl.innerText = "The Guardian awaits.";
                 document.getElementById('descendBtn').style.display = 'block';
@@ -4265,6 +4323,10 @@ window.handleBonfire = function (cost) {
     const hasHerbs = game.hotbar.some(i => i && i.type === 'item' && i.id === 5);
     const heal = Math.min((5 * cost) + (hasHerbs ? 5 : 0), game.maxHp - game.hp);
     game.hp += heal;
+    
+    // Ensure we don't exceed max? (Assuming logic allows overheal or not? usually clamped)
+    // For now, update UI immediately
+    updateBonfireUI();
 
     game.bonfireUsed = true;
     spawnAboveModalTexture('flame_03.png', window.innerWidth / 2, window.innerHeight / 2, 30, { tint: '#ff6600', blend: 'lighter', sizeRange: [48, 160], intensity: 1.45 });
@@ -4285,6 +4347,12 @@ window.handleBonfire = function (cost) {
 function updateBonfireUI() {
     const room = game.activeRoom;
     document.getElementById('bonfireStatus').innerText = `${room.restRemaining} kindle remaining.`;
+
+    // Update HP Display
+    const hpCur = document.getElementById('bonfireHpDisplay');
+    const hpMax = document.getElementById('bonfireMaxHpDisplay');
+    if (hpCur) hpCur.innerText = game.hp;
+    if (hpMax) hpMax.innerText = game.maxHp;
 
     // Set Avatar Image
     const bgUrl = `assets/images/rest_${game.sex}_large.png`;
@@ -4512,24 +4580,8 @@ function updateUI() {
         weaponDurEl.parentNode.appendChild(div);
     }
 
-    // Inject Torch Fuel UI into Dock/Modal (Vertical Bar)
-    const statSubgrid = document.querySelector('.player-combat-area .stat-subgrid');
-    if (statSubgrid && !document.getElementById('torchFuelDock')) {
-        const torchCol = document.createElement('div');
-        torchCol.id = 'torchFuelDock';
-        torchCol.className = 'stat-col torch';
-        torchCol.style.cssText = "flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; margin-left: 20px; justify-content: flex-end;";
-
-        torchCol.innerHTML = `
-            <div class="stat-label" style="font-size: 0.7rem; margin-bottom: 5px; color: #ffaa44;">FUEL</div>
-            <div style="position: relative; width: 14px; height: 42px; background: #111; border: 1px solid #444;">
-                <div id="torchBarDock" style="position: absolute; bottom: 0; left: 0; width: 100%; height: 100%; background: #ffaa44; transition: height 0.3s;"></div>
-            </div>
-            <div id="torchValueDock" style="font-size: 0.9rem; color: #fff; margin-top: 2px; font-weight: bold; text-shadow: 0 1px 2px #000;">20</div>
-            <button id="restoreControlBtn" class="v2-btn" onclick="toggleControlBox(true)" title="Restore Controls" style="display:none; padding:0; width:24px; height:24px; min-height:24px; font-size:12px; margin-top:5px; line-height:1; align-items:center; justify-content:center; box-shadow:none; border:1px solid #444;">▲</button>
-        `;
-        statSubgrid.appendChild(torchCol);
-    }
+    // [REMOVED] Old Torch Fuel Injection Logic was here.
+    // The new "Compact Dashboard" has the fuel gauge static in HTML (#torchFuelBar).
 
     const coinEl = document.getElementById('soulCoinsValueSidebar');
     if (coinEl) coinEl.innerText = game.soulCoins;
@@ -4541,19 +4593,25 @@ function updateUI() {
     const floorModalEl = document.getElementById('floorValueModal');
     if (floorModalEl) floorModalEl.innerText = game.floor;
 
-    const torchBar = document.getElementById('torchBarDock');
-    const torchVal = document.getElementById('torchValueDock');
-    if (torchBar && torchVal) {
-        const maxFuel = 30; // Visual scale max
-        const pct = Math.min(100, (game.torchCharge / maxFuel) * 100);
+    // Updated Fuel Logic for Dashboard
+    const torchBar = document.getElementById('torchFuelBar');
+    if (torchBar) {
+        // Visual scale max (game logic usually caps at 20 or 30, adjust as needed)
+        const maxFuel = 30; 
+        const currentFuel = game.torchCharge || 0;
+        const pct = Math.min(100, (currentFuel / maxFuel) * 100);
         torchBar.style.height = `${pct}%`;
-        torchVal.innerText = game.torchCharge;
+        
+        // Optional: Update title for tooltip value
+        const container = torchBar.closest('.fuel-gauge-container');
+        if (container) {
+            container.title = `Torch Fuel: ${currentFuel}`;
+        }
 
-        if (game.torchCharge <= 5) {
-            torchVal.style.color = '#ff4444';
+        // Color update based on low fuel
+        if (currentFuel <= 5) {
             torchBar.style.background = '#ff4444';
         } else {
-            torchVal.style.color = '#fff';
             torchBar.style.background = '#ffaa44';
         }
     }
@@ -4587,9 +4645,11 @@ function updateUI() {
     if (game.equipment.weapon) {
         // Ensure name doesn't already have (X) before adding it
         const cleanName = game.equipment.weapon.name.split(' (')[0];
-        weaponLabel.innerText = `${cleanName} (${game.equipment.weapon.val})`;
+        if (weaponLabel) {
+            weaponLabel.innerText = `${cleanName} (${game.equipment.weapon.val})`;
+            weaponLabel.style.color = 'var(--gold)';
+        }
         weaponDetail.innerText = game.weaponDurability === Infinity ? "Clean Weapon: No limit" : `Bloody: Next <${game.weaponDurability}`;
-        weaponLabel.style.color = 'var(--gold)';
 
         const asset = getAssetData('weapon', game.equipment.weapon.val, game.equipment.weapon.suit);
         const sheetCount = asset.sheetCount || 9;
@@ -4615,9 +4675,11 @@ function updateUI() {
         const durSidebar = document.getElementById('weaponDurSidebar');
         if (durSidebar) durSidebar.innerText = game.weaponDurability === Infinity ? "Next: Any" : `Next: <${game.weaponDurability}`;
     } else {
-        weaponLabel.innerText = "BARE HANDS";
+        if (weaponLabel) {
+            weaponLabel.innerText = "BARE HANDS";
+            weaponLabel.style.color = '#fff';
+        }
         weaponDetail.innerText = "No protection";
-        weaponLabel.style.color = '#fff';
         if (weaponArtModal) weaponArtModal.style.backgroundImage = "none";
 
         // Update Sidebar Slot
@@ -4754,10 +4816,37 @@ function updateUI() {
     if (shelf) {
         shelf.innerHTML = '';
         game.slainStack.forEach(c => {
+            // Mapping for Kenney Assets
+            let kSuit = 'Spades';
+            if (c.suit === '♣') kSuit = 'Clubs';
+            else if (c.suit === '♦') kSuit = 'Diamonds';
+            else if (c.suit === '♥') kSuit = 'Hearts';
+            
+            let kVal = c.val;
+            if (c.val === 11) kVal = 'J';
+            else if (c.val === 12) kVal = 'Q';
+            else if (c.val === 13) kVal = 'K';
+            else if (c.val === 14) kVal = 'A';
+
+            // Construct filename: card[Suit][Val].png
+            const filename = `card${kSuit}${kVal}.png`;
+            // Images are now directly in the cards folder
+            const path = `assets/images/kenney/cards/${filename}`;
+
             const t = document.createElement('div');
-            const isRed = c.suit === '♥' || c.suit === '♦';
-            t.className = `mini-trophy ${isRed ? 'red' : 'black'}`;
-            t.innerHTML = `<div class="suit">${c.suit}</div><div class="val">${getDisplayVal(c.val)}</div>`;
+            t.className = `mini-trophy`;
+            t.style.backgroundImage = `url('${path}')`;
+            t.style.backgroundSize = 'contain';
+            t.style.backgroundRepeat = 'no-repeat';
+            t.style.backgroundPosition = 'center';
+            t.style.backgroundColor = 'transparent';
+            t.style.width = '32px'; // Adjust based on cell size
+            t.style.height = '42px';
+            t.style.border = 'none'; // Remove old border
+            
+            // Fallback content if image fails (though we know they exist)
+            t.title = `${getDisplayVal(c.val)}${c.suit}`; 
+            
             shelf.appendChild(t);
         });
     }
