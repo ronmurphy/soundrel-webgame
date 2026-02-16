@@ -1381,6 +1381,8 @@ h1 {
     gap: 20px;
     justify-content: center;
     margin-bottom: 30px;
+    flex-wrap: wrap;
+    max-width: 800px;
 }
 
 .class-card {

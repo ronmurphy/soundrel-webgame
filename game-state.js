@@ -36,25 +36,76 @@ export const ITEM_DATA = [
 
 export const CLASS_DATA = {
     knight: {
-        name: "Knight",
-        desc: "A stalwart defender. Starts with a Rusty Sword and basic armor.",
+        name: "Vanguard",
+        desc: "A stalwart defender. Barehanded attacks deal 3 DMG.",
         hp: 20,
         items: [{ type: 'weapon', id: 'rusty_sword', val: 4, suit: '♦', name: "Rusty Sword" }, { type: 'armor', id: 0 }],
-        icon: { type: 'class-icon', val: 0 }
+        icon: { type: 'class-icon', val: 0 },
+        spellCap: 0
     },
     rogue: {
-        name: "Rogue",
-        desc: "Cunning and greedy. Starts with a Skeleton Key and a Tome for extra coins.",
+        name: "Scoundrel",
+        desc: "Cunning and greedy. Can flee consecutive rooms.",
         hp: 20,
         items: [{ type: 'item', id: 2 }, { type: 'item', id: 8 }],
-        icon: { type: 'class-icon', val: 1 }
+        icon: { type: 'class-icon', val: 1 },
+        spellCap: 0
     },
     occultist: {
-        name: "Occultist",
-        desc: "Seeker of forbidden knowledge. Starts with the Spectral Lantern but has less health.",
+        name: "Arcanist",
+        desc: "Seeker of forbidden knowledge. Spells may Echo (20%).",
         hp: 15,
         items: [{ type: 'item', id: 1 }],
-        icon: { type: 'class-icon', val: 2 }
+        icon: { type: 'class-icon', val: 2 },
+        spellCap: 14
+    },
+    priest: {
+        name: "Confessor",
+        desc: "A holy healer. Heals 1 HP every 6 unique waypoints.",
+        hp: 20,
+        items: [{ type: 'weapon', id: 'mace', val: 3, suit: '♣', name: "Cleric's Mace" }, { type: 'item', id: 5 }], // Herbs
+        icon: { type: 'class-icon', val: 3 },
+        spellCap: 3
+    },
+    ranger: {
+        name: "Strider",
+        desc: "Wilderness survivor. Waypoints reveal surroundings.",
+        hp: 20,
+        items: [{ type: 'armor', id: 5 }, { type: 'item', id: 7 }], // Leather Armor, Music Box
+        icon: { type: 'class-icon', val: 4 },
+        spellCap: 2
+    },
+    bard: {
+        name: "Minstrel",
+        desc: "Jack of all trades. Shop prices -20%.",
+        hp: 18,
+        items: [{ type: 'item', id: 6 }], // Silver Mirror
+        icon: { type: 'class-icon', val: 5 },
+        spellCap: 5
+    },
+    paladin: {
+        name: "Templar",
+        desc: "Righteous crusader. +1 AP every 5 kills.",
+        hp: 22,
+        items: [{ type: 'armor', id: 7 }], // Steel Breastplate (4 AP)
+        icon: { type: 'class-icon', val: 6 },
+        spellCap: 2
+    },
+    necromancer: {
+        name: "Reanimator",
+        desc: "Wields the Cursed Blade. Exact kills heal 1 HP.",
+        hp: 30,
+        items: [{ type: 'weapon', id: 'cursed_blade', val: 12, suit: '♦', name: "Bloodthirst Blade", isCursed: true }],
+        icon: { type: 'class-icon', val: 7 },
+        spellCap: 5
+    },
+    artificer: {
+        name: "Tinkerer",
+        desc: "Master of gadgets. 15% chance to save consumables.",
+        hp: 20,
+        items: [{ type: 'item', id: 0 }, { type: 'item', id: 2 }], // Bomb, Key
+        icon: { type: 'class-icon', val: 8 },
+        spellCap: 2
     }
 };
 
@@ -89,7 +140,9 @@ export const game = {
     torchCharge: 20,
     anvil: [null, null],
     currentTrack: null,
-    deck: []
+    deck: [],
+    visitedWaypoints: [],
+    enemiesDefeated: 0
 };
 
 export function getDisplayVal(v) {
@@ -117,7 +170,8 @@ export function getAssetData(type, value, suit, extra) {
         if (value === 'cursed_blade') file = 'diamond.png';
         else if (value === 'cursed_ring') file = 'items.png';
         else {
-            if (game.classId === 'occultist' && type === 'weapon') file = 'occultist.png';
+            const cap = CLASS_DATA[game.classId] ? (CLASS_DATA[game.classId].spellCap || 0) : 0;
+            if (type === 'weapon' && value <= cap) file = 'occultist.png';
             else file = 'diamond.png';
         }
     }
@@ -132,7 +186,8 @@ export function getAssetData(type, value, suit, extra) {
         } else {
             if (extra.type === 'weapon') {
                 if (extra.id === 'cursed_blade') file = 'diamond.png';
-                else file = (game.classId === 'occultist') ? 'occultist.png' : 'diamond.png';
+                else if (extra.val <= (CLASS_DATA[game.classId].spellCap || 0)) file = 'occultist.png';
+                else file = 'diamond.png';
             } else {
                 file = 'heart.png';
             }
@@ -241,7 +296,8 @@ export function createDeck() {
             }
         });
         for (let v = 2; v <= 10; v++) {
-            if (game.classId === 'occultist') {
+            const cap = CLASS_DATA[game.classId] ? (CLASS_DATA[game.classId].spellCap || 0) : 0;
+            if (v <= cap) {
                 deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: getSpellName(v), isSpell: true });
             } else {
                 deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: `Weapon lv.${v}` });

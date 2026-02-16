@@ -167,6 +167,50 @@ export function updateUI() {
         }
     }
 
+    // Update Combat Inventory (Hotbar in Modal)
+    const combatInv = document.getElementById('combatInventory');
+    if (combatInv) {
+        combatInv.innerHTML = '';
+        const protectionFloor = Object.values(game.equipment).filter(i => i && i.type === 'armor').length;
+        const isArmorBroken = game.ap <= protectionFloor;
+
+        for (let i = 0; i < 6; i++) {
+            const slot = document.createElement('div');
+            // .combat-inventory-grid > div CSS handles dimensions
+            if (game.hotbar[i]) {
+                const item = game.hotbar[i];
+                const val = item.type === 'potion' ? item.val : item.id;
+                const asset = getAssetData(item.type, val, item.suit);
+                let tint = (item.type === 'armor' && isArmorBroken) ? 'filter: sepia(1) hue-rotate(-50deg) saturate(5) contrast(0.8);' : '';
+                if (item.isCursed) tint = 'filter: sepia(1) hue-rotate(60deg) saturate(3) contrast(1.2);';
+
+                const bgSize = `${asset.sheetCount * 100}% 100%`;
+                const bgPos = `${(asset.uv.u * asset.sheetCount) / (asset.sheetCount - 1) * 100}% 0%`;
+
+                slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:${bgSize}; background-position:${bgPos}; ${tint}" onclick="window.useHotbarItem(${i})"></div>`;
+                
+                slot.onmouseenter = () => showTooltip(slot, item);
+                slot.onmouseleave = () => hideTooltip();
+            }
+            combatInv.appendChild(slot);
+        }
+    }
+
+    // Update Combat Trophies
+    const combatTrophies = document.getElementById('trophyShelf');
+    if (combatTrophies) {
+        combatTrophies.innerHTML = '';
+        if (game.slainStack.length > 0) {
+            game.slainStack.forEach((c, idx) => {
+                // Reuse the trophy rendering logic
+                const container = createTrophyElement(c, idx);
+                // Adjust style for combat view if needed, but default class .mini-trophy should work
+                container.style.width = "32px"; container.style.height = "44px";
+                combatTrophies.appendChild(container);
+            });
+        }
+    }
+
     // Update Map HUD
     updateMapHUD();
 
@@ -395,35 +439,7 @@ export function renderInventoryUI() {
             trophyShelf.innerHTML = '<div style="color:#666; font-size:0.8rem; font-style:italic; padding:10px; grid-column: 1 / -1;">No trophies collected.</div>';
         } else {
             game.slainStack.forEach((c, idx) => {
-                let sheetFile = 'diamond.png'; 
-                if (c.suit === '♥') sheetFile = 'heart.png';
-                else if (c.suit === '♣') sheetFile = 'club.png';
-                else if (c.suit === '♠') sheetFile = 'spade.png';
-                else if (c.suit === '👺') sheetFile = 'menace.png';
-                else if (c.suit === '💀') sheetFile = 'skull.png';
-                
-                const container = document.createElement('div');
-                container.style.cssText = "position:relative; width:80px; height:80px; cursor:pointer; border:1px solid #333; background:#080808;";
-                container.title = `Burn ${c.name} (+${c.val * 2} Fuel)`;
-                container.onclick = () => window.burnTrophy(idx);
-
-                // Monster Sprite
-                const monster = document.createElement('div');
-                // Calculate sprite pos
-                let cellIdx = 0;
-                if (c.val <= 3) cellIdx = 0;
-                else if (c.val <= 5) cellIdx = 1;
-                else if (c.val <= 7) cellIdx = 2;
-                else if (c.val <= 9) cellIdx = 3;
-                else if (c.val === 10) cellIdx = 4;
-                else if (c.val === 11) cellIdx = 5;
-                else if (c.val === 12) cellIdx = 6;
-                else if (c.val === 13) cellIdx = 7;
-                else if (c.val === 14) cellIdx = 8;
-                const px = cellIdx * (100/8);
-
-                monster.style.cssText = `width:100%; height:100%; background: url('assets/images/${sheetFile}'); background-size: 900% 100%; background-position: ${px}% 0%; filter: grayscale(0.2) contrast(1.2);`;
-                container.appendChild(monster);
+                const container = createTrophyElement(c, idx);
                 trophyShelf.appendChild(container);
             });
         }
@@ -442,6 +458,38 @@ export function renderInventoryUI() {
     // Update Coins
     const coinsEl = document.getElementById('invSoulCoins');
     if (coinsEl) coinsEl.innerText = game.soulCoins;
+}
+
+function createTrophyElement(c, idx) {
+    let sheetFile = 'diamond.png'; 
+    if (c.suit === '♥') sheetFile = 'heart.png';
+    else if (c.suit === '♣') sheetFile = 'club.png';
+    else if (c.suit === '♠') sheetFile = 'spade.png';
+    else if (c.suit === '👺') sheetFile = 'menace.png';
+    else if (c.suit === '💀') sheetFile = 'skull.png';
+    
+    const container = document.createElement('div');
+    container.className = 'mini-trophy';
+    container.style.cssText = "position:relative; width:80px; height:80px; cursor:pointer; border:1px solid #333; background:#080808; flex-shrink:0;";
+    container.title = `Burn ${c.name} (+${c.val * 2} Fuel)`;
+    container.onclick = () => window.burnTrophy(idx);
+
+    const monster = document.createElement('div');
+    let cellIdx = 0;
+    if (c.val <= 3) cellIdx = 0;
+    else if (c.val <= 5) cellIdx = 1;
+    else if (c.val <= 7) cellIdx = 2;
+    else if (c.val <= 9) cellIdx = 3;
+    else if (c.val === 10) cellIdx = 4;
+    else if (c.val === 11) cellIdx = 5;
+    else if (c.val === 12) cellIdx = 6;
+    else if (c.val === 13) cellIdx = 7;
+    else if (c.val === 14) cellIdx = 8;
+    const px = cellIdx * (100/8);
+
+    monster.style.cssText = `width:100%; height:100%; background: url('assets/images/${sheetFile}'); background-size: 900% 100%; background-position: ${px}% 0%; filter: grayscale(0.2) contrast(1.2);`;
+    container.appendChild(monster);
+    return container;
 }
 
 export function setupInventoryUI() {
