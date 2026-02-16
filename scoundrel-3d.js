@@ -48,7 +48,7 @@ let playerMoveTween = null; // Track movement tween to stop it during combat
 // Wanderer State
 let wandererMesh = null;
 let wandererMixer = null;
-const WANDERER_FILE = 'male_evil-true-web.glb';
+const WANDERER_FILE = 'female_evil-true-web.glb';
 const terrainRaycaster = new THREE.Raycaster();
 
 let globalFloorMesh = null; // Reference for terrain manipulation
@@ -1099,7 +1099,7 @@ function pickWandererTarget() {
     let x, z;
     let attempts = 0;
     
-    while (!valid && attempts < 20) {
+    while (!valid && attempts < 50) {
         attempts++;
         const bounds = 12 + (game.floor * 2);
         const r = 5 + Math.random() * (bounds - 6); // Wander within valid floor bounds
@@ -1112,10 +1112,15 @@ function pickWandererTarget() {
         
         // Avoid Corridors
         let nearCorr = false;
-        for (const mesh of corridorMeshes.values()) {
-            if (Math.hypot(mesh.position.x - x, mesh.position.z - z) < 3) { nearCorr = true; break; }
+        for (const m of corridorMeshes.values()) {
+            if (Math.hypot(m.position.x - x, m.position.z - z) < 2.5) { nearCorr = true; break; }
         }
         if (nearCorr) continue;
+
+        // Ensure Valid Ground (Raycast check to avoid walking on air)
+        terrainRaycaster.set(new THREE.Vector3(x, 20, z), new THREE.Vector3(0, -1, 0));
+        const hits = terrainRaycaster.intersectObject(globalFloorMesh);
+        if (hits.length === 0) continue; // No floor here (void)
         
         valid = true;
     }
@@ -1124,13 +1129,14 @@ function pickWandererTarget() {
         wandererMesh.lookAt(x, wandererMesh.position.y, z);
         const dist = Math.hypot(x - wandererMesh.position.x, z - wandererMesh.position.z);
         
+        // Slower movement for a wandering ghost
         new TWEEN.Tween(wandererMesh.position)
-            .to({ x: x, z: z }, dist * 800) // Speed factor
+            .to({ x: x, z: z }, dist * 1200) 
             .onUpdate(() => {
-                // Snap to floor
+                // Snap to floor + Float Offset
                 terrainRaycaster.set(new THREE.Vector3(wandererMesh.position.x, 10, wandererMesh.position.z), new THREE.Vector3(0, -1, 0));
                 const hits = terrainRaycaster.intersectObject(globalFloorMesh);
-                if (hits.length > 0) wandererMesh.position.y = hits[0].point.y;
+                if (hits.length > 0) wandererMesh.position.y = hits[0].point.y + 0.5; // Float 0.5 units above ground
             })
             .onComplete(() => {
                 setTimeout(pickWandererTarget, 2000 + Math.random() * 3000);
