@@ -5878,18 +5878,19 @@ function setupInventoryUI() {
                 <!-- Trophies Label -->
                 <div style="font-size:0.9rem; color:#d4af37; margin-top:5px;">TROPHIES (CLICK TO BURN)</div>
                 
-                <!-- Trophy Shelf (Scrollable Horizontal) -->
+                <!-- Trophy Shelf (Vertical Scroll) -->
                 <div id="invTrophyShelf" style="
-                    display:flex; 
+                    display: grid; 
+                    grid-template-columns: repeat(6, 80px);
                     gap:5px; 
-                    overflow-x:auto; 
+                    overflow-y:auto; 
                     height:100px; 
                     background:#080808; 
                     border:1px solid #333; 
                     padding:5px;
                     scrollbar-width: thin;
                     scrollbar-color: #444 #111;
-                    align-items: center;
+                    align-content: start;
                 ">
                     <!-- JS Injects Trophies -->
                 </div>
@@ -6068,7 +6069,7 @@ function renderInventoryUI() {
     if (trophyShelf) {
         trophyShelf.innerHTML = '';
         if (game.slainStack.length === 0) {
-            trophyShelf.innerHTML = '<div style="color:#666; font-size:0.8rem; font-style:italic; padding:10px;">No trophies collected.</div>';
+            trophyShelf.innerHTML = '<div style="color:#666; font-size:0.8rem; font-style:italic; padding:10px; grid-column: 1 / -1;">No trophies collected.</div>';
         } else {
             game.slainStack.forEach((c, idx) => {
                 // Determine Sprite Sheet based on Suit (Singular Names)
@@ -6076,10 +6077,12 @@ function renderInventoryUI() {
                 if (c.suit === '♥') sheetFile = 'heart.png';
                 else if (c.suit === '♣') sheetFile = 'club.png';
                 else if (c.suit === '♠') sheetFile = 'spade.png';
+                else if (c.suit === '👺') sheetFile = 'menace.png';
+                else if (c.suit === '💀') sheetFile = 'skull.png';
                 
                 // Construct the trophy card container
                 const container = document.createElement('div');
-                container.style.cssText = "position:relative; width:80px; height:80px; flex-shrink:0; cursor:pointer; border:1px solid #333; background:#080808; margin-right:5px;";
+                container.style.cssText = "position:relative; width:80px; height:80px; cursor:pointer; border:1px solid #333; background:#080808;";
                 container.title = `Burn ${c.name} (+${c.val * 2} Fuel)`;
                 container.onclick = () => burnTrophy(idx);
 
