@@ -294,6 +294,19 @@ export function renderInventoryUI() {
             const desc = document.getElementById('invDescription');
             if(desc) desc.innerHTML = `<span style="color:#fff; font-weight:bold;">${item.name}</span> <span style="margin-left:10px; color:#666;">| ${item.desc || "No description."}</span>`;
         };
+
+        // Touch Start Logic
+        div.ontouchstart = (e) => {
+            const touch = e.touches[0];
+            window.touchDragData = { source, idx };
+            window.touchDragMoved = false;
+            
+            if (window.touchDragGhost && window.touchDragGhost.parentNode) window.touchDragGhost.parentNode.removeChild(window.touchDragGhost);
+            window.touchDragGhost = div.cloneNode(true);
+            window.touchDragGhost.style.cssText = `position:fixed; width:64px; height:64px; opacity:0.8; z-index:10000; pointer-events:none; left:${touch.clientX - 32}px; top:${touch.clientY - 32}px;`;
+            document.body.appendChild(window.touchDragGhost);
+        };
+
         return div;
     };
 
@@ -317,6 +330,8 @@ export function renderInventoryUI() {
             div.style.cssText = "border:1px solid #333; background:#0a0a0a; position:relative;";
             div.ondragover = (e) => e.preventDefault();
             div.ondrop = (e) => window.handleDrop(e, 'backpack', idx);
+            div.setAttribute('data-slot-type', 'backpack');
+            div.setAttribute('data-slot-idx', idx);
             if (item) div.appendChild(createItemEl(item, 'backpack', idx));
             invGrid.appendChild(div);
         });
@@ -331,6 +346,8 @@ export function renderInventoryUI() {
             div.style.cssText = "border:1px solid #333; background:#0a0a0a; position:relative;";
             div.ondragover = (e) => e.preventDefault();
             div.ondrop = (e) => window.handleDrop(e, 'hotbar', idx);
+            div.setAttribute('data-slot-type', 'hotbar');
+            div.setAttribute('data-slot-idx', idx);
             if (item) div.appendChild(createItemEl(item, 'hotbar', idx));
             hotbarGrid.appendChild(div);
         });
@@ -750,3 +767,34 @@ export function burnTrophy(idx) {
     updateUI(); 
     renderInventoryUI();
 }
+
+// --- GLOBAL TOUCH HANDLERS ---
+window.addEventListener('touchmove', (e) => {
+    if (window.touchDragGhost) {
+        e.preventDefault();
+        window.touchDragMoved = true;
+        const touch = e.touches[0];
+        window.touchDragGhost.style.left = (touch.clientX - 32) + 'px';
+        window.touchDragGhost.style.top = (touch.clientY - 32) + 'px';
+    }
+}, { passive: false });
+
+window.addEventListener('touchend', (e) => {
+    if (!window.touchDragGhost) return;
+    const touch = e.changedTouches[0];
+
+    window.touchDragGhost.style.display = 'none';
+    const elemBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+    
+    if (window.touchDragGhost.parentNode) document.body.removeChild(window.touchDragGhost);
+    window.touchDragGhost = null;
+
+    if (elemBelow && window.touchDragMoved) {
+        const slot = elemBelow.closest('[data-slot-type]');
+        if (slot) {
+            handleDrop({ preventDefault: () => {} }, slot.dataset.slotType, slot.dataset.slotIdx);
+        }
+    }
+    window.touchDragData = null;
+    window.touchDragMoved = false;
+});

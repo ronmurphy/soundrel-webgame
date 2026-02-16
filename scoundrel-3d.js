@@ -15,14 +15,9 @@ import { CardDesigner } from './card-designer.js';
 import BattleIsland from './battle-island.js';
 import { generateDungeon, generateFloorCA, getThemeForFloor, shuffle } from './dungeon-generator.js';
 import { game, SUITS, CLASS_DATA, ITEM_DATA, ARMOR_DATA, CURSED_ITEMS, createDeck, getMonsterName, getSpellName, getAssetData, getDisplayVal, getUVForCell } from './game-state.js';
-import { updateUI, renderInventoryUI, spawnFloatingText, logMsg, setupInventoryUI, addToBackpack, addToHotbar, recalcAP, handleDrop } from './ui-manager.js';
+import { updateUI, renderInventoryUI, spawnFloatingText, logMsg, setupInventoryUI, addToBackpack, addToHotbar, recalcAP, handleDrop, burnTrophy } from './ui-manager.js';
 
 let roomConfig = {}; // Stores custom transforms for GLB models
-
-// Touch Drag State
-let touchDragGhost = null;
-let touchDragData = null;
-let touchDragMoved = false;
 
 const INTRO_STORY_DEFAULTS = [
     "The entrance to the Gilded Depths looms before you. Legends say a great Guardian protects the treasures within.",
@@ -63,7 +58,7 @@ window.editcards = () => cardDesigner.open();
 window.carddesigner = () => cardDesigner.open(); // Added alias
 
 // Expose UI helpers to window for HTML onclicks
-window.burnTrophy = (idx) => { import('./ui-manager.js').then(m => m.burnTrophy(idx)); };
+window.burnTrophy = burnTrophy;
 
 function preloadSounds() {
     // Placeholders - You will need to add these files to assets/sounds/
