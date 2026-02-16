@@ -31,7 +31,7 @@ let hTilt, vTilt; // Shader passes
 let playerMarker; // Crystal marker
 let torchLight;
 let hemisphereLight; // Soft global fill light to improve readability under fog
-let fogRings = []; // Fog ring sprites for atmospheric LOD
+// let fogRings = []; // Fog ring sprites for atmospheric LOD // DEAD CODE
 let roomMeshes = new Map();
 let terrainMeshes = new Map();
 let waypointMeshes = new Map();
@@ -1073,6 +1073,7 @@ window.addEventListener('click', () => {
     applyAudioSettings();
 }, { once: true });
 
+/* DEAD CODE - Unused Fog Ring System
 function createFogRings() {
     // Remove existing rings
     clearFogRings();
@@ -1098,6 +1099,7 @@ function clearFogRings() {
     fogRings.forEach(f => { if (f.sprite && f.sprite.parent) f.sprite.parent.remove(f.sprite); });
     fogRings = [];
 }
+*/
 
 function on3DClick(event) {
     if (isEditMode) {
@@ -1656,12 +1658,14 @@ function animate3D() {
         controls.update();
     }
 
+    /* DEAD CODE
     // Rotate fog rings slowly for subtle motion
     const t = Date.now();
     fogRings.forEach(f => {
         if (!f.sprite) return;
         f.sprite.material.rotation = (t * f.speed) % (Math.PI * 2);
     });
+    */
 
     // Ghost FX Logic
     if (treePositions.length > 0 && Math.random() < 0.015) {
@@ -3702,6 +3706,7 @@ function closeCombat() {
     if (use3dModel) {
         exitCombatView();
     }
+    updateUI(); // Ensure HUD reappears
 }
 window.closeCombat = closeCombat; // Expose for onClick events
 

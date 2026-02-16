@@ -527,6 +527,7 @@ export function setupInventoryUI() {
             <div style="display:flex; gap:15px; align-items:center;">
                 <div style="font-size:0.9rem; color:#aaa;">Coins: <span id="invSoulCoins" style="color:var(--gold);">0</span></div>
                 <div onclick="sortInventory()" title="Sort Backpack" style="width:32px; height:32px; cursor:pointer; background-color:#d4af37; background-image:url('assets/images/sort.png'); background-repeat:no-repeat; background-position:center; background-size:contain; opacity:0.8; transition:opacity 0.2s; border:1px solid #9a7d25;"></div>
+                <div onclick="sellAllLoot()" title="Sell All Loot" style="width:32px; height:32px; cursor:pointer; background-color:#d4af37; background-image:url('assets/images/money.png'); background-repeat:no-repeat; background-position:center; background-size:contain; opacity:0.8; transition:opacity 0.2s; border:1px solid #9a7d25;"></div>
                 <div onclick="toggleInventory()" style="width:32px; height:32px; background:#d4af37; color:#000; border:1px solid #9a7d25; display:flex; align-items:center; justify-content:center; cursor:pointer; font-weight:bold; font-family:sans-serif;">X</div>
             </div>
         </div>
@@ -831,6 +832,34 @@ window.forgeItems = function () {
     game.anvil = [survivor, null];
     spawnFloatingText("Forged!", window.innerWidth/2, window.innerHeight/2, '#00ff00');
     updateUI();
+};
+
+window.sellAllLoot = function() {
+    let soldCount = 0;
+    let totalValue = 0;
+
+    // Iterate backwards to safely remove items
+    for (let i = game.backpack.length - 1; i >= 0; i--) {
+        const item = game.backpack[i];
+        // Sell only "Loot" items (weapons/armor/potions that aren't special/cursed?)
+        // For now, let's sell EVERYTHING that isn't a key item or cursed.
+        if (item && !item.isCursed && item.id !== 2 && item.id !== 8) { // Skip Key (2) and Tome (8)
+            game.backpack[i] = null;
+            game.soulCoins++;
+            game.torchCharge += (item.val || 5);
+            soldCount++;
+            totalValue++;
+        }
+    }
+
+    if (soldCount > 0) {
+        spawnFloatingText(`Sold ${soldCount} items!`, window.innerWidth/2, window.innerHeight/2, '#ffd700');
+        logMsg(`Sold ${soldCount} items for ${totalValue} coins.`);
+        updateUI();
+        renderInventoryUI();
+    } else {
+        spawnFloatingText("Nothing to sell!", window.innerWidth/2, window.innerHeight/2, '#aaa');
+    }
 };
 
 export function burnTrophy(idx) {
