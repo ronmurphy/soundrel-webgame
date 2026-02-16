@@ -45,6 +45,12 @@ let hiddenStaticMeshes = []; // Track hidden static objects for combat bulldozer
 let savedPlayerPos = new THREE.Vector3(); // Store player pos before teleporting to Battle Island
 let playerMoveTween = null; // Track movement tween to stop it during combat
 
+// Wanderer State
+let wandererMesh = null;
+let wandererMixer = null;
+const WANDERER_FILE = 'male_evil-true-web.glb';
+const terrainRaycaster = new THREE.Raycaster();
+
 let globalFloorMesh = null; // Reference for terrain manipulation
 // Audio State
 const audio = new SoundManager();
@@ -1067,6 +1073,74 @@ function loadPlayerModel() {
     }, 0.7, configKey);
 }
 
+function initWanderer() {
+    if (wandererMesh) { scene.remove(wandererMesh); wandererMesh = null; }
+    
+    loadGLB(`assets/images/glb/${WANDERER_FILE}`, (model, animations) => {
+        wandererMesh = model;
+        wandererMesh.position.set(0, -10, 0); // Hide initially
+        scene.add(wandererMesh);
+        
+        wandererMixer = new THREE.AnimationMixer(wandererMesh);
+        const walkClip = animations.find(a => /walk|run/i.test(a.name)) || animations[0];
+        if (walkClip) {
+            const action = wandererMixer.clipAction(walkClip);
+            action.play();
+        }
+        
+        pickWandererTarget();
+    }, 0.7);
+}
+
+function pickWandererTarget() {
+    if (!wandererMesh || !globalFloorMesh) return;
+    
+    let valid = false;
+    let x, z;
+    let attempts = 0;
+    
+    while (!valid && attempts < 20) {
+        attempts++;
+        const bounds = 12 + (game.floor * 2);
+        const r = 5 + Math.random() * (bounds - 6); // Wander within valid floor bounds
+        const angle = Math.random() * Math.PI * 2;
+        x = Math.cos(angle) * r;
+        z = Math.sin(angle) * r;
+        
+        // Avoid Rooms
+        if (game.rooms.some(r => Math.hypot(r.gx - x, r.gy - z) < 4)) continue;
+        
+        // Avoid Corridors
+        let nearCorr = false;
+        for (const mesh of corridorMeshes.values()) {
+            if (Math.hypot(mesh.position.x - x, mesh.position.z - z) < 3) { nearCorr = true; break; }
+        }
+        if (nearCorr) continue;
+        
+        valid = true;
+    }
+    
+    if (valid) {
+        wandererMesh.lookAt(x, wandererMesh.position.y, z);
+        const dist = Math.hypot(x - wandererMesh.position.x, z - wandererMesh.position.z);
+        
+        new TWEEN.Tween(wandererMesh.position)
+            .to({ x: x, z: z }, dist * 800) // Speed factor
+            .onUpdate(() => {
+                // Snap to floor
+                terrainRaycaster.set(new THREE.Vector3(wandererMesh.position.x, 10, wandererMesh.position.z), new THREE.Vector3(0, -1, 0));
+                const hits = terrainRaycaster.intersectObject(globalFloorMesh);
+                if (hits.length > 0) wandererMesh.position.y = hits[0].point.y;
+            })
+            .onComplete(() => {
+                setTimeout(pickWandererTarget, 2000 + Math.random() * 3000);
+            })
+            .start();
+    } else {
+        setTimeout(pickWandererTarget, 1000);
+    }
+}
+
 // Initialize Audio on first interaction
 window.addEventListener('click', () => {
     audio.init();
@@ -1724,6 +1798,7 @@ function animate3D() {
     if (use3dModel && mixer) {
         const delta = Math.min(clock.getDelta(), 0.1); // Cap delta to prevent "super fast" catch-up glitches
         mixer.update(delta * globalAnimSpeed);
+        if (wandererMixer) wandererMixer.update(delta * globalAnimSpeed);
     } else if (!use3dModel) {
         animatePlayerSprite();
     }
@@ -2039,6 +2114,8 @@ function clear3DScene() {
     hiddenStaticMeshes = [];
     globalFloorMesh = null;
 
+    wandererMesh = null; wandererMixer = null;
+
     // Clear ghosts
     ghosts.forEach(g => scene.remove(g));
     ghosts = [];
@@ -2206,6 +2283,7 @@ function finalizeStartDive() {
     globalFloorMesh = generateFloorCA(scene, game.floor, game.rooms, corridorMeshes, decorationMeshes, treePositions, loadTexture, getClonedTexture); // Generate Atmosphere and Floor
     updateAtmosphere(game.floor);
 
+    initWanderer();
     updateUI();
     logMsg("The descent begins. Room 0 explored.");
 
