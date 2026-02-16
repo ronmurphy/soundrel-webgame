@@ -904,8 +904,8 @@ h1 {
     background-position: center;
     border-radius: 2px;
 }
-    position: relative;
-}
+/*    position: relative;
+}*/
 
 .mini-trophy .suit {
     font-size: 0.9rem;
@@ -1163,7 +1163,7 @@ h1 {
 .inventory-content {
     width: 900px;
     max-width: 95vw;
-    height: 700px;
+    height: 790px;
     max-height: 90vh;
     background: rgba(10, 10, 10, 0.95);
     border: 2px solid var(--gold);
@@ -1262,7 +1262,7 @@ h1 {
 .inventory-content {
     width: 900px;
     max-width: 95vw;
-    height: 700px;
+    height: 790px;
     max-height: 90vh;
     background: rgba(10, 10, 10, 0.95);
     border: 2px solid var(--gold);

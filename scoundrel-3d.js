@@ -3535,8 +3535,7 @@ function showCombat() {
         let animClass = "";
 
         // 3D Mode: Hide the 2D card visuals but keep element for layout/clicking
-        // EXCEPTION: Merchant Gift Room (layout-merchant) uses 2D UI cards
-        if (use3dModel && !enemyArea.classList.contains('layout-merchant')) {
+        if (use3dModel) {
             card.style.opacity = '0';
             card.style.pointerEvents = 'none'; // Allow clicking through to 3D scene
         }
@@ -4711,6 +4710,96 @@ function updateUI() {
         invContainer.style.boxShadow = "none";
     }
 
+    // --- MAP HUD LOGIC (The persistent bottom bar) ---
+    const mapHud = document.getElementById('gameplayInventoryBar');
+    if (mapHud) {
+        // Visibility Logic: Hide in combat, inventory, start menu, or attract mode
+        const combatModal = document.getElementById('combatModal');
+        const invModal = document.getElementById('inventoryModal');
+        const startModal = document.getElementById('startMenuModal');
+        const attractOv = document.getElementById('attractionOverlay');
+        const merchantPortrait = document.getElementById('merchantPortrait');
+        
+        const isCombat = combatModal && (getComputedStyle(combatModal).display !== 'none');
+        const isInv = invModal && (getComputedStyle(invModal).display !== 'none');
+        const isStart = startModal && (getComputedStyle(startModal).display !== 'none');
+        const isAttract = attractOv && (getComputedStyle(attractOv).display !== 'none');
+        const isMerchant = merchantPortrait && (getComputedStyle(merchantPortrait).display !== 'none');
+
+        if (isCombat || isInv || isStart || isAttract || isMerchant) {
+            mapHud.style.display = 'none';
+        } else {
+            mapHud.style.display = 'flex';
+            
+            // 1. Update Weapon Button
+            const mapWepBtn = document.getElementById('mapWeaponBtn');
+            if (mapWepBtn) {
+                mapWepBtn.innerHTML = ''; // Clear contents
+                mapWepBtn.onclick = window.openInventory; // Ensure click works
+                
+                if (game.equipment.weapon) {
+                    const w = game.equipment.weapon;
+                    const asset = getAssetData('weapon', w.val, w.suit);
+                    const sheetCount = asset.sheetCount || 9;
+                    const bgSize = `${sheetCount * 100}% 100%`;
+                    const bgPos = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
+                    
+                    mapWepBtn.style.backgroundImage = `url('assets/images/${asset.file}')`;
+                    mapWepBtn.style.backgroundSize = bgSize;
+                    mapWepBtn.style.backgroundPosition = bgPos;
+                    
+                    // Durability Overlay
+                    if (game.weaponDurability !== Infinity) {
+                        const dur = document.createElement('div');
+                        dur.innerText = game.weaponDurability;
+                        dur.style.cssText = "position:absolute; bottom:0; right:0; background:rgba(0,0,0,0.8); color:#fff; font-size:10px; padding:0 3px; border-top-left-radius:4px;";
+                        mapWepBtn.appendChild(dur);
+                    }
+                } else {
+                    mapWepBtn.style.backgroundImage = 'none';
+                }
+            }
+
+            // 2. Update Hotbar Slots
+            const mapHotbar = document.getElementById('mapHotbar');
+            if (mapHotbar) {
+                mapHotbar.innerHTML = '';
+                // Render game.hotbar (Array of 6)
+                for (let i = 0; i < 6; i++) {
+                    const item = game.hotbar[i];
+                    const slot = document.createElement('div');
+                    slot.style.cssText = "width:40px; height:40px; border:1px solid #555; background:rgba(0,0,0,0.5); position:relative; cursor:pointer;";
+                    slot.title = item ? item.name : "Empty Slot";
+                    
+                    if (item) {
+                        // Create mini item visual
+                        const img = document.createElement('div');
+                        const asset = getAssetData(item.type, item.val || 0, item.suit);
+                        const sheetCount = asset.sheetCount || 9; // Default if missing
+                         
+                        img.style.width = '100%';
+                        img.style.height = '100%';
+                        img.style.backgroundImage = `url('assets/images/${asset.file}')`;
+                        img.style.backgroundSize = `${sheetCount * 100}% 100%`;
+                        img.style.backgroundPosition = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
+                        
+                        // Tint specific items if needed (like potions)
+                        if (item.type === 'potion') {
+                             img.style.filter = 'hue-rotate(-50deg) saturate(1.5)'; // Reddish for HP
+                        }
+                        
+                        slot.appendChild(img);
+                        
+                        // Count overlay if needed, or durability? usu items are single use.
+                        slot.onclick = () => { window.useHotbarItem(i); };
+                    }
+                    
+                    mapHotbar.appendChild(slot);
+                }
+            }
+        }
+    }
+
     // Create Tooltip Element if missing
     let tooltip = document.getElementById('gameTooltip');
     if (!tooltip) {
@@ -5527,6 +5616,7 @@ function setupInventoryUI() {
             <div class="inventory-right">
                 <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; margin-bottom:10px;">
                     <h3 style="color:var(--gold); font-family:'Cinzel'; margin:0;">Backpack</h3>
+                    <div style="font-size:0.9rem; color:#d4af37;">Coins: <span id="invSoulCoins">0</span></div>
                     <button class="v2-btn" onclick="sortInventory()" style="padding:2px 8px; font-size:0.8rem; margin-right: 12px;">Sort</button>
                 </div>
                 <div id="backpackGrid" class="backpack-grid"></div>
@@ -5542,6 +5632,14 @@ function setupInventoryUI() {
                         <div id="anvilSlot1" class="anvil-slot" data-slot-type="anvil" data-slot-idx="1" ondragover="event.preventDefault()" ondrop="handleDrop(event, 'anvil', 1)"></div>
                     </div>
                     <button class="v2-btn" onclick="forgeItems()" style="padding: 4px 12px; font-size: 0.9rem;">Forge (Combine)</button>
+                </div>
+
+                <!-- Trophies Section -->
+                <div class="trophy-section" style="margin-top:15px; border-top:1px solid #444; padding-top:10px;">
+                    <h4 style="color:var(--gold); font-family:'Cinzel'; margin:0 0 5px 0;">Trophies (Click to Burn)</h4>
+                    <div id="invTrophyShelf" style="display:flex; gap:5px; flex-wrap:wrap; max-height:80px; overflow-y:auto;">
+                        <!-- Injected JS -->
+                    </div>
                 </div>
             </div>
             <div class="inventory-bottom">
@@ -5736,7 +5834,52 @@ function renderInventoryUI() {
             if (item) el.appendChild(createItemEl(item, 'anvil', idx));
         }
     });
+
+    // Render Trophies
+    const trophyShelf = document.getElementById('invTrophyShelf');
+    if (trophyShelf) {
+        trophyShelf.innerHTML = '';
+        if (game.slainStack.length === 0) {
+            trophyShelf.innerHTML = '<div style="color:#666; font-size:0.8rem; font-style:italic;">No trophies yet...</div>';
+        } else {
+            game.slainStack.forEach((c, idx) => {
+                const div = document.createElement('div');
+                div.style.cssText = "width:30px; height:42px; border:1px solid #444; background:#222; position:relative; cursor:pointer;";
+                div.title = `Burn ${c.name} (+${c.val} Fuel)`;
+                
+                // Use playing card asset
+                div.innerHTML = `<div style="font-size:10px; color:${c.suit==='♥'||c.suit==='♦'?'#ff4444':'#aaa'}; text-align:center; margin-top:2px;">${c.val}</div><div style="font-size:14px; text-align:center;">${c.suit}</div>`;
+                
+                div.onclick = () => burnTrophy(idx);
+                trophyShelf.appendChild(div);
+            });
+        }
+    }
+    
+    // Update Coins
+    const coinsEl = document.getElementById('invSoulCoins');
+    if (coinsEl) coinsEl.innerText = game.soulCoins;
 }
+
+window.burnTrophy = function(idx) {
+    if (idx < 0 || idx >= game.slainStack.length) return;
+    const card = game.slainStack[idx];
+    
+    // Remove from stack
+    game.slainStack.splice(idx, 1);
+    
+    // Add Fuel
+    const fuelGain = card.val * 2;
+    game.torchCharge += fuelGain; 
+    if (game.torchCharge > 100) game.torchCharge = 100;
+
+    logMsg(`Burned ${card.name}. +${fuelGain} Fuel.`);
+    if (window.audio && window.audio.play) window.audio.play('spell_fire');
+    else if (typeof audio !== 'undefined' && audio.play) audio.play('spell_fire');
+
+    updateUI(); 
+    renderInventoryUI(); // Re-render this modal
+};
 
 function updateItemDescription(item) {
     const container = document.getElementById('invDescription');
@@ -7030,6 +7173,22 @@ window.addEventListener('touchend', (e) => {
     touchDragData = null;
     touchDragMoved = false;
 });
+
+// Global Inventory Aliases for Button clicks
+window.openInventory = () => {
+    // If inventory is not initialized, try setup
+    if (!document.getElementById('inventoryModal')) setupInventoryUI();
+    toggleInventory();
+};
+
+window.useHotbarItem = (idx) => {
+    // If modal is open, maybe close it? Or just use item.
+    // Use the existing logic
+    if (typeof useItem === 'function') {
+        useItem(idx); 
+        updateUI();
+    }
+};
 
 // Initialize Layout
 loadSettings();
