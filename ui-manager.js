@@ -4,7 +4,7 @@ import { game, getAssetData, getSpellName, SUITS, ARMOR_DATA, ITEM_DATA, CURSED_
 export function spawnFloatingText(text, x, y, color) {
     const el = document.createElement('div');
     el.innerText = text;
-    el.style.cssText = `position:fixed; left:${x}px; top:px; transform:translate(-50%, -50%); color:${color || '#fff'}; fontSize:32px; fontWeight:bold; textShadow:0 2px 4px #000; pointerEvents:none; zIndex:10000; transition:all 1s ease-out; opacity:1;`;
+    el.style.cssText = `position:fixed; left:${x}px; top:${y}px; transform:translate(-50%, -50%); color:${color || '#fff'}; fontSize:32px; fontWeight:bold; textShadow:0 2px 4px #000; pointerEvents:none; zIndex:10000; transition:all 1s ease-out; opacity:1;`;
     document.body.appendChild(el);
 
     requestAnimationFrame(() => {
@@ -34,7 +34,7 @@ export function updateUI() {
     // Visual Progression
     const blockNum = Math.min(9, game.floor).toString().padStart(3, '0');
     const sidebar = document.querySelector('.sidebar');
-    if(sidebar) sidebar.style.backgroundImage = `url('assets/images/individuals/block_.png')`;
+    if(sidebar) sidebar.style.backgroundImage = `url('assets/images/individuals/block_${blockNum}.png')`;
 
     // Update Modal
     const hpModal = document.getElementById('hpValueModal');
@@ -72,12 +72,12 @@ export function updateUI() {
     const fuelPct = Math.min(100, (currentFuel / maxFuel) * 100);
 
     if (torchBar) {
-        torchBar.style.height = `%`;
+        torchBar.style.height = `${fuelPct}%`;
         if (currentFuel <= 5) torchBar.style.background = '#ff4444';
         else torchBar.style.background = '#ffaa44';
     }
     if (mapFuelBar) {
-        mapFuelBar.style.height = `%`;
+        mapFuelBar.style.height = `${fuelPct}%`;
         if (currentFuel <= 5) mapFuelBar.style.background = '#ff4444';
         else mapFuelBar.style.background = 'linear-gradient(to top, #ff4400, #ffaa44)';
     }
@@ -87,11 +87,11 @@ export function updateUI() {
     const totalRooms = mandatoryRooms.length;
     const clearedRooms = mandatoryRooms.filter(r => r.state === 'cleared').length;
     const progressEl = document.getElementById('progressValue');
-    if (progressEl) progressEl.innerText = ` / `;
+    if (progressEl) progressEl.innerText = `${clearedRooms} / ${totalRooms}`;
 
     // Update Deck
     const deckEl = document.getElementById('deckValue');
-    if (deckEl) deckEl.innerText = game.deck.length;
+    if (deckEl) deckEl.innerText = game.deck ? game.deck.length : 0;
 
     // Update Weapon UI
     const weaponLabel = document.getElementById('weaponNameModal');
@@ -104,7 +104,7 @@ export function updateUI() {
     if (game.equipment.weapon) {
         const cleanName = game.equipment.weapon.name.split(' (')[0];
         if (weaponLabel) {
-            weaponLabel.innerText = ` (${game.equipment.weapon.val})`;
+            weaponLabel.innerText = `${cleanName} (${game.equipment.weapon.val})`;
             weaponLabel.style.color = 'var(--gold)';
         }
         if(weaponDetail) weaponDetail.innerText = game.weaponDurability === Infinity ? "Clean Weapon: No limit" : `Bloody: Next <${game.weaponDurability}`;
@@ -123,7 +123,7 @@ export function updateUI() {
             weaponArtSidebar.style.backgroundSize = bgSize;
             weaponArtSidebar.style.backgroundPosition = bgPos;
         }
-        if (nameSidebar) nameSidebar.innerText = ` (${game.equipment.weapon.val})`;
+        if (nameSidebar) nameSidebar.innerText = `${cleanName} (${game.equipment.weapon.val})`;
         if (durSidebar) durSidebar.innerText = game.weaponDurability === Infinity ? "Next: Any" : `Next: <${game.weaponDurability}`;
     } else {
         if (weaponLabel) {
@@ -157,7 +157,7 @@ export function updateUI() {
                 const bgSize = `${asset.sheetCount * 100}% 100%`;
                 const bgPos = `${(asset.uv.u * asset.sheetCount) / (asset.sheetCount - 1) * 100}% 0%`;
 
-                slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:; background-position:; " onclick="window.useHotbarItem()"></div>`;
+                slot.innerHTML = `<div style="width:100%; height:100%; background-image:url('assets/images/${asset.file}'); background-size:${bgSize}; background-position:${bgPos}; ${tint}" onclick="window.useHotbarItem(${i})"></div>`;
                 
                 // Tooltip
                 slot.onmouseenter = () => showTooltip(slot, item);
@@ -194,16 +194,40 @@ function updateMapHUD() {
     } else {
         mapHud.style.display = 'flex';
         
+        // Ensure HUD has overflow hidden for bars
+        if (mapHud.style.overflow !== 'hidden') mapHud.style.overflow = 'hidden';
+
         // HP/AP Bars
-        const hpBar = document.getElementById('hudHpBar');
-        if(hpBar) hpBar.style.width = `${Math.max(0, Math.min(100, (game.hp / game.maxHp) * 100))}%`;
+        let hpBar = document.getElementById('hudHpBar');
+        if (!hpBar) {
+            hpBar = document.createElement('div');
+            hpBar.id = 'hudHpBar';
+            hpBar.style.cssText = "position:absolute; top:0; left:0; height:100%; background:linear-gradient(to right, #8b0000, #e60000); z-index:0; transition: width 0.3s ease-out; opacity:0.6;";
+            mapHud.insertBefore(hpBar, mapHud.firstChild);
+        }
+        hpBar.style.width = `${Math.max(0, Math.min(100, (game.hp / game.maxHp) * 100))}%`;
         
-        const apBar = document.getElementById('hudApBar');
-        if(apBar) apBar.style.width = `${game.maxAp > 0 ? Math.max(0, Math.min(100, (game.ap / game.maxAp) * 100)) : 0}%`;
+        let apBar = document.getElementById('hudApBar');
+        if (!apBar) {
+            apBar = document.createElement('div');
+            apBar.id = 'hudApBar';
+            apBar.style.cssText = "position:absolute; top:0; left:0; height:100%; background:linear-gradient(to right, rgba(212, 175, 55, 0.5), rgba(255, 223, 0, 0.6)); z-index:0; transition: width 0.3s ease-out; pointer-events:none; border-right: 1px solid rgba(255,255,255,0.5);";
+            mapHud.insertBefore(apBar, hpBar.nextSibling);
+        }
+        apBar.style.width = `${game.maxAp > 0 ? Math.max(0, Math.min(100, (game.ap / game.maxAp) * 100)) : 0}%`;
+
+        // Ensure content is above bars
+        Array.from(mapHud.children).forEach(c => {
+            if (c.id !== 'hudHpBar' && c.id !== 'hudApBar') {
+                c.style.zIndex = '1';
+                if (getComputedStyle(c).position === 'static') c.style.position = 'relative';
+            }
+        });
 
         // Weapon Button
         const mapWepBtn = document.getElementById('mapWeaponBtn');
         if (mapWepBtn) {
+            mapWepBtn.onclick = window.openInventory;
             mapWepBtn.innerHTML = '';
             if (game.equipment.weapon) {
                 const w = game.equipment.weapon;
@@ -312,7 +336,7 @@ export function renderInventoryUI() {
 
     // Render Equipment
     ['head', 'chest', 'hands', 'legs', 'weapon'].forEach(slot => {
-        const el = document.getElementById(`equipSlot_`);
+        const el = document.getElementById(`equipSlot_${slot}`);
         if (el) {
             el.innerHTML = '';
             const item = game.equipment[slot];
@@ -355,7 +379,7 @@ export function renderInventoryUI() {
 
     // Render Anvil
     [0, 1].forEach(idx => {
-        const el = document.getElementById(`anvilSlot`);
+        const el = document.getElementById(`anvilSlot${idx}`);
         if (el) {
             el.innerHTML = '';
             const item = game.anvil[idx];
@@ -398,11 +422,21 @@ export function renderInventoryUI() {
                 else if (c.val === 14) cellIdx = 8;
                 const px = cellIdx * (100/8);
 
-                monster.style.cssText = `width:100%; height:100%; background: url('assets/images/'); background-size: 900% 100%; background-position: % 0%; filter: grayscale(0.2) contrast(1.2);`;
+                monster.style.cssText = `width:100%; height:100%; background: url('assets/images/${sheetFile}'); background-size: 900% 100%; background-position: ${px}% 0%; filter: grayscale(0.2) contrast(1.2);`;
                 container.appendChild(monster);
                 trophyShelf.appendChild(container);
             });
         }
+    }
+
+    // Update Class Icon
+    const classIcon = document.getElementById('classIconDisplay');
+    if (classIcon) {
+        const classMap = { 'knight': 0, 'rogue': 1, 'occultist': 2 };
+        const cIdx = classMap[game.classId] || 0;
+        classIcon.style.backgroundImage = "url('assets/images/classes.png')";
+        classIcon.style.backgroundSize = "900% 100%";
+        classIcon.style.backgroundPosition = `${cIdx * (100/8)}% 0%`;
     }
     
     // Update Coins

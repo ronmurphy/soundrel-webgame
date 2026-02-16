@@ -88,7 +88,8 @@ export const game = {
     isBossFight: false,
     torchCharge: 20,
     anvil: [null, null],
-    currentTrack: null
+    currentTrack: null,
+    deck: []
 };
 
 export function getDisplayVal(v) {
@@ -243,11 +244,11 @@ export function createDeck() {
             if (game.classId === 'occultist') {
                 deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: getSpellName(v), isSpell: true });
             } else {
-                deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: `Weapon lv.` });
+                deck.push({ suit: SUITS.DIAMONDS, val: v, type: 'weapon', name: `Weapon lv.${v}` });
             }
         }
         for (let v = 2; v <= 10; v++) {
-            deck.push({ suit: SUITS.HEARTS, val: v, type: 'potion', name: `HP Incense ` });
+            deck.push({ suit: SUITS.HEARTS, val: v, type: 'potion', name: `HP Incense ${v}` });
         }
     }
     return shuffle(deck);

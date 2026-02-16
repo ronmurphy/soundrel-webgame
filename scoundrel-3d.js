@@ -5589,13 +5589,6 @@ async function loadRoomConfig() {
     }
 }
 
-// Global Inventory Aliases for Button clicks
-window.openInventory = () => {
-    // If inventory is not initialized, try setup
-    if (!document.getElementById('inventoryModal')) setupInventoryUI();
-    toggleInventory();
-};
-
 // Initialize Layout
 loadSettings();
 loadRoomConfig().then(() => {
