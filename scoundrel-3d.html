@@ -89,7 +89,10 @@
             <!-- Durability indicator gets injected here -->
         </div>
         
-        <div style="width:2px; height:36px; background:var(--gold); opacity:0.5;"></div>
+        <!-- Fuel Bar (Vertical Meter) -->
+        <div class="fuel-meter-container" style="width:12px; height:36px; background:#111; border:1px solid #444; position:relative; margin:0 5px; box-shadow:inset 0 0 4px #000;" title="Torch Fuel">
+            <div id="mapFuelBar" style="position:absolute; bottom:0; left:0; width:100%; background:linear-gradient(to top, #ff4400, #ffaa44); height:50%; transition:height 0.3s;"></div>
+        </div>
 
         <!-- Hotbar Slots in Map View -->
         <div id="mapHotbar" style="display:flex; gap:6px;">

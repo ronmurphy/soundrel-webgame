@@ -3896,7 +3896,36 @@ function pickCard(idx, event) {
                 dmg = Math.max(0, effectiveCardVal - game.equipment.weapon.val);
                 brokeName = game.equipment.weapon.name;
                 willBreak = true;
-                game.equipment.weapon = null; game.weaponDurability = Infinity; game.slainStack = [];
+                
+                // --- WEAPON BREAK SALVAGE LOGIC ---
+                // "When a weapon's durability causes the weapon to be destroyed, 
+                // half of the cards will go to the player's trophy area"
+                if (game.slainStack && game.slainStack.length > 0) {
+                    const salvageCount = Math.ceil(game.slainStack.length / 2);
+                    // Shuffle or pick random? User said "can be random".
+                    // Let's just shuffle the stack and keep the first half.
+                    // Actually, game.slainStack usually CLEARS on break in Scoundrel. 
+                    // But here we want to PRESERVE half.
+                    
+                    // Simple shuffle
+                    for (let i = game.slainStack.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [game.slainStack[i], game.slainStack[j]] = [game.slainStack[j], game.slainStack[i]];
+                    }
+                    
+                    // Keep first N (salvageCount), discard the rest
+                    const savedTrophies = game.slainStack.slice(0, salvageCount);
+                    game.slainStack = savedTrophies;
+                    
+                    logMsg(`Weapon shattered! Salvaged ${salvageCount} trophies.`);
+                } else {
+                    game.slainStack = [];
+                }
+
+                game.equipment.weapon = null; 
+                game.weaponDurability = Infinity; 
+                // game.slainStack = []; // REMOVED (Handled above)
+
                 logMsg(`CRACK! The ${brokeName} has broken!`);
             } else {
                 dmg = effectiveCardVal;
@@ -4600,27 +4629,32 @@ function updateUI() {
     const floorModalEl = document.getElementById('floorValueModal');
     if (floorModalEl) floorModalEl.innerText = game.floor;
 
-    // Updated Fuel Logic for Dashboard
+    // Updated Fuel Logic (Dashboard & Map HUD)
     const torchBar = document.getElementById('torchFuelBar');
-    if (torchBar) {
-        // Visual scale max (game logic usually caps at 20 or 30, adjust as needed)
-        const maxFuel = 30; 
-        const currentFuel = game.torchCharge || 0;
-        const pct = Math.min(100, (currentFuel / maxFuel) * 100);
-        torchBar.style.height = `${pct}%`;
-        
-        // Optional: Update title for tooltip value
-        const container = torchBar.closest('.fuel-gauge-container');
-        if (container) {
-            container.title = `Torch Fuel: ${currentFuel}`;
-        }
+    const mapFuelBar = document.getElementById('mapFuelBar');
+    
+    // Calculate Fuel Percentage
+    const maxFuel = 30; 
+    const currentFuel = game.torchCharge || 0;
+    const fuelPct = Math.min(100, (currentFuel / maxFuel) * 100);
 
-        // Color update based on low fuel
-        if (currentFuel <= 5) {
-            torchBar.style.background = '#ff4444';
-        } else {
-            torchBar.style.background = '#ffaa44';
-        }
+    // Update Dashboard Gauge (Vertical)
+    if (torchBar) {
+        torchBar.style.height = `${fuelPct}%`;
+        const container = torchBar.closest('.fuel-gauge-container');
+        if (container) container.title = `Torch Fuel: ${currentFuel}`;
+        
+        if (currentFuel <= 5) torchBar.style.background = '#ff4444';
+        else torchBar.style.background = '#ffaa44';
+    }
+
+    // Update Map HUD Gauge (Small Vertical)
+    if (mapFuelBar) {
+        mapFuelBar.style.height = `${fuelPct}%`;
+        mapFuelBar.parentElement.title = `Fuel: ${currentFuel}`;
+        
+        if (currentFuel <= 5) mapFuelBar.style.background = '#ff4444';
+        else mapFuelBar.style.background = 'linear-gradient(to top, #ff4400, #ffaa44)';
     }
 
     // const totalRooms = game.rooms ? game.rooms.filter(r => !r.isWaypoint).length : 0;
@@ -5598,63 +5632,164 @@ function initAttractMode() {
 }
 
 function setupInventoryUI() {
-    const modal = document.createElement('div');
-    modal.id = 'inventoryModal';
-    modal.className = 'modal-overlay';
+    let modal = document.getElementById('inventoryModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'inventoryModal';
+        modal.className = 'modal-overlay';
+        document.body.appendChild(modal);
+    }
+    
+    // Determine doll image based on sex
+    const sex = game.sex || 'm';
+    
     modal.innerHTML = `
-        <div class="inventory-content">
-            <div class="inventory-left">
-                <div id="classIconDisplay" class="class-icon-display"></div>
-                <div id="paperDoll" class="paper-doll" style="background-image: url('assets/images/visualnovel/${game.sex}_doll.png');">
-                    <div class="equip-slot head" data-slot="head" data-slot-type="equipment" data-slot-idx="head"></div>
-                    <div class="equip-slot chest" data-slot="chest" data-slot-type="equipment" data-slot-idx="chest"></div>
-                    <div class="equip-slot hands" data-slot="hands" data-slot-type="equipment" data-slot-idx="hands"></div>
-                    <div class="equip-slot legs" data-slot="legs" data-slot-type="equipment" data-slot-idx="legs"></div>
-                    <div class="equip-slot weapon" data-slot="weapon" data-slot-type="equipment" data-slot-idx="weapon"></div>
-                </div>
+    <div class="inventory-layout-container" style="
+        width: 850px; 
+        height: 700px; 
+        background: #050505; 
+        border: 2px solid var(--gold); 
+        padding: 5px; 
+        box-shadow: 0 0 20px #000; 
+        display:grid; 
+        grid-template-rows: 40px 1fr 180px; 
+        gap: 5px;
+        position: relative;
+        font-family: 'Cinzel', serif;
+        color: var(--gold);
+    ">
+    
+        <!-- HEADER -->
+        <div style="grid-row:1; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; padding:0 10px;">
+            <div style="font-size:1.4rem; font-weight:bold; letter-spacing:1px; color:#d4af37;">INVENTORY</div>
+            <div style="display:flex; gap:15px; align-items:center;">
+                <div style="font-size:0.9rem; color:#aaa;">Coins: <span id="invSoulCoins" style="color:var(--gold);">0</span></div>
+                <div onclick="sortInventory()" title="Sort Backpack" style="width:32px; height:32px; cursor:pointer; background-color:#d4af37; background-image:url('assets/images/sort.png'); background-repeat:no-repeat; background-position:center; background-size:contain; opacity:0.8; transition:opacity 0.2s; border:1px solid #9a7d25;"></div>
+                <div onclick="toggleInventory()" style="width:32px; height:32px; background:#d4af37; color:#000; border:1px solid #9a7d25; display:flex; align-items:center; justify-content:center; cursor:pointer; font-weight:bold; font-family:sans-serif;">X</div>
             </div>
-            <div class="inventory-right">
-                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; margin-bottom:10px;">
-                    <h3 style="color:var(--gold); font-family:'Cinzel'; margin:0;">Backpack</h3>
-                    <div style="font-size:0.9rem; color:#d4af37;">Coins: <span id="invSoulCoins">0</span></div>
-                    <button class="v2-btn" onclick="sortInventory()" style="padding:2px 8px; font-size:0.8rem; margin-right: 12px;">Sort</button>
-                </div>
-                <div id="backpackGrid" class="backpack-grid"></div>
-                <div id="sellSlot" class="sell-slot" ondragover="event.preventDefault()" ondragenter="event.preventDefault()" ondrop="handleDrop(event, 'sell', 0)" data-slot-type="sell" data-slot-idx="0" style="display:flex; align-items:center; justify-content:center; text-align:center;">
-                    <span style="pointer-events:none; user-select:none;">Drag here for Torch fuel + 1 Coin</span>
+        </div>
+
+        <!-- MAIN CONTENT: DOLL vs BACKPACK -->
+        <div style="grid-row:2; display:grid; grid-template-columns: 320px 1fr; gap:10px;">
+            
+            <!-- LEFT: PAPER DOLL -->
+            <div style="position:relative; background:#111; border:1px solid #333;">
+                <!-- Doll Image -->
+                <div id="paperDoll" style="
+                    width:100%; height:100%; 
+                    background:url('assets/images/visualnovel/${sex}_doll.png') no-repeat center bottom; 
+                    background-size:contain; 
+                    opacity:0.8;">
                 </div>
                 
-                <!-- Anvil Section -->
-                <div class="anvil-section">
-                    <h4 style="color:var(--gold); font-family:'Cinzel'; margin:0;">The Anvil</h4>
-                    <div class="anvil-slots">
-                        <div id="anvilSlot0" class="anvil-slot" data-slot-type="anvil" data-slot-idx="0" ondragover="event.preventDefault()" ondrop="handleDrop(event, 'anvil', 0)"></div>
-                        <div id="anvilSlot1" class="anvil-slot" data-slot-type="anvil" data-slot-idx="1" ondragover="event.preventDefault()" ondrop="handleDrop(event, 'anvil', 1)"></div>
-                    </div>
-                    <button class="v2-btn" onclick="forgeItems()" style="padding: 4px 12px; font-size: 0.9rem;">Forge (Combine)</button>
+                <!-- Class Icon (Top Left) -->
+                <div id="classIconDisplay" style="
+                    position:absolute; top:10px; left:10px; 
+                    width:64px; height:64px; 
+                    border:2px solid var(--gold); 
+                    background-color:rgba(0,0,0,0.5); 
+                    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+                " title="Class"></div>
+
+                <!-- Equip Slots (Absolute positioned over doll) -->
+                <!-- Head -->
+                <div id="equipSlot_head" data-slot-type="equipment" data-slot-idx="head" style="position:absolute; top:20px; left:50%; transform:translateX(-50%); width:64px; height:64px; border:1px solid var(--gold); background:rgba(0,0,0,0.3); box-shadow:0 0 10px gold inset;" ondrop="handleDrop(event, 'equipment', 'head')" ondragover="allowDrop(event)"></div>
+                
+                <!-- Chest -->
+                <div id="equipSlot_chest" data-slot-type="equipment" data-slot-idx="chest" style="position:absolute; top:110px; left:50%; transform:translateX(-50%); width:64px; height:80px; border:1px solid var(--gold); background:rgba(0,0,0,0.3);" ondrop="handleDrop(event, 'equipment', 'chest')" ondragover="allowDrop(event)"></div>
+                
+                <!-- Hands -->
+                <div id="equipSlot_hands" data-slot-type="equipment" data-slot-idx="hands" style="position:absolute; top:200px; left:20px; width:54px; height:54px; border:1px solid var(--gold); background:rgba(0,0,0,0.3);" ondrop="handleDrop(event, 'equipment', 'hands')" ondragover="allowDrop(event)"></div>
+                
+                <!-- Weapon -->
+                <div id="equipSlot_weapon" data-slot-type="equipment" data-slot-idx="weapon" style="position:absolute; top:200px; right:20px; width:54px; height:54px; border:1px solid var(--gold); background:rgba(0,0,0,0.3);" ondrop="handleDrop(event, 'equipment', 'weapon')" ondragover="allowDrop(event)"></div>
+                
+                <!-- Legs -->
+                <div id="equipSlot_legs" data-slot-type="equipment" data-slot-idx="legs" style="position:absolute; bottom:80px; left:50%; transform:translateX(-50%); width:64px; height:64px; border:1px solid var(--gold); background:rgba(0,0,0,0.3);" ondrop="handleDrop(event, 'equipment', 'legs')" ondragover="allowDrop(event)"></div>
+                
+            </div>
+
+            <!-- RIGHT: BACKPACK & HOTBAR -->
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                
+                <!-- Backpack Label -->
+                <div style="font-size:1.1rem; color:#d4af37; border-bottom:1px solid #333; padding-bottom:2px;">BACKPACK</div>
+                
+                <!-- 6x4 Grid -->
+                <div id="invGrid" style="
+                    display:grid; 
+                    grid-template-columns: repeat(6, 1fr); 
+                    grid-template-rows: repeat(4, 1fr); 
+                    gap:4px; 
+                    flex-grow:1;
+                ">
+                    <!-- JS Injects 24 slots here -->
                 </div>
 
-                <!-- Trophies Section -->
-                <div class="trophy-section" style="margin-top:15px; border-top:1px solid #444; padding-top:10px;">
-                    <h4 style="color:var(--gold); font-family:'Cinzel'; margin:0 0 5px 0;">Trophies (Click to Burn)</h4>
-                    <div id="invTrophyShelf" style="display:flex; gap:5px; flex-wrap:wrap; max-height:80px; overflow-y:auto;">
-                        <!-- Injected JS -->
-                    </div>
+                <!-- Provisioning Label -->
+                <div style="font-size:1.1rem; color:#d4af37; border-bottom:1px solid #333; padding-bottom:2px; margin-top:10px;">PROVISIONING (HOTBAR)</div>
+                
+                <!-- Hotbar Row -->
+                <div id="hotbarGrid" style="display:grid; grid-template-columns: repeat(6, 1fr); gap:4px; height:60px;">
+                    <!-- JS Injects 6 slots here -->
                 </div>
             </div>
-            <div class="inventory-bottom">
-                <div class="inventory-hotbar-section">
-                     <h3 style="color:var(--gold); font-family:'Cinzel';">Provisioning (Hotbar)</h3>
-                     <div id="modalHotbarGrid" class="hotbar-grid"></div>
-                </div>
-                <div id="invDescription" class="inventory-desc-section">
-                    <div style="opacity:0.5; font-style:italic;">Select an item to view details...</div>
-                </div>
-            </div>
-            <button class="v2-btn close-inv-btn" onclick="toggleInventory()" style="position:absolute; top:5px; right:5px; width:32px; height:32px; padding:0; display:flex; align-items:center; justify-content:center; font-size:1.2rem; box-shadow:none; z-index:10;">✕</button>
         </div>
+
+        <!-- BOTTOM: DETAILS, TROPHY, ANVIL -->
+        <div style="grid-row:3; display:grid; grid-template-columns: 1fr 200px; gap:10px; border-top:1px solid #444; padding-top:5px;">
+            
+            <!-- LEFT BOTTOM: Description + Trophies -->
+            <div style="display:flex; flex-direction:column; gap:5px;">
+                <!-- Description Line -->
+                <div id="invDescription" style="
+                    font-family: 'Special Elite', monospace; 
+                    color:#aaa; 
+                    font-size:0.9rem; 
+                    padding:5px; 
+                    background:#111; 
+                    border:1px solid #333; 
+                    height:24px; 
+                    display:flex; align-items:center;
+                    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+                ">Select an item to view details...</div>
+                
+                <!-- Trophies Label -->
+                <div style="font-size:0.9rem; color:#d4af37; margin-top:5px;">TROPHIES (CLICK TO BURN)</div>
+                
+                <!-- Trophy Shelf (Scrollable Horizontal) -->
+                <div id="invTrophyShelf" style="
+                    display:flex; 
+                    gap:5px; 
+                    overflow-x:auto; 
+                    height:100px; 
+                    background:#080808; 
+                    border:1px solid #333; 
+                    padding:5px;
+                    scrollbar-width: thin;
+                    scrollbar-color: #444 #111;
+                    align-items: center;
+                ">
+                    <!-- JS Injects Trophies -->
+                </div>
+            </div>
+
+            <!-- RIGHT BOTTOM: ANVIL -->
+            <div style="display:flex; flex-direction:column; border:1px solid #444; background:#111; padding:5px;">
+                <div style="text-align:center; color:#d4af37; margin-bottom:5px;">THE ANVIL</div>
+                
+                <!-- Anvil Slots -->
+                <div style="display:flex; justify-content:center; gap:10px; margin-bottom:10px;">
+                    <div id="anvilSlot0" data-slot-type="anvil" data-slot-idx="0" style="width:60px; height:60px; border:1px dashed #666; background:#222;" ondrop="handleDrop(event, 'anvil', '0')" ondragover="allowDrop(event)"></div>
+                    <div id="anvilSlot1" data-slot-type="anvil" data-slot-idx="1" style="width:60px; height:60px; border:1px dashed #666; background:#222;" ondrop="handleDrop(event, 'anvil', '1')" ondragover="allowDrop(event)"></div>
+                </div>
+                
+                <button class="v2-btn" onclick="window.forgeItems()" style="width:100%; font-size:0.9rem; padding:5px;">FORGE</button>
+            </div>
+        </div>
+
+    </div>
     `;
-    document.body.appendChild(modal);
 }
 
 window.forgeItems = function () {
@@ -5707,10 +5842,11 @@ window.sortInventory = function () {
         const typeB = typePriority[b.type] || 5;
 
         if (typeA !== typeB) return typeA - typeB;
-        return b.val - a.val; // Descending value
+        return (b.val || 0) - (a.val || 0); // Descending value saftey check
     });
 
     updateUI();
+    renderInventoryUI(); // Force redraw of backpack grid
 };
 
 function renderInventoryUI() {
@@ -5721,57 +5857,26 @@ function renderInventoryUI() {
     const doll = document.getElementById('paperDoll');
     if (doll) doll.style.backgroundImage = `url('assets/images/visualnovel/${game.sex}_doll.png')`;
 
-    // Update Class Icon
-    const classIcon = document.getElementById('classIconDisplay');
-    const cData = CLASS_DATA[game.classId];
-    if (classIcon && cData && cData.icon) {
-        const asset = getAssetData(cData.icon.type, cData.icon.val, null);
-        const sheetCount = asset.sheetCount || 9;
-        classIcon.style.backgroundImage = `url('assets/images/${asset.file}')`;
-        classIcon.style.backgroundSize = `${sheetCount * 100}% 100%`;
-        classIcon.style.backgroundPosition = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
-        classIcon.title = cData.name;
-    }
-
     // Helper to create draggable item
     const createItemEl = (item, source, idx) => {
         if (!item) return null;
         const div = document.createElement('div');
         div.className = 'inv-item-drag';
         div.style.width = '100%'; div.style.height = '100%';
+        div.title = item.name;
+        
         const asset = getAssetData(item.type, item.val || item.id, item.suit);
         const sheetCount = asset.sheetCount || 9;
+        
         div.style.backgroundImage = `url('assets/images/${asset.file}')`;
         div.style.backgroundSize = `${sheetCount * 100}% 100%`;
         div.style.backgroundPosition = `${(asset.uv.u * sheetCount) / (sheetCount - 1) * 100}% 0%`;
-
-        if (item.type === 'weapon' && item.durability !== undefined && item.durability !== Infinity) {
-            div.innerHTML = `<div class="item-durability">${item.durability}</div>`;
-        }
 
         div.draggable = true;
         div.ondragstart = (e) => {
             e.dataTransfer.setData('text/plain', JSON.stringify({ source, idx }));
         };
-
-        // Touch Drag Support
-        div.ontouchstart = (e) => {
-            if (e.touches.length > 1) return;
-            const touch = e.touches[0];
-            touchDragData = { source, idx };
-
-            touchDragGhost = div.cloneNode(true);
-            touchDragGhost.style.position = 'fixed';
-            touchDragGhost.style.zIndex = '10000';
-            touchDragGhost.style.opacity = '0.8';
-            touchDragGhost.style.pointerEvents = 'none';
-            touchDragGhost.style.width = div.getBoundingClientRect().width + 'px';
-            touchDragGhost.style.height = div.getBoundingClientRect().height + 'px';
-            touchDragGhost.style.left = (touch.clientX - touchDragGhost.offsetWidth / 2) + 'px';
-            touchDragGhost.style.top = (touch.clientY - touchDragGhost.offsetHeight / 2) + 'px';
-            document.body.appendChild(touchDragGhost);
-        };
-
+        
         div.onclick = (e) => {
             e.stopPropagation();
             updateItemDescription(item);
@@ -5781,49 +5886,51 @@ function renderInventoryUI() {
 
     // Render Equipment
     ['head', 'chest', 'hands', 'legs', 'weapon'].forEach(slot => {
-        const el = doll.querySelector(`.${slot}`);
+        const el = document.getElementById(`equipSlot_${slot}`);
+        if (!el) return;
         el.innerHTML = '';
-        el.ondragover = (e) => e.preventDefault();
-        el.ondrop = (e) => handleDrop(e, 'equipment', slot);
-
         const item = game.equipment[slot];
         if (item) {
             el.appendChild(createItemEl(item, 'equipment', slot));
         }
     });
 
-    // Render Backpack
-    const bpGrid = document.getElementById('backpackGrid');
-    bpGrid.innerHTML = '';
-    game.backpack.forEach((item, idx) => {
-        const div = document.createElement('div');
-        div.className = 'inv-slot';
-        div.ondragover = (e) => e.preventDefault();
-        div.ondrop = (e) => handleDrop(e, 'backpack', idx);
-        div.dataset.slotType = 'backpack';
-        div.dataset.slotIdx = idx;
-        if (item) {
-            div.appendChild(createItemEl(item, 'backpack', idx));
+    // Render Backpack (24 slots)
+    const invGrid = document.getElementById('invGrid');
+    if (invGrid) {
+        invGrid.innerHTML = '';
+        // Ensure backpack has correct size if resized
+        if (game.backpack.length < 24) {
+             while(game.backpack.length < 24) game.backpack.push(null);
         }
-        bpGrid.appendChild(div);
-    });
+        
+        game.backpack.forEach((item, idx) => {
+            const div = document.createElement('div');
+            div.style.cssText = "border:1px solid #333; background:#0a0a0a; position:relative;";
+            div.ondragover = (e) => e.preventDefault();
+            div.ondrop = (e) => handleDrop(e, 'backpack', idx);
+            if (item) {
+                div.appendChild(createItemEl(item, 'backpack', idx));
+            }
+            invGrid.appendChild(div);
+        });
+    }
 
     // Render Hotbar
-    const hbGrid = document.getElementById('modalHotbarGrid');
-    hbGrid.innerHTML = '';
-    game.hotbar.forEach((item, idx) => {
-        const div = document.createElement('div');
-        div.className = 'inv-slot';
-        div.style.width = '64px';
-        div.ondragover = (e) => e.preventDefault();
-        div.ondrop = (e) => handleDrop(e, 'hotbar', idx);
-        div.dataset.slotType = 'hotbar';
-        div.dataset.slotIdx = idx;
-        if (item) {
-            div.appendChild(createItemEl(item, 'hotbar', idx));
-        }
-        hbGrid.appendChild(div);
-    });
+    const hotbarGrid = document.getElementById('hotbarGrid');
+    if (hotbarGrid) {
+        hotbarGrid.innerHTML = '';
+        game.hotbar.forEach((item, idx) => {
+            const div = document.createElement('div');
+            div.style.cssText = "border:1px solid #333; background:#0a0a0a; position:relative;";
+            div.ondragover = (e) => e.preventDefault();
+            div.ondrop = (e) => handleDrop(e, 'hotbar', idx);
+            if (item) {
+                div.appendChild(createItemEl(item, 'hotbar', idx));
+            }
+            hotbarGrid.appendChild(div);
+        });
+    }
 
     // Render Anvil
     [0, 1].forEach(idx => {
@@ -5840,25 +5947,121 @@ function renderInventoryUI() {
     if (trophyShelf) {
         trophyShelf.innerHTML = '';
         if (game.slainStack.length === 0) {
-            trophyShelf.innerHTML = '<div style="color:#666; font-size:0.8rem; font-style:italic;">No trophies yet...</div>';
+            trophyShelf.innerHTML = '<div style="color:#666; font-size:0.8rem; font-style:italic; padding:10px;">No trophies collected.</div>';
         } else {
             game.slainStack.forEach((c, idx) => {
-                const div = document.createElement('div');
-                div.style.cssText = "width:30px; height:42px; border:1px solid #444; background:#222; position:relative; cursor:pointer;";
-                div.title = `Burn ${c.name} (+${c.val} Fuel)`;
+                // Determine Sprite Sheet based on Suit (Singular Names)
+                let sheetFile = 'diamond.png'; 
+                if (c.suit === '♥') sheetFile = 'heart.png';
+                else if (c.suit === '♣') sheetFile = 'club.png';
+                else if (c.suit === '♠') sheetFile = 'spade.png';
                 
-                // Use playing card asset
-                div.innerHTML = `<div style="font-size:10px; color:${c.suit==='♥'||c.suit==='♦'?'#ff4444':'#aaa'}; text-align:center; margin-top:2px;">${c.val}</div><div style="font-size:14px; text-align:center;">${c.suit}</div>`;
+                // Construct the trophy card container
+                const container = document.createElement('div');
+                container.style.cssText = "position:relative; width:80px; height:80px; flex-shrink:0; cursor:pointer; border:1px solid #333; background:#080808; margin-right:5px;";
+                container.title = `Burn ${c.name} (+${c.val * 2} Fuel)`;
+                container.onclick = () => burnTrophy(idx);
+
+                // Monster Sprite (128x128 but scaled down to fit box)
+                const monster = document.createElement('div');
+                monster.style.cssText = `
+                    width:100%; height:100%;
+                    background: url('assets/images/${sheetFile}');
+                    background-size: 900% 100%; 
+                    background-position: ${getSpritePos(c.val)}; 
+                    filter: grayscale(0.2) contrast(1.2);
+                `;
                 
-                div.onclick = () => burnTrophy(idx);
-                trophyShelf.appendChild(div);
+                // Small Rank/Suit Icon (Bottom Right)
+                const rankIcon = document.createElement('div');
+                // Map Value to Filename suffix (card_spades_A.png, etc)
+                let suitName = 'spades';
+                if(c.suit === '♥') suitName = 'hearts';
+                else if(c.suit === '♦') suitName = 'diamonds';
+                else if(c.suit === '♣') suitName = 'clubs';
+                
+                let valName = c.val.toString();
+                if(c.val === 11) valName = 'J';
+                else if(c.val === 12) valName = 'Q';
+                else if(c.val === 13) valName = 'K';
+                else if(c.val === 14) valName = 'A';
+                else if(c.val < 10) valName = '0' + c.val;
+                
+                const cardFile = `card_${suitName}_${valName}.png`;
+                rankIcon.style.cssText = `
+                    position:absolute; bottom:2px; right:2px;
+                    width:20px; height:28px;
+                    background: url('assets/images/kenney/medium/${cardFile}');
+                    background-size: contain; background-repeat: no-repeat;
+                    box-shadow: 1px 1px 4px #000;
+                `;
+
+                container.appendChild(monster);
+                container.appendChild(rankIcon);
+                trophyShelf.appendChild(container);
             });
         }
+    }
+
+    // Update Class Icon
+    const classIcon = document.getElementById('classIconDisplay');
+    if (classIcon) {
+        const classMap = { 'knight': 0, 'rogue': 1, 'occultist': 2 };
+        const cIdx = classMap[game.classId] || 0;
+        classIcon.style.backgroundImage = "url('assets/images/classes.png')";
+        classIcon.style.backgroundSize = "900% 100%"; // 9 cells horizontally
+        classIcon.style.backgroundPosition = `${cIdx * (100/8)}% 0%`; // (0, 12.5, 25...)
     }
     
     // Update Coins
     const coinsEl = document.getElementById('invSoulCoins');
     if (coinsEl) coinsEl.innerText = game.soulCoins;
+}
+
+// Configuration for Horizontal Sprite Sheets (13 cells)
+function getSpritePos(val) {
+    let cellIdx = 0;
+    if (val <= 3) cellIdx = 0;
+    else if (val <= 5) cellIdx = 1;
+    else if (val <= 7) cellIdx = 2;
+    else if (val <= 9) cellIdx = 3;
+    else if (val === 10) cellIdx = 4;
+    else if (val === 11) cellIdx = 5;
+    else if (val === 12) cellIdx = 6;
+    else if (val === 13) cellIdx = 7;
+    else if (val === 14) cellIdx = 8;
+    
+    // For a single row sprite sheet of 9 cells
+    // width: 900%, so each cell is at 0%, 12.5%, 25%, etc.
+    // 100 / (9 - 1) = 12.5
+    
+    const step = 100 / 8; // 12.5
+    const px = cellIdx * step;
+    
+    return `${px}% 0%`;
+}
+
+function updateItemDescription(item) {
+    const container = document.getElementById('invDescription');
+    if (!container || !item) return;
+
+    let desc = item.desc || "No description.";
+    
+    // Format: "Axe: 4 - Durability:2"
+    let header = item.name;
+    let extra = "";
+    
+    if (item.type === 'weapon') {
+        header = `${item.name}: ${item.val}`;
+        if (item.maxDurability) { // Crafted item with max dur logic?
+             header += ` (${item.maxDurability})`; 
+        }
+        if (item.durability !== Infinity) {
+             extra = ` - Durability: ${item.durability}`;
+        }
+    }
+    
+    container.innerHTML = `<span style="color:#fff; font-weight:bold;">${header}${extra}</span> <span style="margin-left:10px; color:#666;">| ${desc}</span>`;
 }
 
 window.burnTrophy = function(idx) {
@@ -5881,59 +6084,48 @@ window.burnTrophy = function(idx) {
     renderInventoryUI(); // Re-render this modal
 };
 
-function updateItemDescription(item) {
-    const container = document.getElementById('invDescription');
-    if (!container || !item) return;
-
-    let desc = item.desc;
-    if (!desc) {
-        // Generate generic description if missing
-        if (item.type === 'weapon') desc = `Deals ${item.val} damage.`;
-        else if (item.type === 'potion') desc = `Restores up to ${item.val} Health.`;
-        else desc = "No details available.";
-    }
-
-    container.innerHTML = `
-        <div class="desc-title">${item.name}</div>
-        <div>${desc}</div>
-        <div style="margin-top:5px; font-size:0.8rem; color:#888;">Type: ${item.type.toUpperCase()} | Value: ${item.val || '-'}</div>
-    `;
-}
-
+window.allowDrop = function(e) { e.preventDefault(); };
 window.handleDrop = handleDrop; // Expose to window for HTML attribute access
 function handleDrop(e, targetType, targetIdx) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    if (window.touchDragGhost) { 
+        if (window.touchDragGhost.parentNode) document.body.removeChild(window.touchDragGhost);
+        window.touchDragGhost = null;
+    }
+    
     let data;
     try {
-        data = JSON.parse(e.dataTransfer.getData('text/plain'));
+        const raw = e.dataTransfer ? e.dataTransfer.getData('text/plain') : (window.touchDragData ? JSON.stringify(window.touchDragData) : null);
+        if (!raw) return;
+        data = JSON.parse(raw);
     } catch (err) {
         return; // Invalid drop data
     }
+    
     const srcType = data.source;
     const srcIdx = data.idx;
 
-    // Get Source Item
-    let item;
-    if (srcType === 'equipment') item = game.equipment[srcIdx];
-    else if (srcType === 'backpack') item = game.backpack[srcIdx];
-    else if (srcType === 'hotbar') item = game.hotbar[srcIdx];
-    else if (srcType === 'anvil') item = game.anvil[srcIdx];
+    // 1. Get Source Item
+    let srcItem = null;
+    if (srcType === 'equipment') srcItem = game.equipment[srcIdx];
+    else if (srcType === 'backpack') srcItem = game.backpack[srcIdx];
+    else if (srcType === 'hotbar') srcItem = game.hotbar[srcIdx];
+    else if (srcType === 'anvil') srcItem = game.anvil[srcIdx];
 
-    if (!item) return;
+    if (!srcItem) return;
 
-    // Handle Selling
+    // Handle Selling separately
     if (targetType === 'sell') {
+        // ... (keep existing sell logic if needed, but for now focus on swap)
+        // Re-implementing sell logic here for completeness as it was in the function I'm replacing
         if (srcType === 'equipment') game.equipment[srcIdx] = null;
         else if (srcType === 'backpack') game.backpack[srcIdx] = null;
         else if (srcType === 'hotbar') game.hotbar[srcIdx] = null;
         else if (srcType === 'anvil') game.anvil[srcIdx] = null;
 
-        // Add Torch Fuel + Coin
         game.soulCoins++;
-
-        let fuelAmount = (item.val || 5);
-        // Special case: Spectral Lantern (ID 1) gives massive fuel
-        if (item.id === 1) {
+        let fuelAmount = (srcItem.val || 5);
+        if (srcItem.id === 1) {
             fuelAmount = 150;
             logMsg("The Spectral Lantern shatters, releasing its eternal flame!");
         }
@@ -5941,75 +6133,93 @@ function handleDrop(e, targetType, targetIdx) {
         spawnFloatingText(`+${fuelAmount} Fuel`, e.clientX, e.clientY - 30, '#ffaa00');
         spawnFloatingText("+1 Soul Coin", e.clientX, e.clientY, '#d4af37');
 
-        if (item.type === 'armor') recalcAP();
+        if (srcItem.type === 'armor') recalcAP(); // Assuming recalcAP exists or will be replaced
         updateUI();
         return;
     }
 
-    // Validation: Equipment Slots
-    if (targetType === 'equipment') {
-        if (targetIdx === 'weapon' && item.type !== 'weapon') {
-            spawnFloatingText("Only weapons go here!", e.clientX, e.clientY, '#ff0000');
-            return;
-        }
-        // Occultist Restriction: Cannot equip physical weapons > 5
-        if (targetIdx === 'weapon' && game.classId === 'occultist' && !item.isSpell && item.val > 5) {
-            spawnFloatingText("Occultists can't use complex weapons!", e.clientX, e.clientY, '#ff0000');
-            return;
-        }
+    // 2. Get Target Item (what is currently in the drop zone)
+    let tgtItem = null;
+    if (targetType === 'equipment') tgtItem = game.equipment[targetIdx];
+    else if (targetType === 'backpack') tgtItem = game.backpack[targetIdx];
+    else if (targetType === 'hotbar') tgtItem = game.hotbar[targetIdx];
+    else if (targetType === 'anvil') tgtItem = game.anvil[targetIdx];
 
-        if (targetIdx !== 'weapon' && (item.type !== 'armor' || item.slot !== targetIdx)) {
-            spawnFloatingText(`Only ${targetIdx} armor!`, e.clientX, e.clientY, '#ff0000');
-            return;
+    // --- VALIDATION LOGIC ---
+
+    const canEquip = (item, type, idx) => {
+        if (!item) return true; 
+        
+        if (type === 'equipment') {
+            if (idx === 'weapon') {
+                if (item.type !== 'weapon') return false;
+                if (game.classId === 'occultist' && !item.isSpell && item.val > 5) return false;
+                return true;
+            } else {
+                return (item.type === 'armor' && item.slot === idx);
+            }
         }
+        // Backpack, Hotbar, Anvil accept anything
+        return true;
+    };
+
+    // Check 1: Can Source Item go to Target Slot?
+    if (!canEquip(srcItem, targetType, targetIdx)) {
+        spawnFloatingText("Invalid Slot!", e.clientX, e.clientY, '#ff0000');
+        return;
     }
 
-    // Get Target Item (Swap)
-    let targetItem;
-    if (targetType === 'equipment') targetItem = game.equipment[targetIdx];
-    else if (targetType === 'backpack') targetItem = game.backpack[targetIdx];
-    else if (targetType === 'hotbar') targetItem = game.hotbar[targetIdx];
-    else if (targetType === 'anvil') targetItem = game.anvil[targetIdx];
+    // Check 2: Can Target Item (if exists) go to Source Slot?
+    if (tgtItem && !canEquip(tgtItem, srcType, srcIdx)) {
+        spawnFloatingText("Cannot Swap!", e.clientX, e.clientY, '#ff0000');
+        return;
+    }
+    
+    // --- EXECUTE SWAP ---
 
-    // Perform Swap
-    // 1. Remove from Source
+    // Clear both first to avoid duplication bugs
     if (srcType === 'equipment') game.equipment[srcIdx] = null;
     else if (srcType === 'backpack') game.backpack[srcIdx] = null;
     else if (srcType === 'hotbar') game.hotbar[srcIdx] = null;
     else if (srcType === 'anvil') game.anvil[srcIdx] = null;
 
-    // 2. Place Source Item in Target
-    if (targetType === 'equipment') game.equipment[targetIdx] = item;
-    else if (targetType === 'backpack') game.backpack[targetIdx] = item;
-    else if (targetType === 'hotbar') game.hotbar[targetIdx] = item;
-    else if (targetType === 'anvil') game.anvil[targetIdx] = item;
+    if (targetType === 'equipment') game.equipment[targetIdx] = null;
+    else if (targetType === 'backpack') game.backpack[targetIdx] = null;
+    else if (targetType === 'hotbar') game.hotbar[targetIdx] = null;
+    else if (targetType === 'anvil') game.anvil[targetIdx] = null;
 
-    // 3. Place Target Item (if any) in Source
-    if (targetItem) {
-        // Validate reverse swap for equipment
-        if (srcType === 'equipment') {
-            if (srcIdx === 'weapon' && targetItem.type !== 'weapon') {
-                // Can't swap non-weapon into weapon slot, undo
-                // (Simplified: just put item back and fail)
-                // For now, assume valid swap or overwrite
-            }
-            game.equipment[srcIdx] = targetItem;
+    // Place Source -> Target
+    if (targetType === 'equipment') game.equipment[targetIdx] = srcItem;
+    else if (targetType === 'backpack') game.backpack[targetIdx] = srcItem;
+    else if (targetType === 'hotbar') game.hotbar[targetIdx] = srcItem;
+    else if (targetType === 'anvil') game.anvil[targetIdx] = srcItem;
+
+    // Place Target -> Source (if exists)
+    if (tgtItem) {
+        if (srcType === 'equipment') game.equipment[srcIdx] = tgtItem;
+        else if (srcType === 'backpack') game.backpack[srcIdx] = tgtItem;
+        else if (srcType === 'hotbar') game.hotbar[srcIdx] = tgtItem;
+        else if (srcType === 'anvil') game.anvil[srcIdx] = tgtItem;
+    }
+
+    // --- POST-ACTION UPDATES ---
+    
+    // Recalculate Stats if Equipment Changed
+    if (srcType === 'equipment' || targetType === 'equipment') {
+        if (typeof recalcAP === 'function') recalcAP();
+        
+        // Update weapon durability global tracking
+        if (game.equipment.weapon) {
+             game.weaponDurability = (game.equipment.weapon.durability !== undefined) ? game.equipment.weapon.durability : Infinity;
+        } else {
+             game.weaponDurability = Infinity;
         }
-        else if (srcType === 'backpack') game.backpack[srcIdx] = targetItem;
-        else if (srcType === 'hotbar') game.hotbar[srcIdx] = targetItem;
-        else if (srcType === 'anvil') game.anvil[srcIdx] = targetItem;
     }
 
-    // If active weapon changed, update global durability state
-    if (game.equipment.weapon) {
-        game.weaponDurability = (game.equipment.weapon.durability !== undefined) ? game.equipment.weapon.durability : Infinity;
-    } else {
-        game.weaponDurability = Infinity;
-    }
-    // Note: We don't reset slainStack here to avoid punishing swaps, but visually the trophies might mismatch.
-
-    recalcAP();
+    // Cleanup & Update
+    window.touchDragData = null;
     updateUI();
+    if(window.renderInventoryUI) renderInventoryUI(); 
 }
 
 // --- SAVE SYSTEM ---
