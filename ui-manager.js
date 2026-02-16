@@ -472,7 +472,7 @@ function createTrophyElement(c, idx) {
     container.className = 'mini-trophy';
     container.style.cssText = "position:relative; width:80px; height:80px; cursor:pointer; border:1px solid #333; background:#080808; flex-shrink:0;";
     container.title = `Burn ${c.name} (+${c.val * 2} Fuel)`;
-    container.onclick = () => window.burnTrophy(idx);
+    container.onclick = () => burnTrophy(idx);
 
     const monster = document.createElement('div');
     let cellIdx = 0;
