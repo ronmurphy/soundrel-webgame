@@ -76,6 +76,48 @@
     <div class="map-viewport" id="v3-container">
         <!-- Three.js renderer will be injected here -->
     </div>
+
+    <!-- Gameplay Options Button (Persistent Bottom Left) -->
+    <button id="gameplayOptionsBtn" class="v2-btn" title="Options" style="position:fixed; bottom:20px; left:20px; width:40px; height:40px; padding:0; display:flex; align-items:center; justify-content:center; z-index:9005; box-shadow:0 0 10px #000;">
+        ⚙
+    </button>
+    
+    <!-- Gameplay Inventory Bar (Bottom Center) -->
+    <div id="gameplayInventoryBar" style="position:fixed; bottom:20px; left:50%; transform:translateX(-50%); display:none; align-items:center; gap:10px; z-index:9005; background:rgba(0,0,0,0.85); padding:8px 15px; border:2px solid var(--gold); border-radius:30px; box-shadow:0 0 15px #000;">
+        <!-- Equipped Weapon -->
+        <div id="mapWeaponBtn" title="Inventory" style="width:48px; height:48px; border:1px solid #666; cursor:pointer; background-size:cover; background-position:center; position:relative;">
+            <!-- Durability indicator gets injected here -->
+        </div>
+        
+        <!-- Fuel Bar (Vertical Meter) -->
+        <div class="fuel-meter-container" style="width:12px; height:36px; background:#111; border:1px solid #444; position:relative; margin:0 5px; box-shadow:inset 0 0 4px #000;" title="Torch Fuel">
+            <div id="mapFuelBar" style="position:absolute; bottom:0; left:0; width:100%; background:linear-gradient(to top, #ff4400, #ffaa44); height:50%; transition:height 0.3s;"></div>
+        </div>
+
+        <!-- Hotbar Slots in Map View -->
+        <div id="mapHotbar" style="display:flex; gap:6px;">
+            <!-- Injected by JS -->
+        </div>
+    </div>
+    
+    <!-- Attraction Overlay (Start Screen) -->
+    <div id="attractionOverlay" style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:9000; cursor:pointer; display:none;">
+        <div style="position:absolute; bottom:10%; width:100%; text-align:center; color:#fff; font-family:'Cinzel'; font-size:1.5rem; text-shadow:0 0 10px #000; animation: pulse 2s infinite;">
+            Click or Tap to Start...
+        </div>
+        <!-- Options Button moved to global gameplayOptionsBtn -->
+    </div>
+
+    <!-- Start Menu Modal -->
+    <div id="startMenuModal" class="modal-overlay" style="display:none; z-index:9100;">
+         <div class="dash-panel" style="width:300px; text-align:center; gap:20px; padding:30px; border: 2px solid var(--gold); background: rgba(0,0,0,0.9);">
+             <img src="assets/images/logo.png" style="width:100%; margin-bottom:20px; filter: drop-shadow(0 0 10px var(--gold));">
+             <button class="v2-btn" id="startNewDiveBtn" style="width:100%; margin-bottom:10px;">NEW DIVE</button>
+             <button class="v2-btn" id="continueDiveBtn" style="width:100%; display:none;">CONTINUE</button>
+             <button class="v2-btn" onclick="document.getElementById('startMenuModal').style.display='none'" style="width: 100%; margin-top: 10px; background: #444;">Back</button>
+         </div>
+    </div>
+
     <canvas id="fxCanvas"
         style="position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:5000;"></canvas>
     <!-- UI FX Canvas: renders textured projectiles and particles above the modal UI -->
@@ -107,71 +149,81 @@
                 <!-- Cards inject here -->
             </div>
 
-            <div class="player-combat-area">
-                <!-- Segment 1: Consolidated Stats Area -->
-                <div class="combat-segment-stats">
-                    <div class="combat-message" id="combatMessage">Room Encounter! Pick 3 cards...</div>
-
-                    <div class="stat-subgrid">
-                        <!-- Col 1: Vitality & Meta -->
-                        <div class="stat-col vitality">
-                            <div class="stat-inline-header">
-                                <div class="stat-label">PROTAGONIST VITALITY</div>
-                                <div class="stat-label">FLOOR</div>
-                            </div>
-                            <div class="stat-main-values">
-                                <div class="stat-value" id="hpValueModal">20</div>
-                                <div class="stat-value" id="floorValueModal">1</div>
-                            </div>
-                            <div class="health-bar-container">
-                                <div class="health-fill" id="hpBarModal"></div>
-                            </div>
-                            <div class="stat-meta-row">
-                                <div>Cleared: <span id="progressValueModal" style="color:#fff;">2 / 12</span></div>
-                                <div>Deck: <span id="deckValueModal" style="color:#fff;">40</span></div>
-                            </div>
+            <!-- New "Compact Dashboard" Layout -->
+            <div class="dashboard-wrapper">
+                
+                <!-- Left Panel: Hero Plate (Stats + Action) -->
+                <div class="dash-panel hero-plate">
+                    <!-- Top: HP & Status -->
+                    <div class="vitality-row">
+                        <div style="text-align:right;">
+                            <div class="hp-big" id="hpValueModal">20</div>
+                            <div class="hp-label-small">Vitality</div>
                         </div>
-
-                        <!-- Col 2: Armament -->
-                        <div class="stat-col armament">
-                            <div class="stat-label" style="margin-bottom: 5px;">MAIN ARMAMENT</div>
-                            <div class="weapon-info-row">
-                                <div id="weaponArtModal" class="weapon-art-combat"></div>
-                                <div class="weapon-text">
-                                    <div id="weaponNameModal" class="weapon-name">BARE HANDS</div>
-                                    <div id="weaponLastDealModal" class="weapon-detail">No limit</div>
-                                    <div class="soul-coins-modal">Soul Coins: <span id="soulCoinsValueModal">0</span>
-                                    </div>
-                                </div>
+                        <div style="flex-grow:1;">
+                            <div class="hp-bar-compact">
+                                <div class="hp-fill-compact" id="hpBarModal"></div>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; margin-top:2px;">
+                                <div class="hp-label-small"><span id="combatMessage" style="text-transform:none; color:#ddd; font-style:italic;">Make your move...</span></div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Action Buttons Grounded in Segment 1 -->
-                    <div class="btn-group" style="margin-top: 10px;">
-                        <button class="v2-btn" id="modalAvoidBtn" disabled>TACTICAL RETREAT</button>
-                        <button class="v2-btn" id="exitCombatBtn" style="display:none">CONTINUE ON</button>
-                        <button class="v2-btn" id="descendBtn"
-                            style="display:none; background: var(--gold); color: #000;">DESCEND</button>
+                    <!-- Middle: Weapon & Meta Data -->
+                    <div class="hero-info-grid">
+                        <!-- Weapon Block -->
+                        <div class="weapon-box">
+                            <div id="weaponArtModal" class="weapon-icon-sq" style="background-image:none;"></div>
+                            <div class="weapon-details">
+                                <div id="weaponLastDealModal" class="durability-text">Durability: ∞</div>
+                                <div class="soul-coins-text"><span id="soulCoinsValueModal">0</span> Coins</div>
+                            </div>
+                        </div>
+
+                        <!-- Fuel Gauge (Vertical) -->
+                        <div class="fuel-gauge-container" title="Torch Fuel">
+                            <div class="fuel-fill" id="torchFuelBar" style="height: 50%;"></div>
+                            <div class="fuel-label">FUEL</div>
+                        </div>
+
+                        <!-- Meta Info (Right aligned) -->
+                        <div class="meta-box">
+                            <div class="meta-row">Floor <span class="meta-val" id="floorValueModal">1</span></div>
+                            <div class="meta-row">Deck <span class="meta-val" id="deckValueModal">44</span></div>
+                            <div class="meta-row">Cleared <span class="meta-val" id="progressValueModal">0/12</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Bottom: Action Buttons -->
+                    <div class="hero-actions">
+                        <button class="btn-compact" id="modalAvoidBtn" disabled>Retreat</button>
+                        <button class="btn-compact" id="exitCombatBtn" style="display:none;">Continue</button>
+                        <button class="btn-compact btn-descend" id="descendBtn" style="display:none;">Descend Stairs</button>
                     </div>
                 </div>
 
-                <!-- Segment 2: Combat Inventory -->
-                <div class="combat-segment-inventory">
-                    <div class="stat-label" style="text-align:center; margin-bottom:5px;">Provisioning</div>
-                    <div id="combatInventory" class="combat-inventory-grid">
-                        <!-- Slots injected by JS -->
+                <!-- Right Panel: Loot Locker -->
+                <div class="dash-panel loot-locker">
+                    <div class="loot-header">PROVISIONING & SPOILS</div>
+                    <div class="loot-flex">
+                        <!-- Inventory Slots -->
+                        <div id="combatInventory" class="combat-inventory-grid">
+                            <!-- Injected by JS -->
+                        </div>
+                        
+                        <div class="vertical-divider"></div>
+
+                        <!-- Trophy Shelf -->
+                        <div class="trophy-container" id="trophyShelf">
+                            <!-- Injected by JS -->
+                        </div>
                     </div>
                 </div>
 
-                <!-- Segment 3: Trophy Shelf -->
-                <div class="combat-segment-trophies">
-                    <div class="stat-label" style="text-align:center; margin-bottom:5px;">Spoils</div>
-                    <div class="trophy-container" id="trophyShelf">
-                        <!-- Mini slain cards here -->
-                    </div>
-                </div>
             </div>
+            <!-- End Dashboard Wrapper -->
+
         </div>
     </div>
     </div>
@@ -179,8 +231,13 @@
     <div id="bonfireUI"
         style="display:none; flex-direction:column; align-items:center; justify-content:center; width:calc(100% - 320px); height:100%; text-align:center;">
         <h2
-            style="font-family:'Cinzel'; font-size:3rem; color:#ff6600; text-shadow:0 0 20px #ff4400; margin-bottom:20px;">
+            style="font-family:'Cinzel'; font-size:3rem; color:#ff6600; text-shadow:0 0 20px #ff4400; margin-bottom:10px;">
             BONFIRE LIT</h2>
+
+        <!-- HP Display added for reference -->
+        <div style="font-size:1.5rem; color:#fff; font-family:'Crimson Text', serif; margin-bottom:20px;">
+            Current HP: <span id="bonfireHpDisplay" style="color:#d4af37; font-weight:bold;">--</span> / <span id="bonfireMaxHpDisplay" style="color:#888;">--</span>
+        </div>
 
         <!-- Avatar Rest Image -->
         <div id="bonfireImage"

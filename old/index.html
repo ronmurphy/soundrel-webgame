@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gilded Depths</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Crimson+Text:ital,wght@0,400;0,700;1,400&family=Special+Elite&display=swap"
+        rel="stylesheet">
+    <link href="style.css?v=2" rel="stylesheet">
+
+
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/23.1.2/tween.umd.js"></script>
+</head>
+
+<body>
+    <div class="sidebar">
+        <div class="title-area">
+            <img src="assets/images/logo.png" alt="Gilded Depths" style="width: 50%; height: auto; filter: drop-shadow(0 2px 4px #000);">
+        </div>
+
+        <div class="stat-block" id="sidebarStats" style="display: block;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                <div style="flex-grow: 1;">
+                    <div class="stat-label">Protagonist Vitality</div>
+                    <div class="stat-value" id="hpValueSidebar">20</div>
+                </div>
+                <div style="text-align: right;">
+                    <div class="stat-label">Floor</div>
+                    <div class="stat-value" id="floorValue">1</div>
+                </div>
+            </div>
+            <div class="health-bar" style="margin-top: 5px;">
+                <div class="health-fill" id="hpBarSidebar" style="width: 100%"></div>
+            </div>
+            <div
+                style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.8rem; opacity: 0.8;">
+                <div>Cleared: <span id="progressValue" style="color: var(--gold);">0 / 12</span></div>
+                <div>Deck: <span id="deckValue" style="color: var(--gold);">44</span></div>
+            </div>
+        </div>
+
+        <div class="stat-block" id="equippedWeaponSlot">
+            <div class="stat-label">Main Armament</div>
+            <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+                <div id="weaponArtSidebar"
+                    style="width: 64px; height: 64px; background-size: cover; border: 1px solid var(--gold);"></div>
+                <div>
+                    <div id="weaponNameSidebar" style="font-weight: 700; color: var(--gold);">UNARMED</div>
+                    <div id="weaponDurSidebar" style="font-size: 0.8rem; opacity: 0.7;">No limit</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="log-container" id="gameLog">
+            Welcome to the dungeon, traveler. Watch your step on the tiles.
+        </div>
+
+        <div style="margin-top: 15px; display: flex; flex-direction: column; gap:10px;">
+            <button class="v2-btn" id="newGameBtn" style="width: 100%">NEW DIVE</button>
+            <button class="v2-btn" id="viewToggleBtn" style="width: 100%; background:#444; color:#fff;">VIEW:
+                3D</button>
+        </div>
+    </div>
+
+    <div class="map-viewport" id="v3-container">
+        <!-- Three.js renderer will be injected here -->
+    </div>
+    <canvas id="fxCanvas"
+        style="position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:5000;"></canvas>
+    <!-- UI FX Canvas: renders textured projectiles and particles above the modal UI -->
+    <canvas id="uiFxCanvas"
+        style="position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:99980;"></canvas>
+
+    <!-- Avatar Selection Modal -->
+    <div class="avatar-modal" id="avatarModal" style="display: none;">
+        <div style="text-align: center;">
+            <h2
+                style="font-family: 'Cinzel', serif; color: var(--gold); font-size: 3rem; margin-bottom: 40px; text-shadow: 0 0 20px #000;">
+                Choose Your Avatar</h2>
+            <div class="avatar-options">
+                <div class="avatar-card" onclick="selectAvatar('m')">
+                    <div class="avatar-img" style="background-image: url('assets/images/rest_m_large.png')"></div>
+                </div>
+                <div class="avatar-card" onclick="selectAvatar('f')">
+                    <div class="avatar-img" style="background-image: url('assets/images/rest_f_large.png')"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Encounter Modal -->
+    <div class="modal-overlay" id="combatModal">
+
+        <div class="combat-container" id="combatContainer">
+            <div class="enemy-area" id="enemyArea">
+                <!-- Cards inject here -->
+            </div>
+
+            <div class="player-combat-area">
+                <!-- Segment 1: Consolidated Stats Area -->
+                <div class="combat-segment-stats">
+                    <div class="combat-message" id="combatMessage">Room Encounter! Pick 3 cards...</div>
+
+                    <div class="stat-subgrid">
+                        <!-- Col 1: Vitality & Meta -->
+                        <div class="stat-col vitality">
+                            <div class="stat-inline-header">
+                                <div class="stat-label">PROTAGONIST VITALITY</div>
+                                <div class="stat-label">FLOOR</div>
+                            </div>
+                            <div class="stat-main-values">
+                                <div class="stat-value" id="hpValueModal">20</div>
+                                <div class="stat-value" id="floorValueModal">1</div>
+                            </div>
+                            <div class="health-bar-container">
+                                <div class="health-fill" id="hpBarModal"></div>
+                            </div>
+                            <div class="stat-meta-row">
+                                <div>Cleared: <span id="progressValueModal" style="color:#fff;">2 / 12</span></div>
+                                <div>Deck: <span id="deckValueModal" style="color:#fff;">40</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Col 2: Armament -->
+                        <div class="stat-col armament">
+                            <div class="stat-label" style="margin-bottom: 5px;">MAIN ARMAMENT</div>
+                            <div class="weapon-info-row">
+                                <div id="weaponArtModal" class="weapon-art-combat"></div>
+                                <div class="weapon-text">
+                                    <div id="weaponNameModal" class="weapon-name">BARE HANDS</div>
+                                    <div id="weaponLastDealModal" class="weapon-detail">No limit</div>
+                                    <div class="soul-coins-modal">Soul Coins: <span id="soulCoinsValueModal">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons Grounded in Segment 1 -->
+                    <div class="btn-group" style="margin-top: 10px;">
+                        <button class="v2-btn" id="modalAvoidBtn" disabled>TACTICAL RETREAT</button>
+                        <button class="v2-btn" id="exitCombatBtn" style="display:none">CONTINUE ON</button>
+                        <button class="v2-btn" id="descendBtn"
+                            style="display:none; background: var(--gold); color: #000;">DESCEND</button>
+                    </div>
+                </div>
+
+                <!-- Segment 2: Combat Inventory -->
+                <div class="combat-segment-inventory">
+                    <div class="stat-label" style="text-align:center; margin-bottom:5px;">Provisioning</div>
+                    <div id="combatInventory" class="combat-inventory-grid">
+                        <!-- Slots injected by JS -->
+                    </div>
+                </div>
+
+                <!-- Segment 3: Trophy Shelf -->
+                <div class="combat-segment-trophies">
+                    <div class="stat-label" style="text-align:center; margin-bottom:5px;">Spoils</div>
+                    <div class="trophy-container" id="trophyShelf">
+                        <!-- Mini slain cards here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+    <!-- Bonfire UI -->
+    <div id="bonfireUI"
+        style="display:none; flex-direction:column; align-items:center; justify-content:center; width:calc(100% - 320px); height:100%; text-align:center;">
+        <h2
+            style="font-family:'Cinzel'; font-size:3rem; color:#ff6600; text-shadow:0 0 20px #ff4400; margin-bottom:20px;">
+            BONFIRE LIT</h2>
+
+        <!-- Avatar Rest Image -->
+        <div id="bonfireImage"
+            style="width:200px; height:300px; background-size:cover; background-position:center; border:4px solid #444; margin-bottom:20px; box-shadow:0 0 30px #ff4400;">
+        </div>
+
+        <div style="font-style:italic; margin-bottom:40px; color:#aaa;" id="bonfireStatus">Respite available.</div>
+        <div style="display:flex; flex-direction:column; gap:20px; width:300px; margin:0 auto;">
+            <button class="v2-btn" onclick="handleBonfire(1)" id="btnRest1">Light Rest (+5 HP) <span
+                    style="font-size:0.8em; opacity:0.7;">(1 cost)</span></button>
+            <button class="v2-btn" onclick="handleBonfire(2)" id="btnRest2">Deep Rest (+10 HP) <span
+                    style="font-size:0.8em; opacity:0.7;">(2 costs)</span></button>
+            <button class="v2-btn" onclick="handleBonfire(3)" id="btnRest3">Full Sleep (+15 HP) <span
+                    style="font-size:0.8em; opacity:0.7;">(3 costs)</span></button>
+            <button class="v2-btn" id="bonfireNotNowBtn"
+                style="background:#555; color:#fff; margin-top:20px;">Leave</button>
+        </div>
+    </div>
+    </div>
+
+    <script type="module" src="scoundrel-3d.js"></script>
+</body>
+
+</html>
