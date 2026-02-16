@@ -12,6 +12,7 @@ import { SoundManager } from './sound-manager.js';
 import { MagicCircleFX } from './magic-circle.js';
 import { CombatTerrain, updateCombatVisibility } from './combat-mechanics.js';
 import { CardDesigner } from './card-designer.js';
+import BattleIsland from './battle-island.js';
 
 // --- CORE GAME STATE ---
 const game = {
@@ -327,6 +328,10 @@ let doorMeshes = new Map();
 let decorationMeshes = []; // Store instanced meshes for cleanup
 let treePositions = []; // Store tree locations for FX
 let animatedMaterials = []; // Track shaders that need time updates
+let hiddenDecorationIndices = new Map(); // Track hidden instances for combat
+let hiddenStaticMeshes = []; // Track hidden static objects for combat bulldozer
+let savedPlayerPos = new THREE.Vector3(); // Store player pos before teleporting to Battle Island
+let playerMoveTween = null; // Track movement tween to stop it during combat
 
 let globalFloorMesh = null; // Reference for terrain manipulation
 // Audio State
@@ -1252,6 +1257,9 @@ function init3D() {
     playerMarker = new THREE.Mesh(markerGeo, markerMat);
     scene.add(playerMarker);
 
+    // Initialize Battle Island
+    BattleIsland.init(scene);
+
     animate3D();
     window.addEventListener('click', on3DClick);
 }
@@ -1274,6 +1282,7 @@ function loadPlayerModel() {
 
     loadGLB(path, (model, animations) => {
         playerMesh = model;
+        playerMesh.userData.animations = animations; // Store for debugging
 
         playerMesh.position.set(0, 0.1, 0);
         scene.add(playerMesh);
@@ -1312,7 +1321,9 @@ function loadPlayerModel() {
             }
             if (idleClip) {
                 actions.idle = mixer.clipAction(idleClip);
-                actions.idle.timeScale = 0.5; // Slow down idle (breathing)
+                // Idle_5 in female_evil is very fast/twitchy, slow it down significantly
+                if (idleClip.name === 'Idle_5') actions.idle.timeScale = 0.2;
+                else actions.idle.timeScale = 0.5; // Slow down idle (breathing)
             }
             if (attackClip) {
                 actions.attack = mixer.clipAction(attackClip);
@@ -1541,7 +1552,7 @@ function update3DScene() {
                         waypointMeshes.set(r.id, mesh);
                     }
                     const mesh = waypointMeshes.get(r.id);
-                    mesh.visible = true;
+                    mesh.visible = !isCombatView;
                     const isAdj = currentRoom && (currentRoom.id === r.id || currentRoom.connections.includes(r.id));
 
                     const targetEmissive = isAdj ? 0xd4af37 : 0x222222;
@@ -1788,12 +1799,6 @@ function update3DScene() {
                     }
                     const mesh = roomMeshes.get(r.id);
 
-                    // Fix visibility fighting with showCombat
-                    if (isCombatView && game.activeRoom && r.id === game.activeRoom.id) {
-                        mesh.visible = false;
-                    } else {
-                        mesh.visible = true;
-                    }
                     // Visual Priority: Cleared (Holy Glow) > Special > Base
                     let eCol = 0x000000;
                     let eInt = (isVisible ? 1.0 : 0.2);
@@ -1864,13 +1869,13 @@ function update3DScene() {
                     const distToMid = Math.sqrt(Math.pow(midX - playerObj.position.x, 2) + Math.pow(midZ - playerObj.position.z, 2));
                     const isDir = distToMid < vRad;
                     if (isDir) { r.correveals = r.correveals || {}; r.correveals[corridorId] = true; }
-                    mesh.visible = (r.correveals && r.correveals[corridorId]) || isEditMode;
+                    if (!isCombatView) mesh.visible = (r.correveals && r.correveals[corridorId]) || isEditMode;
                     if (mesh.visible) mesh.material.emissiveIntensity = (isDir ? 0.3 : 0.05);
                 }
             });
         });
 
-        if (currentRoom && !isAttractMode) {
+        if (currentRoom && !isAttractMode && !isCombatView) {
             const targetPos = new THREE.Vector3(currentRoom.gx, 0, currentRoom.gy);
             controls.target.lerp(targetPos, 0.05);
         }
@@ -1985,11 +1990,6 @@ function animate3D() {
         const activeCam = isCombatView ? combatCamera : camera;
         const lockpickActive = document.getElementById('lockpickUI') && document.getElementById('lockpickUI').style.display !== 'none';
 
-        // Combat Visibility Culling (Hide things blocking the camera)
-        if (isCombatView && playerMesh) {
-            updateCombatVisibility(isCombatView, playerMesh.position, game.rooms, doorMeshes, waypointMeshes, corridorMeshes);
-        }
-
         // Disable Tilt-Shift in Combat/Puzzle to ensure clarity
         if (gameSettings.tiltShiftMode === 'threejs' && composer && !isCombatView && !lockpickActive) {
             renderPass.camera = activeCam;
@@ -2004,7 +2004,7 @@ function animate3D() {
 
     // Update Animation Mixer
     if (use3dModel && mixer) {
-        const delta = clock.getDelta();
+        const delta = Math.min(clock.getDelta(), 0.1); // Cap delta to prevent "super fast" catch-up glitches
         mixer.update(delta * globalAnimSpeed);
     } else if (!use3dModel) {
         animatePlayerSprite();
@@ -2049,15 +2049,18 @@ function movePlayerSprite(oldId, newId) {
             actions.walk.setEffectiveWeight(1.0);
             actions.idle.crossFadeTo(actions.walk, 0.2, true).play();
         }
-        new TWEEN.Tween(playerMesh.position).to({ x: r2.gx, z: r2.gy }, 600).easing(TWEEN.Easing.Quadratic.Out).onComplete(() => {
+        playerMoveTween = new TWEEN.Tween(playerMesh.position).to({ x: r2.gx, z: r2.gy }, 600).easing(TWEEN.Easing.Quadratic.Out).onComplete(() => {
             // Return to Idle
             if (actions.walk && actions.idle) {
                 actions.walk.crossFadeTo(actions.idle, 0.2, true).play();
             }
+            playerMoveTween = null;
         }).start();
     } else if (playerSprite) {
         playerSprite.material.map = (r2.gy > r1.gy) ? walkAnims[game.sex].up : walkAnims[game.sex].down;
-        new TWEEN.Tween(playerSprite.position).to({ x: r2.gx, z: r2.gy }, 600).easing(TWEEN.Easing.Quadratic.Out).start();
+        playerMoveTween = new TWEEN.Tween(playerSprite.position).to({ x: r2.gx, z: r2.gy }, 600).easing(TWEEN.Easing.Quadratic.Out).onComplete(() => {
+            playerMoveTween = null;
+        }).start();
     }
 }
 
@@ -2090,6 +2093,7 @@ function addDoorsToRoom(room, mesh) {
                 model.position.set(posX, model.position.y, posZ);
                 model.rotation.y = rotY;
                 mesh.add(model);
+                doorMeshes.set(`door_${room.id}_${cid}`, model);
             }, 1.0, configKey);
         } else {
             const door = new THREE.Mesh(new THREE.PlaneGeometry(1, 2), new THREE.MeshStandardMaterial({ map: tex, transparent: true, side: THREE.FrontSide }));
@@ -2098,6 +2102,7 @@ function addDoorsToRoom(room, mesh) {
             door.rotation.y = rotY;
             door.updateMatrix();
             mesh.add(door);
+            doorMeshes.set(`door_${room.id}_${cid}`, door);
         }
     });
     updateRoomVisuals();
@@ -2307,6 +2312,9 @@ function updateAtmosphere(floor) {
         hemisphereLight.groundColor.copy(ground);
         hemisphereLight.intensity = (theme.hemiIntensity || 0.35) + 0.25; // Significant boost
     }
+
+    // Update Battle Island Theme
+    BattleIsland.generate(theme);
 }
 
 function generateFloorCA() {
@@ -2662,6 +2670,9 @@ function clear3DScene() {
     decorationMeshes = [];
     treePositions = [];
     animatedMaterials = [];
+    hiddenDecorationIndices.clear();
+    savedPlayerPos.set(0, 0, 0);
+    hiddenStaticMeshes = [];
     globalFloorMesh = null;
 
     // Clear ghosts
@@ -3342,15 +3353,16 @@ function showCombat() {
         combatEntities = [];
 
         // Hide Current Room Mesh to prevent camera blocking
-        if (game.activeRoom && roomMeshes.has(game.activeRoom.id)) {
-            roomMeshes.get(game.activeRoom.id).visible = false;
-        }
+        // if (game.activeRoom && roomMeshes.has(game.activeRoom.id)) {
+        //     roomMeshes.get(game.activeRoom.id).visible = false;
+        // }
 
         // Determine Anchor Position (Room Center)
         // Use activeRoom coordinates to ensure stability even if player is moving
-        const r = game.activeRoom;
-        const anchorX = r ? r.gx : (playerMesh ? playerMesh.position.x : 0);
-        const anchorZ = r ? r.gy : (playerMesh ? playerMesh.position.z : 0);
+        // BATTLE ISLAND UPDATE: Use the Arena Anchor
+        const arenaPos = BattleIsland.getAnchor();
+        const anchorX = arenaPos.x;
+        const anchorZ = arenaPos.z;
         const anchorY = 0.1;
 
         // Snap Player to Position (ensure they are at the stand marker)
@@ -3361,16 +3373,8 @@ function showCombat() {
         }
 
         // Determine Orientation (Face a corridor if possible)
-        let forward = new THREE.Vector3(0, 0, 1); // Default +Z
-        if (game.activeRoom && game.activeRoom.connections && game.activeRoom.connections.length > 0) {
-            // Pick the first connection to face
-            const targetId = game.activeRoom.connections[0];
-            const target = game.rooms.find(r => r.id === targetId);
-            if (target) {
-                // Calculate direction from current room center to target room center
-                forward.set(target.gx - anchorX, 0, target.gy - anchorZ).normalize();
-            }
-        }
+        // BATTLE ISLAND: Always face North (Z+) or South (Z-) depending on preference. Let's use Z+ (0,0,1)
+        let forward = new THREE.Vector3(0, 0, 1); 
         const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
 
         // Snap Player Rotation
@@ -3399,6 +3403,14 @@ function showCombat() {
             // Look Target: Anchor + Forward * 4 + Up * 1.2
             const lookAtPos = new THREE.Vector3(anchorX, anchorY + 1.2, anchorZ).addScaledVector(forward, 4.0);
             controls.target.copy(lookAtPos);
+
+            controls.enableRotate = true; // Force enable rotation for combat
+            // Enable Middle Mouse Rotation for Combat
+            controls.mouseButtons = {
+                LEFT: THREE.MOUSE.ROTATE,
+                MIDDLE: THREE.MOUSE.ROTATE,
+                RIGHT: THREE.MOUSE.PAN
+            };
         }
 
         // Spawn 3D Entities
@@ -3643,6 +3655,63 @@ function showCombat() {
     document.getElementById('bonfireNotNowBtn').style.display = (game.activeRoom && (game.activeRoom.isBonfire || (game.activeRoom.isSpecial && isMerchant)) && game.activeRoom.state !== 'cleared') ? 'inline-block' : 'none';
 
     updateUI();
+}
+
+function getBestCombatOrientation(anchorX, anchorZ) {
+    const candidates = [];
+    
+    // 1. Directions towards connections
+    if (game.activeRoom && game.activeRoom.connections) {
+        game.activeRoom.connections.forEach(cid => {
+            const target = game.rooms.find(r => r.id === cid);
+            if (target) {
+                const dir = new THREE.Vector3(target.gx - anchorX, 0, target.gy - anchorZ).normalize();
+                candidates.push({ dir: dir, type: 'connection' });
+            }
+        });
+    }
+
+    // 2. Cardinal directions (always available as fallback)
+    const cardinals = [
+        new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1),
+        new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0)
+    ];
+    cardinals.forEach(d => candidates.push({ dir: d, type: 'cardinal' }));
+
+    let bestDir = new THREE.Vector3(0, 0, 1);
+    let maxScore = -Infinity;
+
+    candidates.forEach(c => {
+        // Camera is placed BEHIND the player (opposite to forward)
+        // Pos = Anchor - Forward * 3.5
+        const camPos = new THREE.Vector3(anchorX, 0, anchorZ).addScaledVector(c.dir, -3.5);
+        
+        let score = 0;
+        // Prefer connections (player faces enemy/door)
+        if (c.type === 'connection') score += 10;
+
+        // Check distance to all other rooms to avoid clipping
+        let minRoomDist = Infinity;
+        game.rooms.forEach(r => {
+            if (game.activeRoom && r.id === game.activeRoom.id) return; // Ignore current room
+            const dist = Math.hypot(r.gx - camPos.x, r.gy - camPos.z);
+            if (dist < minRoomDist) minRoomDist = dist;
+        });
+
+        // If camera is too close to another room, heavily penalize
+        if (minRoomDist < 2.0) score -= 1000;
+        else if (minRoomDist < 4.0) score -= 50; 
+        
+        // Add distance as tie breaker (more space is better)
+        score += minRoomDist;
+
+        if (score > maxScore) {
+            maxScore = score;
+            bestDir = c.dir;
+        }
+    });
+
+    return bestDir;
 }
 
 function getDisplayVal(v) {
@@ -4324,10 +4393,6 @@ function closeCombat() {
     if (mp) mp.style.display = 'none';
 
     if (use3dModel) {
-        // Restore Room Mesh Visibility
-        if (game.activeRoom && roomMeshes.has(game.activeRoom.id)) {
-            roomMeshes.get(game.activeRoom.id).visible = true;
-        }
         exitCombatView();
     }
 }
@@ -4765,9 +4830,40 @@ function updateUI() {
         } else {
             mapHud.style.display = 'flex';
             
+            // --- HP/AP BAR VISUALS ---
+            mapHud.style.position = 'fixed';
+            mapHud.style.overflow = 'hidden';
+            mapHud.style.backgroundColor = '#1a0505'; // Dark background for empty health
+            mapHud.style.border = '2px solid #444';
+            mapHud.style.boxShadow = '0 0 15px #000';
+
+            // 1. HP Bar (Red Background)
+            let hpBar = document.getElementById('hudHpBar');
+            if (!hpBar) {
+                hpBar = document.createElement('div');
+                hpBar.id = 'hudHpBar';
+                hpBar.style.cssText = "position:absolute; top:0; left:0; height:100%; background:linear-gradient(to right, #8b0000, #e60000); z-index:0; transition: width 0.3s ease-out;";
+                mapHud.insertBefore(hpBar, mapHud.firstChild);
+            }
+            const hpPct = Math.max(0, Math.min(100, (game.hp / game.maxHp) * 100));
+            hpBar.style.width = `${hpPct}%`;
+
+            // 2. AP Bar (Gold Overlay)
+            let apBar = document.getElementById('hudApBar');
+            if (!apBar) {
+                apBar = document.createElement('div');
+                apBar.id = 'hudApBar';
+                // Semi-transparent gold overlay to represent armor protecting health
+                apBar.style.cssText = "position:absolute; top:0; left:0; height:100%; background:linear-gradient(to right, rgba(212, 175, 55, 0.5), rgba(255, 223, 0, 0.6)); z-index:1; transition: width 0.3s ease-out; pointer-events:none; border-right: 1px solid rgba(255,255,255,0.5);";
+                mapHud.insertBefore(apBar, hpBar.nextSibling);
+            }
+            const apPct = game.maxAp > 0 ? Math.max(0, Math.min(100, (game.ap / game.maxAp) * 100)) : 0;
+            apBar.style.width = `${apPct}%`;
+            
             // 1. Update Weapon Button
             const mapWepBtn = document.getElementById('mapWeaponBtn');
             if (mapWepBtn) {
+                mapWepBtn.style.zIndex = '2'; // Ensure above bars
                 mapWepBtn.innerHTML = ''; // Clear contents
                 mapWepBtn.onclick = window.openInventory; // Ensure click works
                 
@@ -4797,6 +4893,7 @@ function updateUI() {
             // 2. Update Hotbar Slots
             const mapHotbar = document.getElementById('mapHotbar');
             if (mapHotbar) {
+                mapHotbar.style.zIndex = '2'; // Ensure above bars
                 mapHotbar.innerHTML = '';
                 // Render game.hotbar (Array of 6)
                 for (let i = 0; i < 6; i++) {
@@ -5326,10 +5423,33 @@ function setupLayout() {
         document.body.appendChild(bonfireUI);
     }
 
-    // 4. Create Inventory Modal
+    // 4. Create Gameplay Inventory Bar (Map HUD) if missing
+    let mapHud = document.getElementById('gameplayInventoryBar');
+    if (!mapHud) {
+        mapHud = document.createElement('div');
+        mapHud.id = 'gameplayInventoryBar';
+        // Initial style, will be enhanced by updateUI
+        mapHud.style.cssText = "position:fixed; bottom:20px; left:50%; transform:translateX(-50%); width:600px; height:70px; display:flex; align-items:center; justify-content:center; gap:20px; z-index:6000; padding:0 20px;";
+        
+        // Weapon Button Container
+        const wepBtn = document.createElement('div');
+        wepBtn.id = 'mapWeaponBtn';
+        wepBtn.style.cssText = "width:54px; height:54px; border:2px solid var(--gold); background:rgba(0,0,0,0.5); cursor:pointer; position:relative;";
+        mapHud.appendChild(wepBtn);
+        
+        // Hotbar Container
+        const hotbar = document.createElement('div');
+        hotbar.id = 'mapHotbar';
+        hotbar.style.cssText = "display:flex; gap:5px;";
+        mapHud.appendChild(hotbar);
+        
+        document.body.appendChild(mapHud);
+    }
+
+    // 5. Create Inventory Modal
     setupInventoryUI();
 
-    // 5. Force Resize to ensure 3D canvas fills the new full-width container
+    // 6. Force Resize to ensure 3D canvas fills the new full-width container
     window.dispatchEvent(new Event('resize'));
 }
 
@@ -5646,6 +5766,7 @@ function setupInventoryUI() {
     modal.innerHTML = `
     <div class="inventory-layout-container" style="
         width: 850px; 
+        max-width: 95vw;
         height: 700px; 
         background: #050505; 
         border: 2px solid var(--gold); 
@@ -6976,22 +7097,76 @@ class OpenChest extends THREE.Group {
     }
 }
 
+// --- COMBAT VISIBILITY HELPERS ---
+function hideNearbyDecorations(center, radius) {
+    const dummy = new THREE.Object3D();
+    decorationMeshes.forEach(mesh => {
+        const hidden = [];
+        for (let i = 0; i < mesh.count; i++) {
+            mesh.getMatrixAt(i, dummy.matrix);
+            dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+            // Check distance (2D check on XZ plane)
+            const dist = Math.hypot(dummy.position.x - center.x, dummy.position.z - center.z);
+            if (dist < radius) {
+                hidden.push({ index: i, matrix: dummy.matrix.clone() });
+                // Hide by scaling to 0
+                dummy.scale.set(0, 0, 0);
+                dummy.updateMatrix();
+                mesh.setMatrixAt(i, dummy.matrix);
+            }
+        }
+        if (hidden.length > 0) {
+            mesh.instanceMatrix.needsUpdate = true;
+            hiddenDecorationIndices.set(mesh.uuid, hidden);
+        }
+    });
+}
+
+function restoreDecorations() {
+    hiddenDecorationIndices.forEach((hidden, uuid) => {
+        const mesh = decorationMeshes.find(m => m.uuid === uuid);
+        if (mesh) {
+            hidden.forEach(item => {
+                mesh.setMatrixAt(item.index, item.matrix);
+            });
+            mesh.instanceMatrix.needsUpdate = true;
+        }
+    });
+    hiddenDecorationIndices.clear();
+}
+
 function enterCombatView() {
     if (isCombatView || !use3dModel) return;
     isCombatView = true;
+
+    // Stop any active movement so player doesn't drift off Battle Island
+    if (playerMoveTween) {
+        playerMoveTween.stop();
+        playerMoveTween = null;
+    }
 
     // Save Camera State
     savedCamState.pos.copy(camera.position);
     savedCamState.target.copy(controls.target);
     savedCamState.zoom = camera.zoom;
 
+    // Save Player Position
+    if (playerMesh) savedPlayerPos.copy(playerMesh.position);
+    else if (playerSprite) savedPlayerPos.copy(playerSprite.position);
+
     // Add Combat Group to Scene
     scene.add(combatGroup);
 
-    // Flatten Terrain for clean arena
-    if (globalFloorMesh && playerMesh) {
-        CombatTerrain.flattenAround(globalFloorMesh, playerMesh.position.x, playerMesh.position.z);
+    // --- BATTLE ISLAND TELEPORT ---
+    const arenaPos = BattleIsland.getAnchor();
+    
+    // Teleport Player to Arena
+    if (playerMesh) {
+        playerMesh.position.copy(arenaPos);
+        playerMesh.rotation.set(0, 0, 0); // Reset rotation to face North
     }
+
+    // Note: Camera movement happens in showCombat, which will now target the arenaPos
 
     // Note: Actual camera movement and entity spawning will happen in showCombat
     // when we know where the player is and what enemies to spawn.
@@ -7001,14 +7176,34 @@ function exitCombatView() {
     if (!isCombatView) return;
     isCombatView = false;
     scene.remove(combatGroup);
+
+    // Restore Room Mesh Visibility (Safety check)
+    if (game.activeRoom && roomMeshes.has(game.activeRoom.id)) {
+        roomMeshes.get(game.activeRoom.id).visible = true;
+    }
+
     // Restore camera
     controls.object = camera; // Switch controls back to Ortho camera
+    controls.enableRotate = is3DView; // Restore rotation setting
+    
+    // Restore default controls
+    controls.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN
+    };
+
     controls.target.copy(savedCamState.target);
     controls.update();
 
-    // Restore Terrain
-    if (globalFloorMesh) {
-        CombatTerrain.restore(globalFloorMesh);
+    // Restore Player Position from Battle Island
+    if (playerMesh) {
+        if (game.activeRoom) {
+            // Place player at the center of the room they are currently in
+            playerMesh.position.set(game.activeRoom.gx, 0.1, game.activeRoom.gy);
+        } else {
+            playerMesh.position.copy(savedPlayerPos);
+        }
     }
 
     // Optional: Tween Ortho camera back if we moved it, but we mostly moved Perspective camera.
@@ -7097,6 +7292,41 @@ window.setgame = function (mode, arg) {
             break;
         default:
             console.log("Commands: finalboss, boss, merchant, bonfire, showhidden, godmode, floor [n], lockpick, trap");
+    }
+};
+
+window.testmfglb = function (arg) {
+    if (!playerMesh) {
+        console.log("No 3D player model loaded. Enable 'Enhanced Graphics' in options.");
+        return;
+    }
+    const anims = playerMesh.userData.animations || [];
+    
+    if (arg === undefined) {
+        console.log("%c--- Loaded Animations ---", "color: #00ff00; font-weight: bold;");
+        anims.forEach((a, i) => console.log(`[${i}] ${a.name} (Duration: ${a.duration.toFixed(2)}s)`));
+        console.log("%c-------------------------", "color: #00ff00;");
+        console.log("Current Mappings:");
+        if (actions.idle) console.log(`Idle: ${actions.idle.getClip().name}`);
+        if (actions.walk) console.log(`Walk: ${actions.walk.getClip().name}`);
+        if (actions.attack) console.log(`Attack: ${actions.attack.getClip().name}`);
+        if (actions.hit) console.log(`Hit: ${actions.hit.getClip().name}`);
+        console.log("%c-------------------------", "color: #00ff00;");
+        console.log("Run testmfglb(index) or testmfglb('name') to play.");
+    } else {
+        let clip = null;
+        if (typeof arg === 'number') clip = anims[arg];
+        else clip = anims.find(a => a.name === arg);
+        
+        if (clip) {
+            console.log(`Playing ${clip.name}...`);
+            mixer.stopAllAction();
+            const act = mixer.clipAction(clip);
+            act.setLoop(THREE.LoopRepeat);
+            act.play();
+        } else {
+            console.log(`Animation '${arg}' not found.`);
+        }
     }
 };
 

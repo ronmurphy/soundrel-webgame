@@ -563,8 +563,8 @@ h1 {
 .card.boss-guardian {
     grid-column: 2;
     grid-row: 1;
-    width: 100%;
-    height: 100%;
+    justify-self: center;
+    align-self: center;
     z-index: 10;
     border-color: #ff0000;
     box-shadow: 0 0 30px #8b0000;
