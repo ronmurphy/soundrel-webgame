@@ -104,6 +104,7 @@ function preloadCardImages() {
 
 let ghosts = []; // Active ghost sprites
 let viewMode = 1; // 0: 2D, 1: 3D Iso (Default), 2: 3D Free/FPS
+let combatCameraActive = false; // User preference for rotating camera in combat
 let isAttractMode = false; // Title screen mode
 let use3dModel = false; // Default to 2D sprites
 let playerSprite;
@@ -119,6 +120,7 @@ let globalAnimSpeed = 1.0; // Default to real-time, tune individual actions via 
 let isEditMode = false;
 let selectedMesh = null;
 let currentAxesHelper = null;
+let clickStart = { x: 0, y: 0 }; // Track mouse down position for drag detection
 // --- ENHANCED COMBAT GLOBALS ---
 let combatGroup = new THREE.Group();
 let isCombatView = false;
@@ -970,7 +972,7 @@ function init3D() {
     perspectiveCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1000); // Devin's Camera
 
     controls = new OrbitControls(camera, renderer.domElement);
-    controls.enablePan = true; // Devin's Request: Allow panning
+    controls.enablePan = false; // Revert Devin's Request
     controls.maxZoom = 2;
     controls.minZoom = 0.5;
 
@@ -1313,6 +1315,10 @@ function on3DClick(event) {
         handleEditClick(event);
         return;
     }
+    // Check if mouse moved significantly (drag/rotate) > 5 pixels
+    if (Math.abs(event.clientX - clickStart.x) > 5 || Math.abs(event.clientY - clickStart.y) > 5) {
+        return;
+    }
     // Prevent interaction if any modal is open (including lockpickUI)
     const blockers = ['combatModal', 'lockpickUI', 'introModal', 'avatarModal', 'inventoryModal', 'classModal'];
     const isBlocked = blockers.some(id => {
@@ -1404,17 +1410,17 @@ function update3DScene() {
 
         if (game.equipment.weapon) {
             if (game.equipment.weapon.val >= 8 || hasLantern) {
-                torchLight.color.setHex(0x00ccff); torchLight.intensity = (is3DView ? baseInt * 1.5 : baseInt * 2.5);
+                torchLight.color.setHex(0x00ccff); torchLight.intensity = (viewMode !== 0 ? baseInt * 1.5 : baseInt * 2.5);
                 torchLight.distance = baseDist * 1.5; vRad = 8.0;
             } else if (game.equipment.weapon.val >= 6 || hasLantern) {
-                torchLight.color.setHex(0xd4af37); torchLight.intensity = (is3DView ? baseInt * 1.2 : baseInt * 2.0);
+                torchLight.color.setHex(0xd4af37); torchLight.intensity = (viewMode !== 0 ? baseInt * 1.2 : baseInt * 2.0);
                 torchLight.distance = baseDist * 1.2; vRad = 5.0;
             } else {
-                torchLight.color.setHex(0xffaa44); torchLight.intensity = (is3DView ? baseInt : baseInt * 1.5);
+                torchLight.color.setHex(0xffaa44); torchLight.intensity = (viewMode !== 0 ? baseInt : baseInt * 1.5);
                 torchLight.distance = baseDist; vRad = 3.5;
             }
         } else {
-            torchLight.color.setHex(0xffaa44); torchLight.intensity = (is3DView ? baseInt * 0.8 : baseInt * 1.2);
+            torchLight.color.setHex(0xffaa44); torchLight.intensity = (viewMode !== 0 ? baseInt * 0.8 : baseInt * 1.2);
             torchLight.distance = baseDist * 0.8; vRad = 2.5;
         }
 
@@ -1914,7 +1920,6 @@ function animate3D() {
     if (now - lastRenderTime >= RENDER_INTERVAL) {
         // Determine active camera based on mode
         let activeCam = isCombatView ? combatCamera : camera;
-        if (!isCombatView && viewMode === 2) activeCam = perspectiveCamera;
 
         const lockpickActive = document.getElementById('lockpickUI') && document.getElementById('lockpickUI').style.display !== 'none';
 
@@ -2277,38 +2282,29 @@ function clear3DScene() {
 }
 
 function toggleView() {
-    viewMode = (viewMode + 1) % 3;
+    combatCameraActive = !combatCameraActive;
     const btn = document.getElementById('viewToggleBtn');
     
-    if (viewMode === 0) {
-        // 2D Classic
-        if(btn) btn.innerText = "VIEW: 2D";
-        camera.position.set(0, 40, 0); 
-        camera.lookAt(0, 0, 0); 
-        controls.object = camera;
-        controls.enableRotate = false; 
-        torchLight.intensity = 1500; 
-        torchLight.distance = 60;
-    } else if (viewMode === 1) {
-        // 3D Isometric (Tableau)
-        if(btn) btn.innerText = "VIEW: ISO";
-        camera.position.set(20, 20, 20); 
-        camera.lookAt(0, 0, 0); 
-        controls.object = camera;
-        controls.enableRotate = false; // Fixed angle
-        torchLight.intensity = 300; 
-        torchLight.distance = 40;
-    } else if (viewMode === 2) {
-        // 3D Immersive (Free Look)
-        if(btn) btn.innerText = "VIEW: FREE";
-        // Sync perspective cam to current ortho target
-        perspectiveCamera.position.set(20, 15, 20);
-        perspectiveCamera.lookAt(controls.target);
-        
-        controls.object = perspectiveCamera;
-        controls.enableRotate = true;
-        torchLight.intensity = 300;
-        torchLight.distance = 40;
+    if (btn) {
+        btn.innerText = `Combat Camera: ${combatCameraActive ? 'On' : 'Off'}`;
+        btn.style.background = combatCameraActive ? '#d4af37' : ''; // Visual feedback
+    }
+
+    // If currently in combat, apply immediately
+    if (isCombatView) {
+        controls.enableRotate = combatCameraActive;
+        controls.autoRotate = combatCameraActive;
+        if (!combatCameraActive) {
+            // Reset to default combat view if turned off
+            const arenaPos = BattleIsland.getAnchor();
+            const anchorX = arenaPos.x;
+            const anchorZ = arenaPos.z;
+            const anchorY = 0.1;
+            const forward = new THREE.Vector3(0, 0, 1);
+            const endPos = new THREE.Vector3(anchorX, anchorY + 1.6, anchorZ).addScaledVector(forward, -3.5);
+            new TWEEN.Tween(combatCamera.position).to({ x: endPos.x, y: endPos.y, z: endPos.z }, 500).easing(TWEEN.Easing.Quadratic.Out).start();
+            controls.target.copy(new THREE.Vector3(anchorX, anchorY + 1.2, anchorZ));
+        }
     }
     
     camera.updateProjectionMatrix();
@@ -2921,6 +2917,15 @@ function showCombat() {
         enterCombatView();
         overlay.style.background = 'rgba(0,0,0,0)'; // Transparent modal
 
+        // FIX: Allow clicks to pass through modal to the 3D canvas for OrbitControls
+        overlay.style.pointerEvents = 'none';
+        // Re-enable clicks on specific UI elements
+        const interactables = ['exitCombatBtn', 'modalAvoidBtn', 'descendBtn', 'bonfireNotNowBtn'];
+        interactables.forEach(id => {
+            const el = document.getElementById(id);
+            if(el) el.style.pointerEvents = 'auto';
+        });
+
         // Clear previous 3D entities
         while (combatGroup.children.length > 0) {
             combatGroup.remove(combatGroup.children[0]);
@@ -2975,16 +2980,23 @@ function showCombat() {
 
             // Switch Controls to Perspective Camera temporarily
             controls.object = combatCamera;
-            // Look Target: Anchor + Forward * 4 + Up * 1.2
-            const lookAtPos = new THREE.Vector3(anchorX, anchorY + 1.2, anchorZ).addScaledVector(forward, 4.0);
+            // Look Target: Player Center (Anchor) + Up * 1.2
+            // This allows orbiting around the player character
+            const lookAtPos = new THREE.Vector3(anchorX, anchorY + 1.2, anchorZ);
             controls.target.copy(lookAtPos);
+            controls.minDistance = 2.0;
+            controls.maxDistance = 8.0;
+            controls.autoRotate = combatCameraActive; // "Intro Logo" Spin Effect (Respect Preference)
+            controls.autoRotateSpeed = 1.0;
 
-            controls.enableRotate = true; // Force enable rotation for combat
+            controls.enableRotate = combatCameraActive; // Respect user preference
+            controls.enablePan = false;   // Keep focus on the arena
+            controls.maxPolarAngle = Math.PI / 2 - 0.1; // Prevent camera from going underground
             // Enable Middle Mouse Rotation for Combat
             controls.mouseButtons = {
                 LEFT: THREE.MOUSE.ROTATE,
                 MIDDLE: THREE.MOUSE.ROTATE,
-                RIGHT: THREE.MOUSE.PAN
+                RIGHT: THREE.MOUSE.ROTATE // Allow Right Click to orbit as well
             };
         }
 
@@ -3256,6 +3268,18 @@ function showCombat() {
         document.getElementById('exitCombatBtn').style.display = 'none';
         document.getElementById('modalAvoidBtn').style.display = (game.combatCards[0] && game.combatCards[0].type === 'gift' ? 'none' : 'inline-block');
         document.getElementById('descendBtn').style.display = 'none';
+    }
+
+    // Fix Retreat Button State (Explicitly update disabled state)
+    const avoidBtn = document.getElementById('modalAvoidBtn');
+    if (avoidBtn) {
+        const hasBurden = game.hotbar.some(i => i && i.id === 'cursed_ring');
+        avoidBtn.disabled = (game.lastAvoided || game.chosenCount > 0 || hasBurden);
+        
+        if (hasBurden) avoidBtn.title = "Ring of Burden prevents escape!";
+        else if (game.lastAvoided) avoidBtn.title = "Cannot avoid two rooms in a row.";
+        else if (game.chosenCount > 0) avoidBtn.title = "Combat started, cannot flee.";
+        else avoidBtn.title = "Avoid this room (shuffle back to deck).";
     }
 
     // Merchant portrait and 'Not Now' button for special rooms (merchant)
@@ -4013,6 +4037,10 @@ function pickCard(idx, event) {
 
     game.combatCards.splice(idx, 1);
     game.chosenCount++;
+    
+    // Update Retreat Button immediately
+    const avoidBtn = document.getElementById('modalAvoidBtn');
+    if (avoidBtn) avoidBtn.disabled = true;
 
     if (game.hp <= 0) {
         gameOver();
@@ -4210,6 +4238,7 @@ function closeCombat() {
     const mp = document.getElementById('merchantPortrait');
     if (mp) mp.style.display = 'none';
     updateBossBar(0, 60, false, true); // Hide boss bar
+    document.getElementById('combatModal').style.pointerEvents = 'auto'; // Reset
 
     if (use3dModel) {
         exitCombatView();
@@ -4770,7 +4799,7 @@ window.showOptionsModal = function () {
             </div>
 
             <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
-                <button class="v2-btn" onclick="toggleView()" style="width:100%; font-size:0.8rem;">Cycle Camera Mode</button>
+                <button class="v2-btn" id="viewToggleBtn" onclick="toggleView()" style="width:100%; font-size:0.8rem; background:${combatCameraActive ? '#d4af37' : ''};">Combat Camera: ${combatCameraActive ? 'On' : 'Off'}</button>
             </div>
 
             <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
@@ -5982,7 +6011,11 @@ function exitCombatView() {
 
     // Restore camera
     controls.object = camera; // Switch controls back to Ortho camera
-    controls.enableRotate = (viewMode === 2); // Only rotate in Free mode
+    controls.enableRotate = false; // Map is always static (no rotate)
+    controls.autoRotate = false; // Stop spinning
+    controls.maxPolarAngle = Math.PI; // Reset vertical limit
+    controls.minDistance = 0;
+    controls.maxDistance = Infinity;
     
     // Restore default controls
     controls.mouseButtons = {
@@ -5991,12 +6024,7 @@ function exitCombatView() {
         RIGHT: THREE.MOUSE.PAN
     };
 
-    if (viewMode === 2) {
-        controls.object = perspectiveCamera;
-        // Keep perspective camera where it was or reset? Let's keep it.
-    } else {
-        controls.target.copy(savedCamState.target);
-    }
+    controls.target.copy(savedCamState.target);
     controls.update();
 
     // Restore Player Position from Battle Island
@@ -6372,6 +6400,12 @@ async function loadRoomConfig() {
         console.warn("Error loading Room Config:", e);
     }
 }
+
+// Global Mouse Down Tracker for Drag Detection
+window.addEventListener('mousedown', (e) => {
+    clickStart.x = e.clientX;
+    clickStart.y = e.clientY;
+});
 
 // Initialize Layout
 loadSettings();
