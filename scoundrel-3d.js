@@ -2703,6 +2703,12 @@ function enterRoom(id) {
         return;
     }
 
+    if (room.isAlchemy && room.state !== 'cleared') {
+        game.activeRoom = room;
+        showAlchemyPrompt();
+        return;
+    }
+
     if (room.isSpecial && room.state !== 'cleared') {
         game.activeRoom = room;
 
@@ -5710,7 +5716,12 @@ window.startPotionGame = function(room) {
         { name: "Azure Intellect", r: 20, g: 50, b: 220 },
         { name: "Golden Greed", r: 220, g: 200, b: 20 },
         { name: "Void Essence", r: 80, g: 0, b: 120 },
-        { name: "Emerald Toxin", r: 40, g: 180, b: 40 }
+        { name: "Emerald Toxin", r: 40, g: 180, b: 40 },
+        { name: "Liquid Starlight", r: 200, g: 255, b: 255 },
+        { name: "Obsidian Oil", r: 40, g: 40, b: 45 },
+        { name: "Amber Sap", r: 255, g: 140, b: 0 },
+        { name: "Royal Blood", r: 120, g: 0, b: 60 },
+        { name: "Ghost Mist", r: 180, g: 220, b: 230 }
     ];
     const target = targets[Math.floor(Math.random() * targets.length)];
 
@@ -5844,7 +5855,19 @@ window.checkPotion = function() {
         feedback.style.color = "#00ff00";
         setTimeout(() => {
             closePotionGame();
-            spawnFloatingText("Potion Brewed!", window.innerWidth/2, window.innerHeight/2, '#00ff00');
+            
+            // Reward Logic
+            const potionItem = { type: 'potion', val: 20, name: potionState.target.name, suit: '♥', desc: "A perfectly brewed masterwork potion." };
+            
+            if (addToBackpack(potionItem)) {
+                spawnFloatingText("Potion Brewed!", window.innerWidth/2, window.innerHeight/2, '#00ff00');
+                logMsg(`Brewed ${potionItem.name}. Added to backpack.`);
+            } else {
+                game.hp = game.maxHp; // Full heal if inventory full
+                spawnFloatingText("Fully Healed!", window.innerWidth/2, window.innerHeight/2, '#00ff00');
+                logMsg(`Brewed ${potionItem.name}. Inventory full, drank immediately.`);
+            }
+            
             if (potionState.room) { potionState.room.state = 'cleared'; updateUI(); }
         }, 1000);
     } else {
@@ -5899,6 +5922,32 @@ function renderPotionCanvas() {
     ctx.globalCompositeOperation = 'overlay'; // Tints the opaque bottle while keeping highlights
     ctx.drawImage(potionImages.buffer, 0, 0);
     ctx.globalCompositeOperation = 'source-over';
+}
+
+function showAlchemyPrompt() {
+    const overlay = document.getElementById('combatModal');
+    overlay.style.display = 'flex';
+    document.getElementById('combatContainer').style.display = 'none';
+    document.getElementById('bonfireUI').style.display = 'none';
+
+    let trapUI = document.getElementById('trapUI');
+    if (!trapUI) {
+        trapUI = document.createElement('div');
+        trapUI.id = 'trapUI';
+        document.body.appendChild(trapUI);
+    }
+    trapUI.style.display = 'flex';
+
+    trapUI.innerHTML = `
+        <h2 style="font-family:'Cinzel'; font-size:3rem; color:#00ffaa; text-shadow:0 0 20px #004400; margin-bottom:20px;">ALCHEMY LAB</h2>
+        <div style="font-style:italic; margin-bottom:40px; color:#aaa; text-align:center; max-width:400px;">
+            An ancient brewing station sits here, bubbling with potential. <br>Do you wish to brew a potion?
+        </div>
+        <div style="display:flex; gap:20px;">
+            <button class="v2-btn" onclick="document.getElementById('trapUI').style.display='none'; startPotionGame(game.activeRoom);" style="width:140px;">Brew</button>
+            <button class="v2-btn" onclick="closeCombat()" style="background:#444; width:140px;">Leave</button>
+        </div>
+    `;
 }
 
 // --- ENHANCED COMBAT (3D) ---

@@ -144,6 +144,15 @@ export function generateDungeon(floor) {
         }
     }
 
+    // 4.5 Assign Alchemy Room (1 per floor)
+    const potentialAlchemy = rooms.filter(r => r.id !== 0 && !r.isFinal && !r.isWaypoint && !r.isSpecial && !r.isBonfire && !r.isTrap);
+    shuffle(potentialAlchemy);
+    if (potentialAlchemy.length > 0) {
+        const a = potentialAlchemy.pop();
+        a.isAlchemy = true;
+        a.depth = 2.0; // Make it look slightly different (standard height)
+    }
+
     // 5. Create Secret Room (1 per floor)
     // Find a room with an empty neighbor
     const potentialParents = rooms.filter(r => !r.isWaypoint && !r.isFinal);
