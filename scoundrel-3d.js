@@ -5684,6 +5684,223 @@ window.blastLock = function () {
     }
 };
 
+// --- POTION MINIGAME ---
+let potionState = null;
+const potionImages = { bottle: new Image(), mask: new Image(), buffer: document.createElement('canvas') };
+potionImages.bottle.src = 'assets/images/minigames/potion_bottle_base.png';
+potionImages.mask.src = 'assets/images/minigames/potion_bottle_mask.png';
+
+window.startPotionGame = function(room) {
+    let modal = document.getElementById('potionUI');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'potionUI';
+        modal.className = 'modal-overlay';
+        modal.style.display = 'none';
+        modal.style.flexDirection = 'column';
+        modal.style.alignItems = 'center';
+        modal.style.justifyContent = 'center';
+        modal.style.zIndex = '7000';
+        document.body.appendChild(modal);
+    }
+    
+    // Generate Target Color
+    const targets = [
+        { name: "Crimson Vitality", r: 200, g: 20, b: 20 },
+        { name: "Azure Intellect", r: 20, g: 50, b: 220 },
+        { name: "Golden Greed", r: 220, g: 200, b: 20 },
+        { name: "Void Essence", r: 80, g: 0, b: 120 },
+        { name: "Emerald Toxin", r: 40, g: 180, b: 40 }
+    ];
+    const target = targets[Math.floor(Math.random() * targets.length)];
+
+    potionState = {
+        room: room,
+        target: target,
+        current: { r: 150, g: 150, b: 180, vol: 15 }, // Start with water base (Lower volume = easier)
+        active: true
+    };
+
+    // Vial Buttons Data
+    const vials = [
+        { color: 'Red', r: 255, g: 0, b: 0, hex: '#ff0000', img: 'vial_red.png' },
+        { color: 'Green', r: 0, g: 255, b: 0, hex: '#00ff00', img: 'vial_green.png' },
+        { color: 'Blue', r: 0, g: 0, b: 255, hex: '#0000ff', img: 'vial_blue.png' },
+        { color: 'White', r: 255, g: 255, b: 255, hex: '#ffffff', img: 'vial_white.png' },
+        { color: 'Black', r: 0, g: 0, b: 0, hex: '#111111', img: 'vial_black.png' }
+    ];
+
+    const vialHtml = vials.map(v => `
+        <div onclick="mixPotion(${v.r}, ${v.g}, ${v.b})" style="cursor:pointer; transition: transform 0.1s; display:flex; flex-direction:column; align-items:center;" onmousedown="this.style.transform='scale(0.9)'" onmouseup="this.style.transform='scale(1)'">
+            <div style="width:40px; height:60px; background:${v.hex}; border:2px solid #aaa; border-radius:0 0 15px 15px; position:relative; box-shadow:inset 0 0 10px rgba(0,0,0,0.5);">
+                <div style="position:absolute; top:-5px; left:10px; width:16px; height:10px; background:#888; border:1px solid #fff;"></div>
+                <!-- Fallback to CSS shape, but use img if available -->
+                <img src="assets/images/minigames/${v.img}" style="position:absolute; top:-5px; left:-2px; width:40px; height:65px; display:none;" onload="this.style.display='block'; this.parentElement.style.background='transparent'; this.parentElement.style.border='none'; this.parentElement.style.boxShadow='none';">
+            </div>
+            <div style="font-size:10px; color:#aaa; margin-top:4px;">${v.color}</div>
+        </div>
+    `).join('');
+
+    modal.innerHTML = `
+        <div style="background:rgba(10,10,10,0.95); border:2px solid var(--gold); padding:20px; width:500px; max-width:90%; text-align:center; color:#fff; font-family:'Cinzel'; position:relative; display:flex; flex-direction:column; gap:15px; box-shadow: 0 0 50px rgba(0,0,0,0.8);">
+            <h2 style="color:var(--gold); margin:0;">ALCHEMY STATION</h2>
+            <div style="font-size:1.0rem; color:#aaa;">Brew: <span style="color:#fff; font-weight:bold;">${target.name}</span></div>
+            
+            <div style="display:flex; justify-content:center; gap:30px; align-items:flex-start;">
+                <!-- Bottle Canvas -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+                    <div style="position:relative; width:154px; height:269px;">
+                        <canvas id="potionCanvas" width="154" height="269"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Resonance Meter (Closeness) -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:5px; height:269px; justify-content:center;">
+                    <div style="font-size:0.8rem; color:#d4af37; writing-mode: vertical-rl; text-orientation: mixed;">RESONANCE</div>
+                    <div style="width:20px; height:200px; border:2px solid #444; background:#111; position:relative; border-radius:4px; overflow:hidden;">
+                        <div id="potionMeterFill" style="position:absolute; bottom:0; left:0; width:100%; height:0%; background:linear-gradient(to top, #550000, #ffaa00, #00ff00); transition:height 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);"></div>
+                        <div style="position:absolute; top:15%; left:0; width:100%; height:2px; background:rgba(255,255,255,0.3);"></div> <!-- Target Line -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div style="display:flex; justify-content:center; gap:15px; margin-top:10px; align-items:flex-end;">
+                ${vialHtml}
+                <button class="v2-btn" onclick="resetPotion()" style="background:#444; color:#fff; padding:10px; width:60px; height:40px; font-size:0.8rem; border:1px solid #666;">Dump</button>
+            </div>
+            
+            <div style="display:flex; gap:10px; margin-top:10px;">
+                <button class="v2-btn" onclick="checkPotion()" style="flex:1; background:var(--gold); color:#000;">BREW</button>
+                <button class="v2-btn" onclick="closePotionGame()" style="flex:1; background:#444;">Leave</button>
+            </div>
+            
+            <div id="potionFeedback" style="height:20px; font-size:0.9rem; color:#ffaa00;"></div>
+        </div>
+    `;
+    
+    modal.style.display = 'flex';
+    renderPotionCanvas();
+    updatePotionUI();
+};
+
+window.mixPotion = function(r, g, b) {
+    if (!potionState || !potionState.active) return;
+    const cur = potionState.current;
+    const addVol = 20;
+    // Weighted Average Mixing
+    cur.r = (cur.r * cur.vol + r * addVol) / (cur.vol + addVol);
+    cur.g = (cur.g * cur.vol + g * addVol) / (cur.vol + addVol);
+    cur.b = (cur.b * cur.vol + b * addVol) / (cur.vol + addVol);
+    cur.vol += addVol;
+    renderPotionCanvas();
+    updatePotionUI();
+    
+    // Play Sound
+    if (audio && audio.initialized) audio.play('potion_pour', { volume: 0.5, rate: 0.9 + Math.random() * 0.2 });
+};
+
+window.resetPotion = function() {
+    if (!potionState) return;
+    potionState.current = { r: 150, g: 150, b: 180, vol: 15 }; // Reset to base
+    renderPotionCanvas();
+    updatePotionUI();
+    document.getElementById('potionFeedback').innerText = "Mixture reset.";
+    document.getElementById('potionFeedback').style.color = "#aaa";
+};
+
+window.updatePotionUI = function() {
+    const meter = document.getElementById('potionMeterFill');
+    if (!meter || !potionState) return;
+    const c = potionState.current;
+    const t = potionState.target;
+    
+    // Calculate Euclidean distance in RGB space
+    const dist = Math.sqrt(Math.pow(c.r - t.r, 2) + Math.pow(c.g - t.g, 2) + Math.pow(c.b - t.b, 2));
+    
+    // Max possible distance is ~442 (distance between black and white)
+    // We want the meter to be full (100%) when dist is 0, and empty (0%) when dist > 200
+    // This makes the meter sensitive only when you are getting somewhat close
+    const maxRange = 200;
+    const pct = Math.max(0, Math.min(100, 100 * (1 - (dist / maxRange))));
+    
+    meter.style.height = `${pct}%`;
+    
+    // Color shift based on closeness
+    if (pct > 85) meter.style.background = '#00ff00'; // Green (Good)
+    else if (pct > 50) meter.style.background = '#ffaa00'; // Orange (Okay)
+    else meter.style.background = '#550000'; // Red (Bad)
+};
+
+window.checkPotion = function() {
+    if (!potionState) return;
+    const cur = potionState.current;
+    const tgt = potionState.target;
+    const dist = Math.sqrt(Math.pow(cur.r - tgt.r, 2) + Math.pow(cur.g - tgt.g, 2) + Math.pow(cur.b - tgt.b, 2));
+    const feedback = document.getElementById('potionFeedback');
+    
+    if (dist < 40) {
+        feedback.innerText = "Perfect Match!";
+        feedback.style.color = "#00ff00";
+        setTimeout(() => {
+            closePotionGame();
+            spawnFloatingText("Potion Brewed!", window.innerWidth/2, window.innerHeight/2, '#00ff00');
+            if (potionState.room) { potionState.room.state = 'cleared'; updateUI(); }
+        }, 1000);
+    } else {
+        feedback.innerText = "The mixture is unstable... (Too far)";
+        feedback.style.color = "#ff0000";
+    }
+};
+
+window.closePotionGame = function() {
+    const modal = document.getElementById('potionUI');
+    if (modal) modal.style.display = 'none';
+    potionState = null;
+};
+
+function renderPotionCanvas() {
+    if (!potionState) return;
+    const canvas = document.getElementById('potionCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const { r, g, b } = potionState.current;
+
+    // Ensure buffer matches size
+    if (potionImages.buffer.width !== canvas.width || potionImages.buffer.height !== canvas.height) {
+        potionImages.buffer.width = canvas.width;
+        potionImages.buffer.height = canvas.height;
+    }
+    const bCtx = potionImages.buffer.getContext('2d');
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    bCtx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // 1. Draw Bottle Base (Background)
+    if (potionImages.bottle.complete && potionImages.bottle.naturalWidth > 0) {
+        ctx.drawImage(potionImages.bottle, 0, 0, canvas.width, canvas.height);
+    }
+
+    // 2. Create Colored Liquid Shape in Buffer
+    if (potionImages.mask.complete && potionImages.mask.naturalWidth > 0) {
+        bCtx.drawImage(potionImages.mask, 0, 0, canvas.width, canvas.height);
+        bCtx.globalCompositeOperation = 'source-in';
+        bCtx.fillStyle = `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+        bCtx.fillRect(0, 0, canvas.width, canvas.height);
+        bCtx.globalCompositeOperation = 'source-over';
+    } else {
+        // Fallback
+        bCtx.fillStyle = `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+        bCtx.beginPath(); bCtx.arc(canvas.width/2, canvas.height*0.6, canvas.width*0.3, 0, Math.PI*2); bCtx.fill();
+    }
+
+    // 3. Tint Overlay (Draw Color ON TOP of Bottle)
+    ctx.globalCompositeOperation = 'hard-light'; // Tints the opaque bottle
+    ctx.globalCompositeOperation = 'overlay'; // Tints the opaque bottle while keeping highlights
+    ctx.drawImage(potionImages.buffer, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+}
+
 // --- ENHANCED COMBAT (3D) ---
 class Standee extends THREE.Group {
     constructor() {
@@ -6120,6 +6337,9 @@ window.setgame = function (mode, arg) {
             break;
         case 'trap':
             if (game.activeRoom) showTrapUI();
+            break;
+        case 'potion':
+            startPotionGame(game.activeRoom);
             break;
         default:
             console.log("Commands: finalboss, boss, merchant, bonfire, showhidden, godmode, floor [n], lockpick, trap");

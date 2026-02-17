@@ -229,5 +229,13 @@ export class SoundManager {
                 return Math.sin(t * freq * Math.PI * 2) * (1 - t/1.2) * 0.8;
             }));
         }
+
+        // 7. UI Sounds
+        if (!this.buffers.has('potion_pour')) {
+            // Liquid pouring sound (noise with decay)
+            this.buffers.set('potion_pour', createBuffer(0.3, (i, t) => {
+                return (Math.random() * 2 - 1) * (1 - t/0.3) * 0.3;
+            }));
+        }
     }
 }
