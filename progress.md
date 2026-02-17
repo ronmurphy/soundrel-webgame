@@ -13,6 +13,13 @@ The game uses a "Tableau" perspective (3D isometric) built with `Three.js`.
 - **Lighting**: A dynamic `PointLight` attached to the player (Torch) provides ambient and specular feedback.
 - **Atmosphere**: Dynamic fog density and lighting colors based on floor themes (Dirt, Magma, Ice, Abyss, etc.).
 
+## 🖼️ Graphics & Post-Processing
+The rendering pipeline has been upgraded with a custom `EffectComposer` stack:
+- **Bloom**: `UnrealBloomPass` adds glow to emissive materials (torches, magic, gold).
+- **Tilt-Shift**: Custom shaders (`HorizontalTiltShiftShader`, `VerticalTiltShiftShader`) create a miniature/diorama effect.
+- **Cel Shading**: Optional `OutlineEffect` and color quantization for a stylized "Toon" or "Retro" look.
+- **Benchmark**: Auto-detects system performance to toggle these effects (`runBenchmark()`).
+
 ## 🃏 Deck & Logic
 The game strictly follows a refined **44-card Scoundrel deck**:
 - **Monsters**: 2-14 (Jack=11, Queen=12, King=13, Ace=14) of Clubs and Spades.
@@ -35,6 +42,9 @@ The game strictly follows a refined **44-card Scoundrel deck**:
   - **Standees**: Enemies appear as 3D figures with animated textures.
   - **Loot**: Items appear as open chests with floating icons.
   - **Animations**: Player model performs attack/hit animations based on GLB clips.
+  - **Combat Camera**: Toggleable orbit controls allow players to inspect the battlefield.
+  - **Boss Phases**: The Soul Broker fight is now a 4-stage gauntlet with evolving tactics and minion waves.
+  - **Cinematic UI**: Boss HP bars and dynamic camera movements enhance key encounters.
 
 ## 🛡️ RPG Systems
 - **Classes**:
@@ -60,6 +70,7 @@ The game strictly follows a refined **44-card Scoundrel deck**:
 ## 🧩 Minigames & Puzzles
 - **Lockpicking**: A laser/mirror reflection puzzle rendered on HTML5 Canvas.
 - **Traps**: Encounter choices requiring resource expenditure (HP, Coins, Items) to bypass.
+- **Alchemy**: A color-mixing minigame found in Alchemy Labs. Players mix RGB reagents to match target potions for high-value rewards.
 
 ## 🎨 Asset Management
 - **Static Assets**: 1x9 horizontal strips for regular cards (`club.png`, `heart.png`, etc.).

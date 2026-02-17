@@ -1,15 +1,15 @@
 import * as THREE from 'three';
 
 export const THEMES = [
-    { id: 1, name: 'Dirt', tile: 1, color: 0x3d2817, fogDensity: 0.05, hemiIntensity: 0.35 },    // Brown
-    { id: 2, name: 'Stone', tile: 2, color: 0x222222, fogDensity: 0.05, hemiIntensity: 0.34 },   // Grey
-    { id: 3, name: 'Moss', tile: 3, color: 0x173d1a, fogDensity: 0.04, hemiIntensity: 0.36 },    // Green
-    { id: 4, name: 'Ancient', tile: 4, color: 0x3d173d, fogDensity: 0.05, hemiIntensity: 0.34 }, // Purple
-    { id: 5, name: 'Magma', tile: 5, color: 0x3d1717, fogDensity: 0.06, hemiIntensity: 0.30 },   // Red
-    { id: 6, name: 'Ice', tile: 6, color: 0x173d3d, fogDensity: 0.03, hemiIntensity: 0.42 },     // Cyan/Teal
-    { id: 7, name: 'Abyss', tile: 7, color: 0x050505, fogDensity: 0.07, hemiIntensity: 0.22 },   // Near Black
-    { id: 8, name: 'Bone', tile: 8, color: 0x3d3517, fogDensity: 0.04, hemiIntensity: 0.36 },    // Yellow/Bone
-    { id: 9, name: 'Ruins', tile: 9, color: 0x282222, fogDensity: 0.035, hemiIntensity: 0.38 },   // Dusty
+    { id: 1, name: 'Dirt', tile: 1, color: 0x3d2817, fogDensity: 0.05, hemiIntensity: 0.35, weather: 'dust' },
+    { id: 2, name: 'Stone', tile: 2, color: 0x222222, fogDensity: 0.05, hemiIntensity: 0.34, weather: 'none' },
+    { id: 3, name: 'Moss', tile: 3, color: 0x173d1a, fogDensity: 0.04, hemiIntensity: 0.36, weather: 'spore' },
+    { id: 4, name: 'Ancient', tile: 4, color: 0x3d173d, fogDensity: 0.05, hemiIntensity: 0.34, weather: 'rain' },
+    { id: 5, name: 'Magma', tile: 5, color: 0x3d1717, fogDensity: 0.06, hemiIntensity: 0.30, weather: 'ember' },
+    { id: 6, name: 'Ice', tile: 6, color: 0x173d3d, fogDensity: 0.03, hemiIntensity: 0.42, weather: 'snow' },
+    { id: 7, name: 'Abyss', tile: 7, color: 0x050505, fogDensity: 0.07, hemiIntensity: 0.22, weather: 'void' },
+    { id: 8, name: 'Bone', tile: 8, color: 0x3d3517, fogDensity: 0.04, hemiIntensity: 0.36, weather: 'dust' },
+    { id: 9, name: 'Ruins', tile: 9, color: 0x282222, fogDensity: 0.035, hemiIntensity: 0.38, weather: 'rain' },
 ];
 
 export function getThemeForFloor(floor) {
@@ -55,7 +55,7 @@ export function generateDungeon(floor) {
     rooms.push({
         id: 0, gx: 0, gy: 0, w: 1, h: 1,
         state: 'cleared', cards: [], connections: [],
-        isWaypoint: false, isRevealed: true
+        isWaypoint: false, isRevealed: true, isShrine: true
     });
 
     const frontier = [rooms[0]];
