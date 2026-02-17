@@ -8,6 +8,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { HorizontalTiltShiftShader } from 'three/addons/shaders/HorizontalTiltShiftShader.js';
 import { VerticalTiltShiftShader } from 'three/addons/shaders/VerticalTiltShiftShader.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import { SoundManager } from './sound-manager.js';
 import { MagicCircleFX } from './magic-circle.js';
 import { CombatTerrain, updateCombatVisibility } from './combat-mechanics.js';
@@ -15,7 +17,7 @@ import { CardDesigner } from './card-designer.js';
 import BattleIsland from './battle-island.js';
 import { generateDungeon, generateFloorCA, getThemeForFloor, shuffle } from './dungeon-generator.js';
 import { game, SUITS, CLASS_DATA, ITEM_DATA, ARMOR_DATA, CURSED_ITEMS, createDeck, getMonsterName, getSpellName, getAssetData, getDisplayVal, getUVForCell } from './game-state.js';
-import { updateUI, renderInventoryUI, spawnFloatingText, logMsg, setupInventoryUI, addToBackpack, addToHotbar, recalcAP, handleDrop, burnTrophy } from './ui-manager.js';
+import { updateUI, renderInventoryUI, spawnFloatingText, logMsg, setupInventoryUI, addToBackpack, addToHotbar, recalcAP, handleDrop, burnTrophy, getFreeBackpackSlot } from './ui-manager.js';
 
 let roomConfig = {}; // Stores custom transforms for GLB models
 
@@ -27,7 +29,8 @@ const INTRO_STORY_DEFAULTS = [
 
 // --- 3D RENDERING (Three.js Tableau) ---
 let scene, camera, combatCamera, renderer, composer, renderPass, controls, raycaster, mouse;
-let hTilt, vTilt; // Shader passes
+let perspectiveCamera; // New camera for Immersive mode
+let hTilt, vTilt, bloomPass, outlineEffect;
 let playerMarker; // Crystal marker
 let torchLight;
 let hemisphereLight; // Soft global fill light to improve readability under fog
@@ -46,9 +49,8 @@ let savedPlayerPos = new THREE.Vector3(); // Store player pos before teleporting
 let playerMoveTween = null; // Track movement tween to stop it during combat
 
 // Wanderer State
-let wandererMesh = null;
-let wandererMixer = null;
-const WANDERER_FILE = 'female_evil-true-web.glb';
+let wanderers = [];
+const GHOST_MODELS = ['skeleton-web.glb'];
 const terrainRaycaster = new THREE.Raycaster();
 
 let globalFloorMesh = null; // Reference for terrain manipulation
@@ -101,7 +103,7 @@ function preloadCardImages() {
 }
 
 let ghosts = []; // Active ghost sprites
-let is3DView = true;
+let viewMode = 1; // 0: 2D, 1: 3D Iso (Default), 2: 3D Free/FPS
 let isAttractMode = false; // Title screen mode
 let use3dModel = false; // Default to 2D sprites
 let playerSprite;
@@ -879,9 +881,35 @@ function handleWindowResize() {
             composer.setSize(container.clientWidth, container.clientHeight);
             updateTiltShiftUniforms();
         }
+        if (outlineEffect) outlineEffect.setSize(container.clientWidth, container.clientHeight);
     }
 }
 window.addEventListener('resize', handleWindowResize);
+
+const ColorBandShader = {
+    uniforms: {
+        'tDiffuse': { value: null }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        varying vec2 vUv;
+        void main() {
+            vec4 tex = texture2D( tDiffuse, vUv );
+            vec3 c = tex.rgb;
+            // Quantize colors to create toon bands
+            float levels = 6.0;
+            c = floor(c * levels) / levels;
+            // Slight saturation boost
+            vec3 gray = vec3(dot(c, vec3(0.2126, 0.7152, 0.0722)));
+            c = mix(gray, c, 1.2);
+            gl_FragColor = vec4( c, tex.a );
+        }
+    `
+};
 
 function init3D() {
     const container = document.getElementById('v3-container');
@@ -902,31 +930,47 @@ function init3D() {
         container.appendChild(renderer.domElement);
     }
 
+    // Outline Effect (Cel Shading Replacement)
+    outlineEffect = new OutlineEffect(renderer, {
+        defaultThickness: 0.0025,
+        defaultColor: [0, 0, 0],
+        defaultAlpha: 0.8,
+        defaultKeepAlive: true
+    });
+
     // Post-Processing Setup
     composer = new EffectComposer(renderer);
     composer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Match renderer quality
-    renderPass = new RenderPass(scene, camera);
-    composer.addPass(renderPass);
+    
+    // Bloom Pass (David's Request)
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+    bloomPass.threshold = 0.2;
+    bloomPass.strength = 0.35; // Subtle glow
+    bloomPass.radius = 0.5;
+    bloomPass.enabled = gameSettings.bloomEnabled;
+    composer.addPass(bloomPass);
 
     hTilt = new ShaderPass(HorizontalTiltShiftShader);
     vTilt = new ShaderPass(VerticalTiltShiftShader);
     hTilt.enabled = false;
     vTilt.enabled = false;
 
-    composer.addPass(hTilt);
-    composer.addPass(vTilt);
+    // Initialize standard RenderPass (used when Cel is off)
+    renderPass = new RenderPass(scene, camera);
 
+    rebuildComposer(); // Build the pass chain
     updateTiltShiftUniforms();
-
+    
     const aspect = container.clientWidth / container.clientHeight;
     const d = 10;
     camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
     camera.position.set(20, 20, 20);
     camera.lookAt(0, 0, 0);
     combatCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1000);
+    perspectiveCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1000); // Devin's Camera
 
     controls = new OrbitControls(camera, renderer.domElement);
-    controls.enablePan = false;
+    controls.enablePan = true; // Devin's Request: Allow panning
     controls.maxZoom = 2;
     controls.minZoom = 0.5;
 
@@ -982,6 +1026,47 @@ function init3D() {
 
     animate3D();
     window.addEventListener('click', on3DClick);
+}
+
+function rebuildComposer() {
+    if (!composer) return;
+    composer.passes = [];
+
+    // 1. Render Pass (Standard or Cel/Outline)
+    if (gameSettings.celShadingEnabled && gameSettings.celOutlineEnabled && outlineEffect) {
+        // Custom Pass that uses OutlineEffect
+        const celPass = new RenderPass(scene, camera);
+        celPass.render = function(renderer, writeBuffer, readBuffer) {
+            // Mimic standard RenderPass logic but use outlineEffect.render
+            const oldAutoClear = renderer.autoClear;
+            renderer.autoClear = false;
+
+            let target = this.renderToScreen ? null : readBuffer;
+            renderer.setRenderTarget(target);
+            
+            if (this.clear) renderer.clear(renderer.autoClearColor, renderer.autoClearDepth, renderer.autoClearStencil);
+            
+            outlineEffect.render(this.scene, this.camera);
+            
+            renderer.autoClear = oldAutoClear;
+        };
+        composer.addPass(celPass);
+    } else {
+        composer.addPass(renderPass);
+    }
+
+    // 2. Color Banding (Toon Look)
+    if (gameSettings.celShadingEnabled) {
+        const bandPass = new ShaderPass(ColorBandShader);
+        composer.addPass(bandPass);
+    }
+
+    // 2. Bloom
+    if (bloomPass) composer.addPass(bloomPass);
+
+    // 3. Tilt Shift
+    if (hTilt) composer.addPass(hTilt);
+    if (vTilt) composer.addPass(vTilt);
 }
 
 function updateTiltShiftUniforms() {
@@ -1073,27 +1158,68 @@ function loadPlayerModel() {
     }, 0.7, configKey);
 }
 
-function initWanderer() {
-    if (wandererMesh) { scene.remove(wandererMesh); wandererMesh = null; }
+function initWanderers() {
+    // Cleanup existing
+    wanderers.forEach(w => scene.remove(w.mesh));
+    wanderers = [];
+
+    const count = 1 + Math.floor(game.floor / 2);
     
-    loadGLB(`assets/images/glb/${WANDERER_FILE}`, (model, animations) => {
-        wandererMesh = model;
-        wandererMesh.position.set(0, -10, 0); // Hide initially
-        scene.add(wandererMesh);
+    for (let i = 0; i < count; i++) {
+        const file = GHOST_MODELS[Math.floor(Math.random() * GHOST_MODELS.length)];
         
-        wandererMixer = new THREE.AnimationMixer(wandererMesh);
-        const walkClip = animations.find(a => /walk|run/i.test(a.name)) || animations[0];
-        if (walkClip) {
-            const action = wandererMixer.clipAction(walkClip);
-            action.play();
-        }
-        
-        pickWandererTarget();
-    }, 0.7);
+        loadGLB(`assets/images/glb/${file}`, (model, animations) => {
+            // Find valid spawn point
+            let valid = false;
+            let sx = 0, sz = 0, sy = 0;
+            let attempts = 0;
+            
+            while (!valid && attempts < 50) {
+                attempts++;
+                const bounds = 12 + (game.floor * 2);
+                const r = 5 + Math.random() * (bounds - 6); 
+                const angle = Math.random() * Math.PI * 2;
+                sx = Math.cos(angle) * r;
+                sz = Math.sin(angle) * r;
+                
+                if (game.rooms.some(r => Math.hypot(r.gx - sx, r.gy - sz) < 4)) continue;
+                
+                let nearCorr = false;
+                for (const m of corridorMeshes.values()) {
+                    if (Math.hypot(m.position.x - sx, m.position.z - sz) < 2.5) { nearCorr = true; break; }
+                }
+                if (nearCorr) continue;
+                
+                // Raycast to ensure we are on the floor mesh
+                if (globalFloorMesh) {
+                    terrainRaycaster.set(new THREE.Vector3(sx, 50, sz), new THREE.Vector3(0, -1, 0));
+                    const hits = terrainRaycaster.intersectObject(globalFloorMesh);
+                    if (hits.length > 0) {
+                        sy = hits[0].point.y;
+                        valid = true;
+                    }
+                }
+            }
+
+            model.position.set(sx, sy, sz);
+            scene.add(model);
+            
+            const mixer = new THREE.AnimationMixer(model);
+            const walkClip = animations.find(a => /walk|run/i.test(a.name)) || animations[0];
+            if (walkClip) {
+                const action = mixer.clipAction(walkClip);
+                action.play();
+            }
+            
+            const wanderer = { mesh: model, mixer: mixer };
+            wanderers.push(wanderer);
+            pickWandererTarget(wanderer);
+        }, 0.7);
+    }
 }
 
-function pickWandererTarget() {
-    if (!wandererMesh || !globalFloorMesh) return;
+function pickWandererTarget(wanderer) {
+    if (!wanderer.mesh) return;
     
     let valid = false;
     let x, z;
@@ -1116,34 +1242,35 @@ function pickWandererTarget() {
             if (Math.hypot(m.position.x - x, m.position.z - z) < 2.5) { nearCorr = true; break; }
         }
         if (nearCorr) continue;
-
-        // Ensure Valid Ground (Raycast check to avoid walking on air)
-        terrainRaycaster.set(new THREE.Vector3(x, 20, z), new THREE.Vector3(0, -1, 0));
-        const hits = terrainRaycaster.intersectObject(globalFloorMesh);
-        if (hits.length === 0) continue; // No floor here (void)
         
-        valid = true;
+        // Raycast to ensure target is on the floor mesh
+        if (globalFloorMesh) {
+            terrainRaycaster.set(new THREE.Vector3(x, 50, z), new THREE.Vector3(0, -1, 0));
+            const hits = terrainRaycaster.intersectObject(globalFloorMesh);
+            if (hits.length > 0) {
+                valid = true;
+            }
+        }
     }
     
     if (valid) {
-        wandererMesh.lookAt(x, wandererMesh.position.y, z);
-        const dist = Math.hypot(x - wandererMesh.position.x, z - wandererMesh.position.z);
+        wanderer.mesh.lookAt(x, wanderer.mesh.position.y, z);
+        const dist = Math.hypot(x - wanderer.mesh.position.x, z - wanderer.mesh.position.z);
         
-        // Slower movement for a wandering ghost
-        new TWEEN.Tween(wandererMesh.position)
+        new TWEEN.Tween(wanderer.mesh.position)
             .to({ x: x, z: z }, dist * 1200) 
             .onUpdate(() => {
-                // Snap to floor + Float Offset
-                terrainRaycaster.set(new THREE.Vector3(wandererMesh.position.x, 10, wandererMesh.position.z), new THREE.Vector3(0, -1, 0));
+                // Snap to floor mesh during movement
+                terrainRaycaster.set(new THREE.Vector3(wanderer.mesh.position.x, 50, wanderer.mesh.position.z), new THREE.Vector3(0, -1, 0));
                 const hits = terrainRaycaster.intersectObject(globalFloorMesh);
-                if (hits.length > 0) wandererMesh.position.y = hits[0].point.y + 0.5; // Float 0.5 units above ground
+                if (hits.length > 0) wanderer.mesh.position.y = hits[0].point.y;
             })
             .onComplete(() => {
-                setTimeout(pickWandererTarget, 2000 + Math.random() * 3000);
+                setTimeout(() => pickWandererTarget(wanderer), 2000 + Math.random() * 3000);
             })
             .start();
     } else {
-        setTimeout(pickWandererTarget, 1000);
+        setTimeout(() => pickWandererTarget(wanderer), 1000);
     }
 }
 
@@ -1186,7 +1313,7 @@ function on3DClick(event) {
         handleEditClick(event);
         return;
     }
-    // Prevent interaction if any modal is open
+    // Prevent interaction if any modal is open (including lockpickUI)
     const blockers = ['combatModal', 'lockpickUI', 'introModal', 'avatarModal', 'inventoryModal', 'classModal'];
     const isBlocked = blockers.some(id => {
         // Exception: Allow combatModal if in 3D Combat View (it's transparent)
@@ -1785,11 +1912,23 @@ function animate3D() {
 
     // Throttled render so we don't render >30fps
     if (now - lastRenderTime >= RENDER_INTERVAL) {
-        const activeCam = isCombatView ? combatCamera : camera;
+        // Determine active camera based on mode
+        let activeCam = isCombatView ? combatCamera : camera;
+        if (!isCombatView && viewMode === 2) activeCam = perspectiveCamera;
+
         const lockpickActive = document.getElementById('lockpickUI') && document.getElementById('lockpickUI').style.display !== 'none';
 
-        // Disable Tilt-Shift in Combat/Puzzle to ensure clarity
-        if (gameSettings.tiltShiftMode === 'threejs' && composer && !isCombatView && !lockpickActive) {
+        // Determine if we need post-processing (Bloom OR Tilt-Shift OR Cel)
+        const usePostProcessing = (gameSettings.tiltShiftMode === 'threejs' || gameSettings.bloomEnabled || gameSettings.celShadingEnabled) && composer;
+
+        if (usePostProcessing) {
+            // Dynamic Tilt-Shift: Disable in combat/puzzle for clarity
+            if (hTilt && vTilt) {
+                const tiltActive = (gameSettings.tiltShiftMode === 'threejs') && !isCombatView && !lockpickActive;
+                hTilt.enabled = tiltActive;
+                vTilt.enabled = tiltActive;
+            }
+            
             renderPass.camera = activeCam;
             composer.render();
         } else {
@@ -1804,7 +1943,7 @@ function animate3D() {
     if (use3dModel && mixer) {
         const delta = Math.min(clock.getDelta(), 0.1); // Cap delta to prevent "super fast" catch-up glitches
         mixer.update(delta * globalAnimSpeed);
-        if (wandererMixer) wandererMixer.update(delta * globalAnimSpeed);
+        wanderers.forEach(w => { if(w.mixer) w.mixer.update(delta * globalAnimSpeed); });
     } else if (!use3dModel) {
         animatePlayerSprite();
     }
@@ -1816,11 +1955,11 @@ function animatePlayerSprite() {
     const frame = Math.floor((time * 12) % 25);
     playerSprite.material.map.repeat.set(1 / 25, 1);
     playerSprite.material.map.offset.set(frame / 25, 0);
-    if (!is3DView) {
+    if (viewMode === 0) { // 2D
         playerSprite.rotation.x = Math.PI / 2; playerSprite.position.y = 0.8;
         playerSprite.material.map = walkAnims[game.sex].up;
-    } else {
-        playerSprite.rotation.x = 0; playerSprite.position.y = 0.75;
+    } else { // 3D Iso or Free
+        playerSprite.rotation.x = 0; playerSprite.position.y = 0.75; 
         const isFace = camera.position.z > playerSprite.position.z;
         playerSprite.material.map = isFace ? walkAnims[game.sex].down : walkAnims[game.sex].up;
     }
@@ -2120,7 +2259,8 @@ function clear3DScene() {
     hiddenStaticMeshes = [];
     globalFloorMesh = null;
 
-    wandererMesh = null; wandererMixer = null;
+    wanderers.forEach(w => scene.remove(w.mesh));
+    wanderers = [];
 
     // Clear ghosts
     ghosts.forEach(g => scene.remove(g));
@@ -2137,11 +2277,40 @@ function clear3DScene() {
 }
 
 function toggleView() {
-    is3DView = !is3DView;
+    viewMode = (viewMode + 1) % 3;
     const btn = document.getElementById('viewToggleBtn');
-    if (btn) btn.innerText = `VIEW: ${is3DView ? '3D' : '2D'}`;
-    if (is3DView) { camera.position.set(20, 20, 20); controls.enableRotate = true; torchLight.intensity = 300; torchLight.distance = 40; }
-    else { camera.position.set(0, 40, 0); camera.lookAt(0, 0, 0); controls.enableRotate = false; torchLight.intensity = 1500; torchLight.distance = 60; }
+    
+    if (viewMode === 0) {
+        // 2D Classic
+        if(btn) btn.innerText = "VIEW: 2D";
+        camera.position.set(0, 40, 0); 
+        camera.lookAt(0, 0, 0); 
+        controls.object = camera;
+        controls.enableRotate = false; 
+        torchLight.intensity = 1500; 
+        torchLight.distance = 60;
+    } else if (viewMode === 1) {
+        // 3D Isometric (Tableau)
+        if(btn) btn.innerText = "VIEW: ISO";
+        camera.position.set(20, 20, 20); 
+        camera.lookAt(0, 0, 0); 
+        controls.object = camera;
+        controls.enableRotate = false; // Fixed angle
+        torchLight.intensity = 300; 
+        torchLight.distance = 40;
+    } else if (viewMode === 2) {
+        // 3D Immersive (Free Look)
+        if(btn) btn.innerText = "VIEW: FREE";
+        // Sync perspective cam to current ortho target
+        perspectiveCamera.position.set(20, 15, 20);
+        perspectiveCamera.lookAt(controls.target);
+        
+        controls.object = perspectiveCamera;
+        controls.enableRotate = true;
+        torchLight.intensity = 300;
+        torchLight.distance = 40;
+    }
+    
     camera.updateProjectionMatrix();
 }
 window.toggleView = toggleView;
@@ -2288,8 +2457,8 @@ function finalizeStartDive() {
     preloadFXTextures();
     globalFloorMesh = generateFloorCA(scene, game.floor, game.rooms, corridorMeshes, decorationMeshes, treePositions, loadTexture, getClonedTexture); // Generate Atmosphere and Floor
     updateAtmosphere(game.floor);
-
-    initWanderer();
+    
+    // initWanderers();
     updateUI();
     logMsg("The descent begins. Room 0 explored.");
 
@@ -2466,6 +2635,7 @@ function descendToNextFloor() {
     preloadFXTextures();
     globalFloorMesh = generateFloorCA(scene, game.floor, game.rooms, corridorMeshes, decorationMeshes, treePositions, loadTexture, getClonedTexture);
     updateAtmosphere(game.floor);
+    // initWanderers();
 
     updateUI();
     logMsg(`Descending deeper... Floor ${game.floor}`);
@@ -2486,6 +2656,13 @@ function enterRoom(id) {
     if (game.equipment.weapon && game.equipment.weapon.id === 'cursed_blade' && !room.isWaypoint && id !== 0) {
         takeDamage(1);
         logMsg("The Bloodthirst Blade drinks your vitality... (-1 HP)");
+        
+        // Visual FX for Life Drain
+        if (use3dModel && playerMesh) {
+            spawn3DDrainFX(playerMesh.position);
+        } else {
+            spawnAboveModalTexture('circle_03.png', window.innerWidth/2, window.innerHeight/2, 1, { tint: '#880000', blend: 'multiply', size: 300, decay: 0.02 });
+        }
         updateUI();
     }
 
@@ -2672,7 +2849,18 @@ function startBossFight() {
     }));
 
     // Add the Guardian itself
-    game.combatCards.push({ type: 'monster', val: 15 + (game.floor * 2), suit: SUITS.SKULLS, name: "The Guardian", bossSlot: 'boss-guardian', customAnim: selectedGuardian });
+    // Health/Damage = 20 + Floor
+    game.combatCards.push({ type: 'monster', val: 20 + game.floor, suit: SUITS.SKULLS, name: "The Guardian", bossSlot: 'boss-guardian', customAnim: selectedGuardian });
+    game.combatCards.push({ 
+        type: 'monster', 
+        val: 20 + game.floor, 
+        suit: SUITS.SKULLS, 
+        name: "The Guardian", 
+        bossSlot: 'boss-guardian', 
+        customAsset: `animations/${selectedGuardian}.png`, 
+        customBgSize: '2500% 100%', 
+        isAnimated: true 
+    });
 
     showCombat();
 }
@@ -2687,6 +2875,7 @@ function startSoulBrokerEncounter() {
 
     // Narrative Popup (Optional, using log for now)
     spawnFloatingText("THE FINAL DEBT", window.innerWidth / 2, window.innerHeight / 2 - 100, '#d4af37');
+    updateBossBar(30, 60, true); // Show bar (Start at 30, Max 60)
 
     // The Soul Broker Boss
     // Diamond formation with 3 Guardians as minions (Level 2 stats ~19)
@@ -2706,7 +2895,11 @@ function startSoulBrokerEncounter() {
         {
             type: 'monster', val: 30, suit: '👺', name: "The Soul Broker",
             bossSlot: 'boss-guardian',
-            customAnim: 'final',
+            customAsset: 'animations/final.png', // Explicitly set asset path
+            customBgSize: '2500% 100%', // Ensure 25-frame animation scaling
+            customAsset: 'animations/final.png',
+            customBgSize: '2500% 100%',
+            isAnimated: true,
             isBroker: true
         }
     ];
@@ -2860,15 +3053,45 @@ function showCombat() {
                 entity.setLabel(c.name, valStr ? `${suitLabel}${valStr}` : '', labelColor);
             }
 
-            // Staggered "V" Layout
-            // 0: Left Outer (Row 2) -> right*-1.5 + fwd*1.5
-            // 1: Left Inner (Row 1) -> right*-0.5 + fwd*2.5
-            // 2: Right Inner (Row 1) -> right*0.5 + fwd*2.5
-            // 3: Right Outer (Row 2) -> right*1.5 + fwd*1.5
-            let xOff = (i - 1.5) * 1.5; // Default spread
-            let zOff = 2.0;
-            if (i === 0 || i === 3) { zOff = 1.5; xOff = (i === 0 ? -1.5 : 1.5); }
-            if (i === 1 || i === 2) { zOff = 2.5; xOff = (i === 1 ? -0.5 : 0.5); }
+            // Scale Boss Standees (3D)
+            if (c.bossSlot === 'boss-guardian') {
+                if (c.isBroker) {
+                    entity.scale.set(2.0, 2.0, 2.0);
+                } else {
+                    entity.scale.set(1.5, 1.5, 1.5);
+                }
+            }
+
+            let xOff = 0;
+            let zOff = 0;
+
+            if (game.isBossFight && c.bossSlot) {
+                // Diamond Layout for Boss
+                // Broker (Guardian Slot) -> Back Center
+                // Weapon (Left) -> Left
+                // Potion (Right) -> Right
+                // Armor (Front) -> Front Center
+                
+                if (c.bossSlot === 'boss-guardian') {
+                    xOff = 0; zOff = 4.0; // Back
+                } else if (c.bossSlot === 'boss-weapon') {
+                    xOff = -2.0; zOff = 2.5; // Left
+                } else if (c.bossSlot === 'boss-potion') {
+                    xOff = 2.0; zOff = 2.5; // Right
+                } else if (c.bossSlot === 'boss-armor') {
+                    xOff = 0; zOff = 1.0; // Front
+                }
+            } else {
+                // Standard Staggered "V" Layout
+                // 0: Left Outer (Row 2) -> right*-1.5 + fwd*1.5
+                // 1: Left Inner (Row 1) -> right*-0.5 + fwd*2.5
+                // 2: Right Inner (Row 1) -> right*0.5 + fwd*2.5
+                // 3: Right Outer (Row 2) -> right*1.5 + fwd*1.5
+                xOff = (i - 1.5) * 1.5; // Default spread
+                zOff = 2.0;
+                if (i === 0 || i === 3) { zOff = 1.5; xOff = (i === 0 ? -1.5 : 1.5); }
+                if (i === 1 || i === 2) { zOff = 2.5; xOff = (i === 1 ? -0.5 : 0.5); }
+            }
 
             entity.position.copy(new THREE.Vector3(anchorX, 0, anchorZ).addScaledVector(right, xOff).addScaledVector(forward, zOff));
             entity.lookAt(anchorX, 0, anchorZ); // Face player
@@ -2944,6 +3167,17 @@ function showCombat() {
 
         if (c.isAnimated) {
             animClass = "animated-card-art";
+        }
+
+        // Scale Boss Cards
+        if (c.bossSlot === 'boss-guardian') {
+            if (c.isBroker) {
+                card.style.transform = "scale(2.0)";
+                card.style.zIndex = "100"; // Ensure on top
+            } else {
+                card.style.transform = "scale(1.5)";
+                card.style.zIndex = "50";
+            }
         }
 
         // Boss Animations: 11-14 Clubs/Spades
@@ -3102,6 +3336,18 @@ function triggerPlayerAttackAnim(x, y, weapon) {
     if (weapon && game.classId === 'occultist' && weapon.isSpell) {
         const val = weapon.val;
 
+        // 3D Magic Circle Logic (Targeted)
+        if (use3dModel && playerMesh) {
+            // Calculate target position (approximate forward from player)
+            const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(playerMesh.quaternion);
+            const targetPos = playerMesh.position.clone().add(forward.multiplyScalar(4));
+            targetPos.y = 0.1; // Floor level
+
+            spawn3DMagicCircle(targetPos, val);
+            // Projectile from hand to target
+            spawn3DProjectile(playerMesh.position, targetPos, val);
+        }
+
         // Trigger Magic Circle Shader
         let circleColor = [1, 1, 1];
         if (val === 2 || val === 7 || val === 11) circleColor = [1.0, 0.5, 0.0]; // Orange/Red
@@ -3111,7 +3357,7 @@ function triggerPlayerAttackAnim(x, y, weapon) {
         else if (val === 6) circleColor = [0.4, 0.4, 1.0]; // Dark Lightning
         else if (val === 8) circleColor = [0.8, 0.0, 1.0]; // Purple
         else if (val === 9) circleColor = [0.8, 0.9, 1.0]; // Blue-White
-        else if (val === 10 || val === 14) circleColor = [0.2, 1.0, 0.2]; // Green
+        else if (val === 10 || val === 14) circleColor = [0.0, 1.0, 0.0]; // Green (Abyss)
         else if (val === 12) circleColor = [0.6, 0.0, 0.8]; // Dark Purple
         else if (val === 13) circleColor = [0.9, 0.9, 1.0]; // White
         magicFX.trigger(x, y, circleColor);
@@ -3185,6 +3431,11 @@ function triggerPlayerAttackAnim(x, y, weapon) {
 
     // Standard Physical Attacks
     if (weapon) {
+        // 3D Physical FX
+        if (use3dModel && playerMesh) {
+             spawn3DPhysicalFX(playerMesh.position, new THREE.Vector3(x, 0.5, y));
+        }
+
         // Slash
         spawnAboveModalTexture('slash_02.png', x, y, 1, {
             size: 280, spread: 0, decay: 0.06,
@@ -3207,6 +3458,124 @@ function triggerPlayerAttackAnim(x, y, weapon) {
         });
     }
     triggerShake(6, 12);
+}
+
+function spawn3DMagicCircle(pos, val) {
+    const tex = loadTexture('assets/images/textures/magic_02.png');
+    const geo = new THREE.PlaneGeometry(3, 3);
+    const mat = new THREE.MeshBasicMaterial({ 
+        map: tex, 
+        transparent: true, 
+        opacity: 0, 
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide
+    });
+    
+    // Color based on spell type
+    if (val === 2 || val === 7 || val === 11) mat.color.setHex(0xff5500); // Fire
+    else if (val === 3) mat.color.setHex(0x00ffff); // Ice
+    else if (val === 4) mat.color.setHex(0x00ff00); // Poison
+    else if (val === 5 || val === 6) mat.color.setHex(0x5555ff); // Lightning
+    else mat.color.setHex(0x00ff00); // Void/Abyss (Green)
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2; // Flat on floor
+    mesh.position.copy(pos);
+    mesh.position.y += 0.05; // Just above floor
+    scene.add(mesh);
+
+    // Animate: Spin, Fade In, Fade Out
+    new TWEEN.Tween(mesh.rotation)
+        .to({ z: Math.PI }, 1000)
+        .start();
+        
+    new TWEEN.Tween(mat)
+        .to({ opacity: 0.8 }, 200)
+        .yoyo(true)
+        .repeat(1)
+        .onComplete(() => scene.remove(mesh))
+        .start();
+}
+
+function spawn3DProjectile(startPos, targetPos, val) {
+    // Adjust target height for chest impact
+    const impactPos = targetPos.clone();
+    impactPos.y = 1.5; 
+
+    let texName = 'flame_01.png';
+    let color = 0xffaa00;
+    
+    if (val === 3) { texName = 'spark_06.png'; color = 0x00ffff; } // Ice
+    else if (val === 4) { texName = 'smoke_05.png'; color = 0x00ff00; } // Poison
+    else if (val === 5 || val === 6) { texName = 'trace_06.png'; color = 0xffff00; } // Lightning
+    else if (val >= 8) { texName = 'twirl_02.png'; color = 0x00ff00; } // Void (Green)
+
+    const tex = loadTexture(`assets/images/textures/${texName}`);
+    const mat = new THREE.SpriteMaterial({ map: tex, color: color, transparent: true, blending: THREE.AdditiveBlending });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.copy(startPos);
+    sprite.position.y += 1.5; // Hand height
+    sprite.scale.set(1.5, 1.5, 1);
+    scene.add(sprite);
+
+    new TWEEN.Tween(sprite.position)
+        .to({ x: impactPos.x, y: impactPos.y, z: impactPos.z }, 400)
+        .easing(TWEEN.Easing.Quadratic.In)
+        .onComplete(() => {
+            scene.remove(sprite);
+            // Impact FX
+            spawn3DImpact(impactPos, color);
+            // Impact Sound
+            if (audio && audio.initialized) audio.play('attack_blunt', { volume: 0.3, rate: 1.5 });
+        })
+        .start();
+}
+
+function spawn3DPhysicalFX(startPos, endScreenPos) {
+    // Simple slash effect in front of player
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(playerMesh.quaternion);
+    const pos = startPos.clone().add(forward.multiplyScalar(1.5));
+    pos.y += 1.5;
+    spawn3DImpact(pos, 0xffffff, 'slash_02.png');
+}
+
+function spawn3DImpact(pos, color, texName = 'star_06.png') {
+    const tex = loadTexture(`assets/images/textures/${texName}`);
+    const mat = new THREE.SpriteMaterial({ map: tex, color: color, transparent: true, blending: THREE.AdditiveBlending });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.copy(pos);
+    sprite.scale.set(0.1, 0.1, 1);
+    scene.add(sprite);
+
+    new TWEEN.Tween(sprite.scale)
+        .to({ x: 3, y: 3 }, 200)
+        .easing(TWEEN.Easing.Quadratic.Out)
+        .start();
+        
+    new TWEEN.Tween(mat)
+        .to({ opacity: 0 }, 300)
+        .onComplete(() => scene.remove(sprite))
+        .start();
+}
+
+function spawn3DDrainFX(pos) {
+    const tex = loadTexture('assets/images/textures/circle_03.png');
+    const mat = new THREE.SpriteMaterial({ map: tex, color: 0x880000, transparent: true, blending: THREE.AdditiveBlending });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.copy(pos);
+    sprite.position.y += 1.0;
+    sprite.scale.set(3, 3, 1);
+    scene.add(sprite);
+
+    // Implosion effect (Scale down)
+    new TWEEN.Tween(sprite.scale)
+        .to({ x: 0.1, y: 0.1 }, 400)
+        .easing(TWEEN.Easing.Quadratic.In)
+        .onComplete(() => scene.remove(sprite))
+        .start();
+        
+    if (audio && audio.initialized) audio.play('spell_void', { volume: 0.4, rate: 2.0 });
 }
 
 function pickCard(idx, event) {
@@ -3675,8 +4044,29 @@ function finishRoom() {
         document.getElementById('modalAvoidBtn').style.display = 'none';
 
         if (isBroker) {
-            setTimeout(() => { startEndingSequence(); }, 4000);
-            return;
+            // Check Phase (Broker Defeated Logic)
+            if (game.brokerPhase < 4) {
+                game.brokerPhase++;
+                
+                // If we killed the Broker (isBroker is true), the game SHOULD end.
+                // The phase logic is for when he SURVIVES (retreats).
+                // Wait, if the player kills the Broker in Phase 1, do they win immediately?
+                // Or does he "fake die" and come back?
+                // Let's assume if you kill him, you win. The phases are for if you clear his MINIONS.
+                
+                // BUT, if the player clears the room (3 cards) and the Broker is the 4th card (alive),
+                // THEN we trigger the next phase.
+                
+                // If we are inside this block, it means the Broker was DEFEATED (killed).
+                // So we should trigger the ending.
+                
+                setTimeout(() => { startEndingSequence(); }, 4000);
+                updateBossBar(0, 60); // Deplete bar
+                return;
+            } else {
+                setTimeout(() => { startEndingSequence(); }, 4000);
+                return;
+            }
         }
 
         // If we just beat the Floor 9 Guardian, trigger Soul Broker
@@ -3731,6 +4121,7 @@ function finishRoom() {
         if (game.activeRoom.isFinal) {
             // Check for Final Boss Trigger (Floor 9)
             if (game.floor === 9 && !game.isBrokerFight) {
+                updateBossBar(0, 60, false, true); // Ensure bar is hidden
                 logMsg("The air grows heavy. The Soul Broker approaches...");
                 startSoulBrokerEncounter();
                 return;
@@ -3743,8 +4134,40 @@ function finishRoom() {
             document.getElementById('descendBtn').onclick = (e) => { if(e) e.stopPropagation(); startBossFight(); };
             document.getElementById('exitCombatBtn').style.display = 'none';
             logMsg("Floor Purged! The Guardian awaits.");
+            updateBossBar(0, 60, false, true); // Hide bar if visible
         } else {
+            updateBossBar(0, 60, false, true); // Hide bar
             logMsg("Floor Purged! Return to the Guardian's lair to descend.");
+        }
+    } else if (game.isBrokerFight) {
+        // If we cleared the room (picked 3 cards) but Broker is still alive (he was the 4th card),
+        // OR if we killed him but there are phases left?
+        // Actually, in Scoundrel, if the boss is the 4th card, he stays for the next "room".
+        // But here we want a gauntlet.
+        
+        // Logic: If the room is "finished" (3 cards picked), we start the next round immediately.
+        // The Broker carries over his HP.
+        
+        if (game.brokerPhase < 4) {
+            const broker = game.combatCards.find(c => c.isBroker) || (game.carryCard && game.carryCard.isBroker ? game.carryCard : null);
+            if (broker) {
+                game.brokerHP = broker.val + 10; // Heal 10
+                logMsg(`The Soul Broker retreats and rallies his guard! (+10 HP)`);
+                game.combatBusy = true; // Block clicks during rally
+                
+                // Animate Bar Filling Up
+                updateBossBar(broker.val, 60); // Current
+                setTimeout(() => {
+                    updateBossBar(game.brokerHP, 60); // Fill up
+                    // Fade out after 2.5s (allow time to see fill)
+                    setTimeout(() => { updateBossBar(game.brokerHP, 60, false, true); }, 2500);
+                    game.combatBusy = false; // Re-enable combat
+                }, 500); 
+            }
+            
+            game.brokerPhase++;
+            setTimeout(setupBrokerRound, 2000);
+            return;
         }
     }
     updateRoomVisuals();
@@ -3786,6 +4209,7 @@ function closeCombat() {
     audio.setMusicMuffled(false); // Unmuffle music
     const mp = document.getElementById('merchantPortrait');
     if (mp) mp.style.display = 'none';
+    updateBossBar(0, 60, false, true); // Hide boss bar
 
     if (use3dModel) {
         exitCombatView();
@@ -4099,6 +4523,24 @@ window.toggleControlBox = function (show) {
     }
 };
 
+function updateBossBar(val, max, show = false, fadeOut = false) {
+    const container = document.getElementById('bossHpContainer');
+    const fill = document.getElementById('bossHpFill');
+    if (!container || !fill) return;
+
+    if (show) {
+        container.style.display = 'block';
+        container.style.opacity = '1';
+        container.style.transition = 'opacity 0.5s';
+    } else if (fadeOut) {
+        container.style.opacity = '0';
+        setTimeout(() => { if(container.style.opacity === '0') container.style.display = 'none'; }, 500);
+    }
+    
+    const pct = Math.max(0, Math.min(100, (val / max) * 100));
+    fill.style.width = `${pct}%`;
+}
+
 // --- LAYOUT SETUP ---
 function setupLayout() {
     console.log("Initializing Custom Layout...");
@@ -4220,6 +4662,15 @@ function setupLayout() {
         document.body.appendChild(bonfireUI);
     }
 
+    // 3.5 Create Boss HP Bar
+    let bossBar = document.getElementById('bossHpContainer');
+    if (!bossBar) {
+        bossBar = document.createElement('div');
+        bossBar.id = 'bossHpContainer';
+        bossBar.innerHTML = `<div id="bossHpLabel">The Soul Broker</div><div id="bossHpBarFrame"><div id="bossHpFill"></div></div>`;
+        document.body.appendChild(bossBar);
+    }
+
     // 4. Create Gameplay Inventory Bar (Map HUD) if missing
     // (Moved to ui-manager.js, called via setupInventoryUI or updateUI)
     // Actually, setupInventoryUI creates the modal. updateUI creates the HUD if missing.
@@ -4236,7 +4687,10 @@ let gameSettings = {
     musicMuted: false,
     sfxMuted: false,
     enhancedGraphics: false,
-    tiltShiftMode: 'threejs' // 'off', 'css', 'threejs'
+    tiltShiftMode: 'threejs', // 'off', 'css', 'threejs'
+    bloomEnabled: true,
+    celShadingEnabled: false,
+    celOutlineEnabled: true
 };
 
 function loadSettings() {
@@ -4251,6 +4705,8 @@ function loadSettings() {
         // Apply graphics setting if present
         if (gameSettings.enhancedGraphics !== undefined) use3dModel = gameSettings.enhancedGraphics;
         applyTiltShiftMode(gameSettings.tiltShiftMode);
+        if (bloomPass) bloomPass.enabled = (gameSettings.bloomEnabled !== false);
+        rebuildComposer();
     }
 }
 
@@ -4297,6 +4753,11 @@ window.showOptionsModal = function () {
                 <label style="display:block; margin-bottom:5px;">Master Volume</label>
                 <input type="range" min="0" max="1" step="0.05" value="${gameSettings.masterVolume}" style="width:100%;" oninput="updateSetting('vol', this.value)">
             </div>
+
+            <div style="margin:10px 0; padding:10px; border:1px dashed #555; text-align:center;">
+                <button class="v2-btn" onclick="runBenchmark()" style="font-size:0.8rem; width:100%;">Auto-Detect Graphics</button>
+                <div id="benchmarkResult" style="font-size:0.7rem; color:#aaa; margin-top:5px;"></div>
+            </div>
             
             <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
                 <input type="checkbox" id="muteMusic" ${gameSettings.musicMuted ? 'checked' : ''} onchange="updateSetting('music', this.checked)">
@@ -4309,13 +4770,27 @@ window.showOptionsModal = function () {
             </div>
 
             <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
-                <input type="checkbox" id="isoView" ${is3DView ? 'checked' : ''} onchange="toggleView()">
-                <label for="isoView">Isometric Camera</label>
+                <button class="v2-btn" onclick="toggleView()" style="width:100%; font-size:0.8rem;">Cycle Camera Mode</button>
             </div>
 
             <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
                 <input type="checkbox" id="tiltShift" ${gameSettings.tiltShiftMode === 'threejs' ? 'checked' : ''} onchange="updateSetting('tiltShift', this.checked)">
                 <label for="tiltShift">Tilt-Shift FX</label>
+            </div>
+
+            <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
+                <input type="checkbox" id="bloomFX" ${gameSettings.bloomEnabled ? 'checked' : ''} onchange="updateSetting('bloom', this.checked)">
+                <label for="bloomFX">Bloom FX</label>
+            </div>
+
+            <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
+                <input type="checkbox" id="celShading" ${gameSettings.celShadingEnabled ? 'checked' : ''} onchange="updateSetting('cel', this.checked)">
+                <label for="celShading">Cel Shading (Toon)</label>
+            </div>
+            
+            <div id="celOutlineDiv" style="margin:5px 0 15px 25px; text-align:left; display:${gameSettings.celShadingEnabled ? 'flex' : 'none'}; align-items:center; gap:10px;">
+                <input type="checkbox" id="celOutline" ${gameSettings.celOutlineEnabled ? 'checked' : ''} onchange="updateSetting('celOutline', this.checked)">
+                <label for="celOutline" style="font-size:0.9rem; color:#aaa;">Use Outlines</label>
             </div>
 
             ${graphicsOption}
@@ -4345,6 +4820,20 @@ window.updateSetting = function (type, val) {
         gameSettings.tiltShiftMode = mode;
         applyTiltShiftMode(mode);
     }
+    if (type === 'bloom') {
+        gameSettings.bloomEnabled = val;
+        if (bloomPass) bloomPass.enabled = val;
+    }
+    if (type === 'cel') {
+        gameSettings.celShadingEnabled = val;
+        const sub = document.getElementById('celOutlineDiv');
+        if(sub) sub.style.display = val ? 'flex' : 'none';
+        rebuildComposer();
+    }
+    if (type === 'celOutline') {
+        gameSettings.celOutlineEnabled = val;
+        rebuildComposer();
+    }
 
     saveSettings();
     if (type !== 'graphics') applyAudioSettings();
@@ -4367,6 +4856,127 @@ function applyTiltShiftMode(mode) {
         hTilt.enabled = enabled;
         vTilt.enabled = enabled;
     }
+}
+
+// --- BENCHMARK SYSTEM (Glenn's Request) ---
+window.runBenchmark = function() {
+    const resEl = document.getElementById('benchmarkResult');
+    if(resEl) resEl.innerText = "Testing... (3s)";
+    
+    let frames = 0;
+    let startTime = performance.now();
+    let active = true;
+
+    // Force high load temporarily
+    // We modify gameSettings so animate3D renders full FX during the test
+    gameSettings.tiltShiftMode = 'threejs';
+    gameSettings.bloomEnabled = true;
+    gameSettings.celShadingEnabled = true;
+    gameSettings.celOutlineEnabled = true;
+    if(bloomPass) bloomPass.enabled = true;
+    rebuildComposer();
+
+    const loop = () => {
+        if(!active) return;
+        frames++;
+        const now = performance.now();
+        if (now - startTime >= 3000) {
+            active = false;
+            const fps = Math.round((frames / 3) * 10) / 10;
+            
+            // Decision Matrix
+            let mode = "Classic";
+            if (fps > 55) {
+                updateSetting('graphics', true); updateSetting('tiltShift', true); updateSetting('bloom', true); updateSetting('cel', false); updateSetting('celOutline', false);
+                mode = "Ultra (Enhanced + FX)";
+            } else if (fps > 40) {
+                updateSetting('graphics', true); updateSetting('tiltShift', true); updateSetting('bloom', false); updateSetting('cel', false); updateSetting('celOutline', false);
+                mode = "High (Enhanced + Tilt)";
+            } else if (fps > 25) {
+                updateSetting('graphics', false); updateSetting('tiltShift', true); updateSetting('bloom', true); updateSetting('cel', false); updateSetting('celOutline', false);
+                mode = "Medium (Classic + FX)";
+            } else {
+                updateSetting('graphics', false); updateSetting('tiltShift', false); updateSetting('bloom', false); updateSetting('cel', false); updateSetting('celOutline', false);
+                mode = "Low (Classic)";
+            }
+            
+            if(resEl) resEl.innerText = `Result: ${fps} FPS -> Set to ${mode}`;
+            
+            // Restore UI toggles
+            const gfxCheck = document.getElementById('enhancedGfx');
+            if(gfxCheck) gfxCheck.checked = gameSettings.enhancedGraphics;
+            
+            const tiltCheck = document.getElementById('tiltShift');
+            if(tiltCheck) tiltCheck.checked = (gameSettings.tiltShiftMode === 'threejs');
+            
+            const bloomCheck = document.getElementById('bloomFX');
+            if(bloomCheck) bloomCheck.checked = gameSettings.bloomEnabled;
+
+            const celCheck = document.getElementById('celShading');
+            if(celCheck) celCheck.checked = gameSettings.celShadingEnabled;
+
+            const outlineCheck = document.getElementById('celOutline');
+            if(outlineCheck) outlineCheck.checked = gameSettings.celOutlineEnabled;
+
+            showBenchmarkModal(fps);
+        } else {
+            requestAnimationFrame(loop);
+        }
+    };
+    loop();
+}
+
+function showBenchmarkModal(fps) {
+    let modal = document.getElementById('benchmarkModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'benchmarkModal';
+        modal.className = 'modal-overlay';
+        modal.style.zIndex = '25000'; // Above options
+        document.body.appendChild(modal);
+    }
+
+    const canClassic = true;
+    const canEnhanced = fps > 40;
+    const canTilt = fps > 25;
+    const canBloom = fps > 50;
+    const canCel = fps > 35;
+
+    const check = (bool) => bool ? '✅' : '❌';
+    const color = (bool) => bool ? '#4f4' : '#f44';
+    const rowStyle = "display:flex; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid #333; padding-bottom:2px;";
+
+    modal.innerHTML = `
+        <div style="background:rgba(10,10,10,0.98); border:2px solid var(--gold); padding:30px; width:400px; max-width:90%; text-align:center; color:#fff; font-family:'Cinzel'; position:relative; box-shadow: 0 0 50px rgba(0,0,0,0.8);">
+            <h2 style="color:var(--gold); margin-top:0; margin-bottom:10px; text-shadow:0 2px 4px #000;">SYSTEM ANALYSIS</h2>
+            <div style="font-size:1.0rem; margin-bottom:20px; color:#aaa; font-family:'Special Elite';">Stress Test Result: <span style="color:#fff; font-weight:bold; font-size:1.2rem;">${fps} FPS</span></div>
+            
+            <div style="text-align:left; background:rgba(255,255,255,0.03); padding:20px; border:1px solid #444; margin-bottom:20px; font-family:'Crimson Text'; font-size:1.1rem;">
+                <div style="${rowStyle}">
+                    <span>Classic Mode (2D)</span> <span style="color:${color(canClassic)}">${check(canClassic)}</span>
+                </div>
+                <div style="${rowStyle}">
+                    <span>Enhanced Models (3D)</span> <span style="color:${color(canEnhanced)}">${check(canEnhanced)}</span>
+                </div>
+                <div style="${rowStyle}">
+                    <span>Tilt-Shift FX</span> <span style="color:${color(canTilt)}">${check(canTilt)}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                    <span>Bloom Lighting</span> <span style="color:${color(canBloom)}">${check(canBloom)}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                    <span>Cel Shading</span> <span style="color:${color(canCel)}">${check(canCel)}</span>
+                </div>
+            </div>
+
+            <div style="font-size:0.9rem; color:#d4af37; margin-bottom:20px; font-style:italic;">
+                Optimal settings have been applied.
+            </div>
+
+            <button class="v2-btn" onclick="document.getElementById('benchmarkModal').style.display='none'" style="width:100%;">ACCEPT</button>
+        </div>
+    `;
+    modal.style.display = 'flex';
 }
 
 // --- HELP SYSTEM ---
@@ -4609,6 +5219,7 @@ function loadGame() {
     // Note: generateFloorCA uses game.rooms, which we just loaded
     globalFloorMesh = generateFloorCA(scene, game.floor, game.rooms, corridorMeshes, decorationMeshes, treePositions, loadTexture, getClonedTexture);
     updateAtmosphere(game.floor);
+    // initWanderers(); // Disabled for now
 
     // Restore Player Position
     const currentRoom = game.rooms.find(r => r.id === game.currentRoomIdx);
@@ -4842,7 +5453,8 @@ function startLockpickGame(room) {
     // Place Walls
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
-            if (!pathCells.has(`${x},${y}`) && Math.random() < 0.25) grid[y][x] = 1;
+            // Only place walls if NOT on the guaranteed path
+            if (!pathCells.has(`${x},${y}`) && Math.random() < 0.20) grid[y][x] = 1;
         }
     }
 
@@ -5370,7 +5982,7 @@ function exitCombatView() {
 
     // Restore camera
     controls.object = camera; // Switch controls back to Ortho camera
-    controls.enableRotate = is3DView; // Restore rotation setting
+    controls.enableRotate = (viewMode === 2); // Only rotate in Free mode
     
     // Restore default controls
     controls.mouseButtons = {
@@ -5379,7 +5991,12 @@ function exitCombatView() {
         RIGHT: THREE.MOUSE.PAN
     };
 
-    controls.target.copy(savedCamState.target);
+    if (viewMode === 2) {
+        controls.object = perspectiveCamera;
+        // Keep perspective camera where it was or reset? Let's keep it.
+    } else {
+        controls.target.copy(savedCamState.target);
+    }
     controls.update();
 
     // Restore Player Position from Battle Island

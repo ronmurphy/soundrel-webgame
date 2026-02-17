@@ -142,7 +142,8 @@ export const game = {
     currentTrack: null,
     deck: [],
     visitedWaypoints: [],
-    enemiesDefeated: 0
+    enemiesDefeated: 0,
+    brokerPhase: 0
 };
 
 export function getDisplayVal(v) {
