@@ -8,8 +8,6 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { HorizontalTiltShiftShader } from 'three/addons/shaders/HorizontalTiltShiftShader.js';
 import { VerticalTiltShiftShader } from 'three/addons/shaders/VerticalTiltShiftShader.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import { SoundManager } from './sound-manager.js';
 import { MagicCircleFX } from './magic-circle.js';
 import { CombatTerrain, updateCombatVisibility } from './combat-mechanics.js';
@@ -29,8 +27,7 @@ const INTRO_STORY_DEFAULTS = [
 
 // --- 3D RENDERING (Three.js Tableau) ---
 let scene, camera, combatCamera, renderer, composer, renderPass, controls, raycaster, mouse;
-let perspectiveCamera; // New camera for Immersive mode
-let hTilt, vTilt, bloomPass, outlineEffect;
+let hTilt, vTilt; // Shader passes
 let playerMarker; // Crystal marker
 let torchLight;
 let hemisphereLight; // Soft global fill light to improve readability under fog
@@ -103,8 +100,7 @@ function preloadCardImages() {
 }
 
 let ghosts = []; // Active ghost sprites
-let viewMode = 1; // 0: 2D, 1: 3D Iso (Default), 2: 3D Free/FPS
-let combatCameraActive = false; // User preference for rotating camera in combat
+let is3DView = true;
 let isAttractMode = false; // Title screen mode
 let use3dModel = false; // Default to 2D sprites
 let playerSprite;
@@ -120,7 +116,6 @@ let globalAnimSpeed = 1.0; // Default to real-time, tune individual actions via 
 let isEditMode = false;
 let selectedMesh = null;
 let currentAxesHelper = null;
-let clickStart = { x: 0, y: 0 }; // Track mouse down position for drag detection
 // --- ENHANCED COMBAT GLOBALS ---
 let combatGroup = new THREE.Group();
 let isCombatView = false;
@@ -883,35 +878,9 @@ function handleWindowResize() {
             composer.setSize(container.clientWidth, container.clientHeight);
             updateTiltShiftUniforms();
         }
-        if (outlineEffect) outlineEffect.setSize(container.clientWidth, container.clientHeight);
     }
 }
 window.addEventListener('resize', handleWindowResize);
-
-const ColorBandShader = {
-    uniforms: {
-        'tDiffuse': { value: null }
-    },
-    vertexShader: `
-        varying vec2 vUv;
-        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }
-    `,
-    fragmentShader: `
-        uniform sampler2D tDiffuse;
-        varying vec2 vUv;
-        void main() {
-            vec4 tex = texture2D( tDiffuse, vUv );
-            vec3 c = tex.rgb;
-            // Quantize colors to create toon bands
-            float levels = 6.0;
-            c = floor(c * levels) / levels;
-            // Slight saturation boost
-            vec3 gray = vec3(dot(c, vec3(0.2126, 0.7152, 0.0722)));
-            c = mix(gray, c, 1.2);
-            gl_FragColor = vec4( c, tex.a );
-        }
-    `
-};
 
 function init3D() {
     const container = document.getElementById('v3-container');
@@ -932,47 +901,31 @@ function init3D() {
         container.appendChild(renderer.domElement);
     }
 
-    // Outline Effect (Cel Shading Replacement)
-    outlineEffect = new OutlineEffect(renderer, {
-        defaultThickness: 0.0025,
-        defaultColor: [0, 0, 0],
-        defaultAlpha: 0.8,
-        defaultKeepAlive: true
-    });
-
     // Post-Processing Setup
     composer = new EffectComposer(renderer);
     composer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Match renderer quality
-    
-    // Bloom Pass (David's Request)
-    bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-    bloomPass.threshold = 0.2;
-    bloomPass.strength = 0.35; // Subtle glow
-    bloomPass.radius = 0.5;
-    bloomPass.enabled = gameSettings.bloomEnabled;
-    composer.addPass(bloomPass);
+    renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
 
     hTilt = new ShaderPass(HorizontalTiltShiftShader);
     vTilt = new ShaderPass(VerticalTiltShiftShader);
     hTilt.enabled = false;
     vTilt.enabled = false;
 
-    // Initialize standard RenderPass (used when Cel is off)
-    renderPass = new RenderPass(scene, camera);
+    composer.addPass(hTilt);
+    composer.addPass(vTilt);
 
-    rebuildComposer(); // Build the pass chain
     updateTiltShiftUniforms();
-    
+
     const aspect = container.clientWidth / container.clientHeight;
     const d = 10;
     camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
     camera.position.set(20, 20, 20);
     camera.lookAt(0, 0, 0);
     combatCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1000);
-    perspectiveCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1000); // Devin's Camera
 
     controls = new OrbitControls(camera, renderer.domElement);
-    controls.enablePan = false; // Revert Devin's Request
+    controls.enablePan = false;
     controls.maxZoom = 2;
     controls.minZoom = 0.5;
 
@@ -1028,47 +981,6 @@ function init3D() {
 
     animate3D();
     window.addEventListener('click', on3DClick);
-}
-
-function rebuildComposer() {
-    if (!composer) return;
-    composer.passes = [];
-
-    // 1. Render Pass (Standard or Cel/Outline)
-    if (gameSettings.celShadingEnabled && gameSettings.celOutlineEnabled && outlineEffect) {
-        // Custom Pass that uses OutlineEffect
-        const celPass = new RenderPass(scene, camera);
-        celPass.render = function(renderer, writeBuffer, readBuffer) {
-            // Mimic standard RenderPass logic but use outlineEffect.render
-            const oldAutoClear = renderer.autoClear;
-            renderer.autoClear = false;
-
-            let target = this.renderToScreen ? null : readBuffer;
-            renderer.setRenderTarget(target);
-            
-            if (this.clear) renderer.clear(renderer.autoClearColor, renderer.autoClearDepth, renderer.autoClearStencil);
-            
-            outlineEffect.render(this.scene, this.camera);
-            
-            renderer.autoClear = oldAutoClear;
-        };
-        composer.addPass(celPass);
-    } else {
-        composer.addPass(renderPass);
-    }
-
-    // 2. Color Banding (Toon Look)
-    if (gameSettings.celShadingEnabled) {
-        const bandPass = new ShaderPass(ColorBandShader);
-        composer.addPass(bandPass);
-    }
-
-    // 2. Bloom
-    if (bloomPass) composer.addPass(bloomPass);
-
-    // 3. Tilt Shift
-    if (hTilt) composer.addPass(hTilt);
-    if (vTilt) composer.addPass(vTilt);
 }
 
 function updateTiltShiftUniforms() {
@@ -1315,10 +1227,6 @@ function on3DClick(event) {
         handleEditClick(event);
         return;
     }
-    // Check if mouse moved significantly (drag/rotate) > 5 pixels
-    if (Math.abs(event.clientX - clickStart.x) > 5 || Math.abs(event.clientY - clickStart.y) > 5) {
-        return;
-    }
     // Prevent interaction if any modal is open (including lockpickUI)
     const blockers = ['combatModal', 'lockpickUI', 'introModal', 'avatarModal', 'inventoryModal', 'classModal'];
     const isBlocked = blockers.some(id => {
@@ -1410,17 +1318,17 @@ function update3DScene() {
 
         if (game.equipment.weapon) {
             if (game.equipment.weapon.val >= 8 || hasLantern) {
-                torchLight.color.setHex(0x00ccff); torchLight.intensity = (viewMode !== 0 ? baseInt * 1.5 : baseInt * 2.5);
+                torchLight.color.setHex(0x00ccff); torchLight.intensity = (is3DView ? baseInt * 1.5 : baseInt * 2.5);
                 torchLight.distance = baseDist * 1.5; vRad = 8.0;
             } else if (game.equipment.weapon.val >= 6 || hasLantern) {
-                torchLight.color.setHex(0xd4af37); torchLight.intensity = (viewMode !== 0 ? baseInt * 1.2 : baseInt * 2.0);
+                torchLight.color.setHex(0xd4af37); torchLight.intensity = (is3DView ? baseInt * 1.2 : baseInt * 2.0);
                 torchLight.distance = baseDist * 1.2; vRad = 5.0;
             } else {
-                torchLight.color.setHex(0xffaa44); torchLight.intensity = (viewMode !== 0 ? baseInt : baseInt * 1.5);
+                torchLight.color.setHex(0xffaa44); torchLight.intensity = (is3DView ? baseInt : baseInt * 1.5);
                 torchLight.distance = baseDist; vRad = 3.5;
             }
         } else {
-            torchLight.color.setHex(0xffaa44); torchLight.intensity = (viewMode !== 0 ? baseInt * 0.8 : baseInt * 1.2);
+            torchLight.color.setHex(0xffaa44); torchLight.intensity = (is3DView ? baseInt * 0.8 : baseInt * 1.2);
             torchLight.distance = baseDist * 0.8; vRad = 2.5;
         }
 
@@ -1918,22 +1826,11 @@ function animate3D() {
 
     // Throttled render so we don't render >30fps
     if (now - lastRenderTime >= RENDER_INTERVAL) {
-        // Determine active camera based on mode
-        let activeCam = isCombatView ? combatCamera : camera;
-
+        const activeCam = isCombatView ? combatCamera : camera;
         const lockpickActive = document.getElementById('lockpickUI') && document.getElementById('lockpickUI').style.display !== 'none';
 
-        // Determine if we need post-processing (Bloom OR Tilt-Shift OR Cel)
-        const usePostProcessing = (gameSettings.tiltShiftMode === 'threejs' || gameSettings.bloomEnabled || gameSettings.celShadingEnabled) && composer;
-
-        if (usePostProcessing) {
-            // Dynamic Tilt-Shift: Disable in combat/puzzle for clarity
-            if (hTilt && vTilt) {
-                const tiltActive = (gameSettings.tiltShiftMode === 'threejs') && !isCombatView && !lockpickActive;
-                hTilt.enabled = tiltActive;
-                vTilt.enabled = tiltActive;
-            }
-            
+        // Disable Tilt-Shift in Combat/Puzzle to ensure clarity
+        if (gameSettings.tiltShiftMode === 'threejs' && composer && !isCombatView && !lockpickActive) {
             renderPass.camera = activeCam;
             composer.render();
         } else {
@@ -1960,11 +1857,11 @@ function animatePlayerSprite() {
     const frame = Math.floor((time * 12) % 25);
     playerSprite.material.map.repeat.set(1 / 25, 1);
     playerSprite.material.map.offset.set(frame / 25, 0);
-    if (viewMode === 0) { // 2D
+    if (!is3DView) {
         playerSprite.rotation.x = Math.PI / 2; playerSprite.position.y = 0.8;
         playerSprite.material.map = walkAnims[game.sex].up;
-    } else { // 3D Iso or Free
-        playerSprite.rotation.x = 0; playerSprite.position.y = 0.75; 
+    } else {
+        playerSprite.rotation.x = 0; playerSprite.position.y = 0.75;
         const isFace = camera.position.z > playerSprite.position.z;
         playerSprite.material.map = isFace ? walkAnims[game.sex].down : walkAnims[game.sex].up;
     }
@@ -2282,31 +2179,11 @@ function clear3DScene() {
 }
 
 function toggleView() {
-    combatCameraActive = !combatCameraActive;
+    is3DView = !is3DView;
     const btn = document.getElementById('viewToggleBtn');
-    
-    if (btn) {
-        btn.innerText = `Combat Camera: ${combatCameraActive ? 'On' : 'Off'}`;
-        btn.style.background = combatCameraActive ? '#d4af37' : ''; // Visual feedback
-    }
-
-    // If currently in combat, apply immediately
-    if (isCombatView) {
-        controls.enableRotate = combatCameraActive;
-        controls.autoRotate = combatCameraActive;
-        if (!combatCameraActive) {
-            // Reset to default combat view if turned off
-            const arenaPos = BattleIsland.getAnchor();
-            const anchorX = arenaPos.x;
-            const anchorZ = arenaPos.z;
-            const anchorY = 0.1;
-            const forward = new THREE.Vector3(0, 0, 1);
-            const endPos = new THREE.Vector3(anchorX, anchorY + 1.6, anchorZ).addScaledVector(forward, -3.5);
-            new TWEEN.Tween(combatCamera.position).to({ x: endPos.x, y: endPos.y, z: endPos.z }, 500).easing(TWEEN.Easing.Quadratic.Out).start();
-            controls.target.copy(new THREE.Vector3(anchorX, anchorY + 1.2, anchorZ));
-        }
-    }
-    
+    if (btn) btn.innerText = `VIEW: ${is3DView ? '3D' : '2D'}`;
+    if (is3DView) { camera.position.set(20, 20, 20); controls.enableRotate = true; torchLight.intensity = 300; torchLight.distance = 40; }
+    else { camera.position.set(0, 40, 0); camera.lookAt(0, 0, 0); controls.enableRotate = false; torchLight.intensity = 1500; torchLight.distance = 60; }
     camera.updateProjectionMatrix();
 }
 window.toggleView = toggleView;
@@ -2703,12 +2580,6 @@ function enterRoom(id) {
         return;
     }
 
-    if (room.isAlchemy && room.state !== 'cleared') {
-        game.activeRoom = room;
-        showAlchemyPrompt();
-        return;
-    }
-
     if (room.isSpecial && room.state !== 'cleared') {
         game.activeRoom = room;
 
@@ -2871,31 +2742,60 @@ function startSoulBrokerEncounter() {
     game.isBossFight = true;
     game.isBrokerFight = true;
     game.activeRoom.state = 'boss_active';
+    game.brokerPhase = 1;
     game.chosenCount = 0;
 
     logMsg("The Soul Broker reveals his true form!");
-
-    // Narrative Popup (Optional, using log for now)
     spawnFloatingText("THE FINAL DEBT", window.innerWidth / 2, window.innerHeight / 2 - 100, '#d4af37');
-    updateBossBar(30, 60, true); // Show bar (Start at 30, Max 60)
 
-    // The Soul Broker Boss
-    // Diamond formation with 3 Guardians as minions (Level 2 stats ~19)
+    setupBrokerRound();
+}
+
+function setupBrokerRound() {
+    game.isBossFight = true; // Ensure flag is active for phases
+    game.chosenCount = 0;
+    
+    // Broker Stats: Persist HP if phase > 1, else init
+    // We need to find the broker in the previous array if it exists to carry over HP?
+    // Actually, finishRoom handles the logic, so we just need to generate the new array.
+    // But we need to know the Broker's current HP. 
+    // Let's store it in game state temporarily or find it before clearing.
+    
+    let brokerHP = 30;
+    if (game.brokerPhase > 1) {
+        // He healed 10 in finishRoom, so we just need to respect that logic or set it here.
+        // Let's assume finishRoom passed the value or we stored it.
+        // Simplest: We'll handle the heal in finishRoom and store it in a temp var if needed, 
+        // but since we rebuild the array, we need to pass it in.
+        // Let's use game.brokerHP if set.
+        brokerHP = game.brokerHP || 30;
+    }
+
+    // Randomize Guardian Roles for this round
+    const roles = ['vanguard', 'mystic', 'bulwark', 'sorcerer', 'architect', 'loyalist'];
+    shuffle(roles);
+
+    // Base Guardian Stats (Level 9 scaling)
+    const gVal = 19; 
+
     game.combatCards = [
         {
-            type: 'monster', val: 19, suit: '💀', name: "Abyssal Maw", bossSlot: 'boss-weapon',
-            customAsset: 'animations/guardian_abyssal_maw.png', customBgSize: '2500% 100%', isAnimated: true
+            type: 'monster', val: gVal, suit: '💀', name: "Abyssal Maw", bossSlot: 'boss-weapon',
+            customAsset: 'animations/guardian_abyssal_maw.png', customBgSize: '2500% 100%', isAnimated: true,
+            bossRole: roles[0]
         },
         {
-            type: 'monster', val: 19, suit: '💀', name: "Ironclad Sentinel", bossSlot: 'boss-armor',
-            customAsset: 'animations/guardian_ironclad_sentinel.png', customBgSize: '2500% 100%', isAnimated: true
+            type: 'monster', val: gVal, suit: '💀', name: "Ironclad Sentinel", bossSlot: 'boss-armor',
+            customAsset: 'animations/guardian_ironclad_sentinel.png', customBgSize: '2500% 100%', isAnimated: true,
+            bossRole: roles[1]
         },
         {
-            type: 'monster', val: 19, suit: '💀', name: "Gargoyle", bossSlot: 'boss-potion',
-            customAsset: 'animations/guardian_gargoyle.png', customBgSize: '2500% 100%', isAnimated: true
+            type: 'monster', val: gVal, suit: '💀', name: "Gargoyle", bossSlot: 'boss-potion',
+            customAsset: 'animations/guardian_gargoyle.png', customBgSize: '2500% 100%', isAnimated: true,
+            bossRole: roles[2]
         },
         {
-            type: 'monster', val: 30, suit: '👺', name: "The Soul Broker",
+            type: 'monster', val: brokerHP, suit: '👺', name: "The Soul Broker",
             bossSlot: 'boss-guardian',
             customAsset: 'animations/final.png', // Explicitly set asset path
             customBgSize: '2500% 100%', // Ensure 25-frame animation scaling
@@ -2907,6 +2807,26 @@ function startSoulBrokerEncounter() {
     ];
 
     showCombat();
+
+    // Auto-Kill Logic for Phases 2 & 3
+    // Phase 2: 1 Guardian dies. Phase 3: 2 Guardians die.
+    // We do this AFTER showCombat so the cards exist in DOM/3D to be animated out.
+    if (game.brokerPhase > 1) {
+        setTimeout(() => {
+            const minions = game.combatCards.filter(c => !c.isBroker);
+            const killCount = (game.brokerPhase === 2) ? 1 : (game.brokerPhase === 3 ? 2 : 3);
+            
+            // If Phase 4, kill ALL minions (Duel)
+            
+            for(let i=0; i<killCount; i++) {
+                if (minions[i]) {
+                    // Find index in main array
+                    const idx = game.combatCards.indexOf(minions[i]);
+                    if (idx !== -1) pickCard(idx, null); // Trigger death logic
+                }
+            }
+        }, 800); // Delay slightly for dramatic effect
+    }
 }
 
 function showCombat() {
@@ -2922,15 +2842,6 @@ function showCombat() {
         const alreadyInCombat = isCombatView;
         enterCombatView();
         overlay.style.background = 'rgba(0,0,0,0)'; // Transparent modal
-
-        // FIX: Allow clicks to pass through modal to the 3D canvas for OrbitControls
-        overlay.style.pointerEvents = 'none';
-        // Re-enable clicks on specific UI elements
-        const interactables = ['exitCombatBtn', 'modalAvoidBtn', 'descendBtn', 'bonfireNotNowBtn'];
-        interactables.forEach(id => {
-            const el = document.getElementById(id);
-            if(el) el.style.pointerEvents = 'auto';
-        });
 
         // Clear previous 3D entities
         while (combatGroup.children.length > 0) {
@@ -2986,23 +2897,16 @@ function showCombat() {
 
             // Switch Controls to Perspective Camera temporarily
             controls.object = combatCamera;
-            // Look Target: Player Center (Anchor) + Up * 1.2
-            // This allows orbiting around the player character
-            const lookAtPos = new THREE.Vector3(anchorX, anchorY + 1.2, anchorZ);
+            // Look Target: Anchor + Forward * 4 + Up * 1.2
+            const lookAtPos = new THREE.Vector3(anchorX, anchorY + 1.2, anchorZ).addScaledVector(forward, 4.0);
             controls.target.copy(lookAtPos);
-            controls.minDistance = 2.0;
-            controls.maxDistance = 8.0;
-            controls.autoRotate = combatCameraActive; // "Intro Logo" Spin Effect (Respect Preference)
-            controls.autoRotateSpeed = 1.0;
 
-            controls.enableRotate = combatCameraActive; // Respect user preference
-            controls.enablePan = false;   // Keep focus on the arena
-            controls.maxPolarAngle = Math.PI / 2 - 0.1; // Prevent camera from going underground
+            controls.enableRotate = true; // Force enable rotation for combat
             // Enable Middle Mouse Rotation for Combat
             controls.mouseButtons = {
                 LEFT: THREE.MOUSE.ROTATE,
                 MIDDLE: THREE.MOUSE.ROTATE,
-                RIGHT: THREE.MOUSE.ROTATE // Allow Right Click to orbit as well
+                RIGHT: THREE.MOUSE.PAN
             };
         }
 
@@ -3080,36 +2984,15 @@ function showCombat() {
                 }
             }
 
-            let xOff = 0;
-            let zOff = 0;
-
-            if (game.isBossFight && c.bossSlot) {
-                // Diamond Layout for Boss
-                // Broker (Guardian Slot) -> Back Center
-                // Weapon (Left) -> Left
-                // Potion (Right) -> Right
-                // Armor (Front) -> Front Center
-                
-                if (c.bossSlot === 'boss-guardian') {
-                    xOff = 0; zOff = 4.0; // Back
-                } else if (c.bossSlot === 'boss-weapon') {
-                    xOff = -2.0; zOff = 2.5; // Left
-                } else if (c.bossSlot === 'boss-potion') {
-                    xOff = 2.0; zOff = 2.5; // Right
-                } else if (c.bossSlot === 'boss-armor') {
-                    xOff = 0; zOff = 1.0; // Front
-                }
-            } else {
-                // Standard Staggered "V" Layout
-                // 0: Left Outer (Row 2) -> right*-1.5 + fwd*1.5
-                // 1: Left Inner (Row 1) -> right*-0.5 + fwd*2.5
-                // 2: Right Inner (Row 1) -> right*0.5 + fwd*2.5
-                // 3: Right Outer (Row 2) -> right*1.5 + fwd*1.5
-                xOff = (i - 1.5) * 1.5; // Default spread
-                zOff = 2.0;
-                if (i === 0 || i === 3) { zOff = 1.5; xOff = (i === 0 ? -1.5 : 1.5); }
-                if (i === 1 || i === 2) { zOff = 2.5; xOff = (i === 1 ? -0.5 : 0.5); }
-            }
+            // Staggered "V" Layout
+            // 0: Left Outer (Row 2) -> right*-1.5 + fwd*1.5
+            // 1: Left Inner (Row 1) -> right*-0.5 + fwd*2.5
+            // 2: Right Inner (Row 1) -> right*0.5 + fwd*2.5
+            // 3: Right Outer (Row 2) -> right*1.5 + fwd*1.5
+            let xOff = (i - 1.5) * 1.5; // Default spread
+            let zOff = 2.0;
+            if (i === 0 || i === 3) { zOff = 1.5; xOff = (i === 0 ? -1.5 : 1.5); }
+            if (i === 1 || i === 2) { zOff = 2.5; xOff = (i === 1 ? -0.5 : 0.5); }
 
             entity.position.copy(new THREE.Vector3(anchorX, 0, anchorZ).addScaledVector(right, xOff).addScaledVector(forward, zOff));
             entity.lookAt(anchorX, 0, anchorZ); // Face player
@@ -3274,18 +3157,6 @@ function showCombat() {
         document.getElementById('exitCombatBtn').style.display = 'none';
         document.getElementById('modalAvoidBtn').style.display = (game.combatCards[0] && game.combatCards[0].type === 'gift' ? 'none' : 'inline-block');
         document.getElementById('descendBtn').style.display = 'none';
-    }
-
-    // Fix Retreat Button State (Explicitly update disabled state)
-    const avoidBtn = document.getElementById('modalAvoidBtn');
-    if (avoidBtn) {
-        const hasBurden = game.hotbar.some(i => i && i.id === 'cursed_ring');
-        avoidBtn.disabled = (game.lastAvoided || game.chosenCount > 0 || hasBurden);
-        
-        if (hasBurden) avoidBtn.title = "Ring of Burden prevents escape!";
-        else if (game.lastAvoided) avoidBtn.title = "Cannot avoid two rooms in a row.";
-        else if (game.chosenCount > 0) avoidBtn.title = "Combat started, cannot flee.";
-        else avoidBtn.title = "Avoid this room (shuffle back to deck).";
     }
 
     // Merchant portrait and 'Not Now' button for special rooms (merchant)
@@ -4043,10 +3914,6 @@ function pickCard(idx, event) {
 
     game.combatCards.splice(idx, 1);
     game.chosenCount++;
-    
-    // Update Retreat Button immediately
-    const avoidBtn = document.getElementById('modalAvoidBtn');
-    if (avoidBtn) avoidBtn.disabled = true;
 
     if (game.hp <= 0) {
         gameOver();
@@ -4078,24 +3945,21 @@ function finishRoom() {
         document.getElementById('modalAvoidBtn').style.display = 'none';
 
         if (isBroker) {
-            // Check Phase (Broker Defeated Logic)
+            // Check Phase
             if (game.brokerPhase < 4) {
                 game.brokerPhase++;
+                // Heal Broker for next round
+                // We need to grab his current HP before he was removed? 
+                // Actually, he was just defeated (HP <= 0) if we are here?
+                // Wait, finishRoom is called when the *room* is cleared (3 cards picked).
+                // In Boss fights, we only call finishRoom if the Guardian/Broker is dead.
+                // So if we are here, the Broker IS dead.
+                // BUT for the gauntlet, we want him to retreat/reset if we cleared the minions?
+                // Ah, Scoundrel rules: You pick 3 cards. If Broker is the last one standing, you fight him next turn.
+                // If you kill him, you win.
                 
-                // If we killed the Broker (isBroker is true), the game SHOULD end.
-                // The phase logic is for when he SURVIVES (retreats).
-                // Wait, if the player kills the Broker in Phase 1, do they win immediately?
-                // Or does he "fake die" and come back?
-                // Let's assume if you kill him, you win. The phases are for if you clear his MINIONS.
-                
-                // BUT, if the player clears the room (3 cards) and the Broker is the 4th card (alive),
-                // THEN we trigger the next phase.
-                
-                // If we are inside this block, it means the Broker was DEFEATED (killed).
-                // So we should trigger the ending.
-                
+                // If we killed the Broker, the game is over.
                 setTimeout(() => { startEndingSequence(); }, 4000);
-                updateBossBar(0, 60); // Deplete bar
                 return;
             } else {
                 setTimeout(() => { startEndingSequence(); }, 4000);
@@ -4155,7 +4019,6 @@ function finishRoom() {
         if (game.activeRoom.isFinal) {
             // Check for Final Boss Trigger (Floor 9)
             if (game.floor === 9 && !game.isBrokerFight) {
-                updateBossBar(0, 60, false, true); // Ensure bar is hidden
                 logMsg("The air grows heavy. The Soul Broker approaches...");
                 startSoulBrokerEncounter();
                 return;
@@ -4168,9 +4031,7 @@ function finishRoom() {
             document.getElementById('descendBtn').onclick = (e) => { if(e) e.stopPropagation(); startBossFight(); };
             document.getElementById('exitCombatBtn').style.display = 'none';
             logMsg("Floor Purged! The Guardian awaits.");
-            updateBossBar(0, 60, false, true); // Hide bar if visible
         } else {
-            updateBossBar(0, 60, false, true); // Hide bar
             logMsg("Floor Purged! Return to the Guardian's lair to descend.");
         }
     } else if (game.isBrokerFight) {
@@ -4183,20 +4044,16 @@ function finishRoom() {
         // The Broker carries over his HP.
         
         if (game.brokerPhase < 4) {
-            const broker = game.combatCards.find(c => c.isBroker) || (game.carryCard && game.carryCard.isBroker ? game.carryCard : null);
+            const broker = game.combatCards.find(c => c.isBroker);
             if (broker) {
                 game.brokerHP = broker.val + 10; // Heal 10
                 logMsg(`The Soul Broker retreats and rallies his guard! (+10 HP)`);
-                game.combatBusy = true; // Block clicks during rally
-                
-                // Animate Bar Filling Up
-                updateBossBar(broker.val, 60); // Current
-                setTimeout(() => {
-                    updateBossBar(game.brokerHP, 60); // Fill up
-                    // Fade out after 2.5s (allow time to see fill)
-                    setTimeout(() => { updateBossBar(game.brokerHP, 60, false, true); }, 2500);
-                    game.combatBusy = false; // Re-enable combat
-                }, 500); 
+            } else {
+                // If Broker isn't in combatCards, he might be the carryCard?
+                if (game.carryCard && game.carryCard.isBroker) {
+                    game.brokerHP = game.carryCard.val + 10;
+                    game.carryCard = null; // Don't carry him as an item
+                }
             }
             
             game.brokerPhase++;
@@ -4243,8 +4100,6 @@ function closeCombat() {
     audio.setMusicMuffled(false); // Unmuffle music
     const mp = document.getElementById('merchantPortrait');
     if (mp) mp.style.display = 'none';
-    updateBossBar(0, 60, false, true); // Hide boss bar
-    document.getElementById('combatModal').style.pointerEvents = 'auto'; // Reset
 
     if (use3dModel) {
         exitCombatView();
@@ -4558,24 +4413,6 @@ window.toggleControlBox = function (show) {
     }
 };
 
-function updateBossBar(val, max, show = false, fadeOut = false) {
-    const container = document.getElementById('bossHpContainer');
-    const fill = document.getElementById('bossHpFill');
-    if (!container || !fill) return;
-
-    if (show) {
-        container.style.display = 'block';
-        container.style.opacity = '1';
-        container.style.transition = 'opacity 0.5s';
-    } else if (fadeOut) {
-        container.style.opacity = '0';
-        setTimeout(() => { if(container.style.opacity === '0') container.style.display = 'none'; }, 500);
-    }
-    
-    const pct = Math.max(0, Math.min(100, (val / max) * 100));
-    fill.style.width = `${pct}%`;
-}
-
 // --- LAYOUT SETUP ---
 function setupLayout() {
     console.log("Initializing Custom Layout...");
@@ -4697,15 +4534,6 @@ function setupLayout() {
         document.body.appendChild(bonfireUI);
     }
 
-    // 3.5 Create Boss HP Bar
-    let bossBar = document.getElementById('bossHpContainer');
-    if (!bossBar) {
-        bossBar = document.createElement('div');
-        bossBar.id = 'bossHpContainer';
-        bossBar.innerHTML = `<div id="bossHpLabel">The Soul Broker</div><div id="bossHpBarFrame"><div id="bossHpFill"></div></div>`;
-        document.body.appendChild(bossBar);
-    }
-
     // 4. Create Gameplay Inventory Bar (Map HUD) if missing
     // (Moved to ui-manager.js, called via setupInventoryUI or updateUI)
     // Actually, setupInventoryUI creates the modal. updateUI creates the HUD if missing.
@@ -4722,10 +4550,7 @@ let gameSettings = {
     musicMuted: false,
     sfxMuted: false,
     enhancedGraphics: false,
-    tiltShiftMode: 'threejs', // 'off', 'css', 'threejs'
-    bloomEnabled: true,
-    celShadingEnabled: false,
-    celOutlineEnabled: true
+    tiltShiftMode: 'threejs' // 'off', 'css', 'threejs'
 };
 
 function loadSettings() {
@@ -4740,8 +4565,6 @@ function loadSettings() {
         // Apply graphics setting if present
         if (gameSettings.enhancedGraphics !== undefined) use3dModel = gameSettings.enhancedGraphics;
         applyTiltShiftMode(gameSettings.tiltShiftMode);
-        if (bloomPass) bloomPass.enabled = (gameSettings.bloomEnabled !== false);
-        rebuildComposer();
     }
 }
 
@@ -4788,11 +4611,6 @@ window.showOptionsModal = function () {
                 <label style="display:block; margin-bottom:5px;">Master Volume</label>
                 <input type="range" min="0" max="1" step="0.05" value="${gameSettings.masterVolume}" style="width:100%;" oninput="updateSetting('vol', this.value)">
             </div>
-
-            <div style="margin:10px 0; padding:10px; border:1px dashed #555; text-align:center;">
-                <button class="v2-btn" onclick="runBenchmark()" style="font-size:0.8rem; width:100%;">Auto-Detect Graphics</button>
-                <div id="benchmarkResult" style="font-size:0.7rem; color:#aaa; margin-top:5px;"></div>
-            </div>
             
             <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
                 <input type="checkbox" id="muteMusic" ${gameSettings.musicMuted ? 'checked' : ''} onchange="updateSetting('music', this.checked)">
@@ -4805,27 +4623,13 @@ window.showOptionsModal = function () {
             </div>
 
             <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
-                <button class="v2-btn" id="viewToggleBtn" onclick="toggleView()" style="width:100%; font-size:0.8rem; background:${combatCameraActive ? '#d4af37' : ''};">Combat Camera: ${combatCameraActive ? 'On' : 'Off'}</button>
+                <input type="checkbox" id="isoView" ${is3DView ? 'checked' : ''} onchange="toggleView()">
+                <label for="isoView">Isometric Camera</label>
             </div>
 
             <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
                 <input type="checkbox" id="tiltShift" ${gameSettings.tiltShiftMode === 'threejs' ? 'checked' : ''} onchange="updateSetting('tiltShift', this.checked)">
                 <label for="tiltShift">Tilt-Shift FX</label>
-            </div>
-
-            <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
-                <input type="checkbox" id="bloomFX" ${gameSettings.bloomEnabled ? 'checked' : ''} onchange="updateSetting('bloom', this.checked)">
-                <label for="bloomFX">Bloom FX</label>
-            </div>
-
-            <div style="margin:15px 0; text-align:left; display:flex; align-items:center; gap:10px;">
-                <input type="checkbox" id="celShading" ${gameSettings.celShadingEnabled ? 'checked' : ''} onchange="updateSetting('cel', this.checked)">
-                <label for="celShading">Cel Shading (Toon)</label>
-            </div>
-            
-            <div id="celOutlineDiv" style="margin:5px 0 15px 25px; text-align:left; display:${gameSettings.celShadingEnabled ? 'flex' : 'none'}; align-items:center; gap:10px;">
-                <input type="checkbox" id="celOutline" ${gameSettings.celOutlineEnabled ? 'checked' : ''} onchange="updateSetting('celOutline', this.checked)">
-                <label for="celOutline" style="font-size:0.9rem; color:#aaa;">Use Outlines</label>
             </div>
 
             ${graphicsOption}
@@ -4855,20 +4659,6 @@ window.updateSetting = function (type, val) {
         gameSettings.tiltShiftMode = mode;
         applyTiltShiftMode(mode);
     }
-    if (type === 'bloom') {
-        gameSettings.bloomEnabled = val;
-        if (bloomPass) bloomPass.enabled = val;
-    }
-    if (type === 'cel') {
-        gameSettings.celShadingEnabled = val;
-        const sub = document.getElementById('celOutlineDiv');
-        if(sub) sub.style.display = val ? 'flex' : 'none';
-        rebuildComposer();
-    }
-    if (type === 'celOutline') {
-        gameSettings.celOutlineEnabled = val;
-        rebuildComposer();
-    }
 
     saveSettings();
     if (type !== 'graphics') applyAudioSettings();
@@ -4891,127 +4681,6 @@ function applyTiltShiftMode(mode) {
         hTilt.enabled = enabled;
         vTilt.enabled = enabled;
     }
-}
-
-// --- BENCHMARK SYSTEM (Glenn's Request) ---
-window.runBenchmark = function() {
-    const resEl = document.getElementById('benchmarkResult');
-    if(resEl) resEl.innerText = "Testing... (3s)";
-    
-    let frames = 0;
-    let startTime = performance.now();
-    let active = true;
-
-    // Force high load temporarily
-    // We modify gameSettings so animate3D renders full FX during the test
-    gameSettings.tiltShiftMode = 'threejs';
-    gameSettings.bloomEnabled = true;
-    gameSettings.celShadingEnabled = true;
-    gameSettings.celOutlineEnabled = true;
-    if(bloomPass) bloomPass.enabled = true;
-    rebuildComposer();
-
-    const loop = () => {
-        if(!active) return;
-        frames++;
-        const now = performance.now();
-        if (now - startTime >= 3000) {
-            active = false;
-            const fps = Math.round((frames / 3) * 10) / 10;
-            
-            // Decision Matrix
-            let mode = "Classic";
-            if (fps > 55) {
-                updateSetting('graphics', true); updateSetting('tiltShift', true); updateSetting('bloom', true); updateSetting('cel', false); updateSetting('celOutline', false);
-                mode = "Ultra (Enhanced + FX)";
-            } else if (fps > 40) {
-                updateSetting('graphics', true); updateSetting('tiltShift', true); updateSetting('bloom', false); updateSetting('cel', false); updateSetting('celOutline', false);
-                mode = "High (Enhanced + Tilt)";
-            } else if (fps > 25) {
-                updateSetting('graphics', false); updateSetting('tiltShift', true); updateSetting('bloom', true); updateSetting('cel', false); updateSetting('celOutline', false);
-                mode = "Medium (Classic + FX)";
-            } else {
-                updateSetting('graphics', false); updateSetting('tiltShift', false); updateSetting('bloom', false); updateSetting('cel', false); updateSetting('celOutline', false);
-                mode = "Low (Classic)";
-            }
-            
-            if(resEl) resEl.innerText = `Result: ${fps} FPS -> Set to ${mode}`;
-            
-            // Restore UI toggles
-            const gfxCheck = document.getElementById('enhancedGfx');
-            if(gfxCheck) gfxCheck.checked = gameSettings.enhancedGraphics;
-            
-            const tiltCheck = document.getElementById('tiltShift');
-            if(tiltCheck) tiltCheck.checked = (gameSettings.tiltShiftMode === 'threejs');
-            
-            const bloomCheck = document.getElementById('bloomFX');
-            if(bloomCheck) bloomCheck.checked = gameSettings.bloomEnabled;
-
-            const celCheck = document.getElementById('celShading');
-            if(celCheck) celCheck.checked = gameSettings.celShadingEnabled;
-
-            const outlineCheck = document.getElementById('celOutline');
-            if(outlineCheck) outlineCheck.checked = gameSettings.celOutlineEnabled;
-
-            showBenchmarkModal(fps);
-        } else {
-            requestAnimationFrame(loop);
-        }
-    };
-    loop();
-}
-
-function showBenchmarkModal(fps) {
-    let modal = document.getElementById('benchmarkModal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'benchmarkModal';
-        modal.className = 'modal-overlay';
-        modal.style.zIndex = '25000'; // Above options
-        document.body.appendChild(modal);
-    }
-
-    const canClassic = true;
-    const canEnhanced = fps > 40;
-    const canTilt = fps > 25;
-    const canBloom = fps > 50;
-    const canCel = fps > 35;
-
-    const check = (bool) => bool ? '✅' : '❌';
-    const color = (bool) => bool ? '#4f4' : '#f44';
-    const rowStyle = "display:flex; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid #333; padding-bottom:2px;";
-
-    modal.innerHTML = `
-        <div style="background:rgba(10,10,10,0.98); border:2px solid var(--gold); padding:30px; width:400px; max-width:90%; text-align:center; color:#fff; font-family:'Cinzel'; position:relative; box-shadow: 0 0 50px rgba(0,0,0,0.8);">
-            <h2 style="color:var(--gold); margin-top:0; margin-bottom:10px; text-shadow:0 2px 4px #000;">SYSTEM ANALYSIS</h2>
-            <div style="font-size:1.0rem; margin-bottom:20px; color:#aaa; font-family:'Special Elite';">Stress Test Result: <span style="color:#fff; font-weight:bold; font-size:1.2rem;">${fps} FPS</span></div>
-            
-            <div style="text-align:left; background:rgba(255,255,255,0.03); padding:20px; border:1px solid #444; margin-bottom:20px; font-family:'Crimson Text'; font-size:1.1rem;">
-                <div style="${rowStyle}">
-                    <span>Classic Mode (2D)</span> <span style="color:${color(canClassic)}">${check(canClassic)}</span>
-                </div>
-                <div style="${rowStyle}">
-                    <span>Enhanced Models (3D)</span> <span style="color:${color(canEnhanced)}">${check(canEnhanced)}</span>
-                </div>
-                <div style="${rowStyle}">
-                    <span>Tilt-Shift FX</span> <span style="color:${color(canTilt)}">${check(canTilt)}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between;">
-                    <span>Bloom Lighting</span> <span style="color:${color(canBloom)}">${check(canBloom)}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between;">
-                    <span>Cel Shading</span> <span style="color:${color(canCel)}">${check(canCel)}</span>
-                </div>
-            </div>
-
-            <div style="font-size:0.9rem; color:#d4af37; margin-bottom:20px; font-style:italic;">
-                Optimal settings have been applied.
-            </div>
-
-            <button class="v2-btn" onclick="document.getElementById('benchmarkModal').style.display='none'" style="width:100%;">ACCEPT</button>
-        </div>
-    `;
-    modal.style.display = 'flex';
 }
 
 // --- HELP SYSTEM ---
@@ -5690,266 +5359,6 @@ window.blastLock = function () {
     }
 };
 
-// --- POTION MINIGAME ---
-let potionState = null;
-const potionImages = { bottle: new Image(), mask: new Image(), buffer: document.createElement('canvas') };
-potionImages.bottle.src = 'assets/images/minigames/potion_bottle_base.png';
-potionImages.mask.src = 'assets/images/minigames/potion_bottle_mask.png';
-
-window.startPotionGame = function(room) {
-    let modal = document.getElementById('potionUI');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'potionUI';
-        modal.className = 'modal-overlay';
-        modal.style.display = 'none';
-        modal.style.flexDirection = 'column';
-        modal.style.alignItems = 'center';
-        modal.style.justifyContent = 'center';
-        modal.style.zIndex = '7000';
-        document.body.appendChild(modal);
-    }
-    
-    // Generate Target Color
-    const targets = [
-        { name: "Crimson Vitality", r: 200, g: 20, b: 20 },
-        { name: "Azure Intellect", r: 20, g: 50, b: 220 },
-        { name: "Golden Greed", r: 220, g: 200, b: 20 },
-        { name: "Void Essence", r: 80, g: 0, b: 120 },
-        { name: "Emerald Toxin", r: 40, g: 180, b: 40 },
-        { name: "Liquid Starlight", r: 200, g: 255, b: 255 },
-        { name: "Obsidian Oil", r: 40, g: 40, b: 45 },
-        { name: "Amber Sap", r: 255, g: 140, b: 0 },
-        { name: "Royal Blood", r: 120, g: 0, b: 60 },
-        { name: "Ghost Mist", r: 180, g: 220, b: 230 }
-    ];
-    const target = targets[Math.floor(Math.random() * targets.length)];
-
-    potionState = {
-        room: room,
-        target: target,
-        current: { r: 150, g: 150, b: 180, vol: 15 }, // Start with water base (Lower volume = easier)
-        active: true
-    };
-
-    // Vial Buttons Data
-    const vials = [
-        { color: 'Red', r: 255, g: 0, b: 0, hex: '#ff0000', img: 'vial_red.png' },
-        { color: 'Green', r: 0, g: 255, b: 0, hex: '#00ff00', img: 'vial_green.png' },
-        { color: 'Blue', r: 0, g: 0, b: 255, hex: '#0000ff', img: 'vial_blue.png' },
-        { color: 'White', r: 255, g: 255, b: 255, hex: '#ffffff', img: 'vial_white.png' },
-        { color: 'Black', r: 0, g: 0, b: 0, hex: '#111111', img: 'vial_black.png' }
-    ];
-
-    const vialHtml = vials.map(v => `
-        <div onclick="mixPotion(${v.r}, ${v.g}, ${v.b})" style="cursor:pointer; transition: transform 0.1s; display:flex; flex-direction:column; align-items:center;" onmousedown="this.style.transform='scale(0.9)'" onmouseup="this.style.transform='scale(1)'">
-            <div style="width:40px; height:60px; background:${v.hex}; border:2px solid #aaa; border-radius:0 0 15px 15px; position:relative; box-shadow:inset 0 0 10px rgba(0,0,0,0.5);">
-                <div style="position:absolute; top:-5px; left:10px; width:16px; height:10px; background:#888; border:1px solid #fff;"></div>
-                <!-- Fallback to CSS shape, but use img if available -->
-                <img src="assets/images/minigames/${v.img}" style="position:absolute; top:-5px; left:-2px; width:40px; height:65px; display:none;" onload="this.style.display='block'; this.parentElement.style.background='transparent'; this.parentElement.style.border='none'; this.parentElement.style.boxShadow='none';">
-            </div>
-            <div style="font-size:10px; color:#aaa; margin-top:4px;">${v.color}</div>
-        </div>
-    `).join('');
-
-    modal.innerHTML = `
-        <div style="background:rgba(10,10,10,0.95); border:2px solid var(--gold); padding:20px; width:500px; max-width:90%; text-align:center; color:#fff; font-family:'Cinzel'; position:relative; display:flex; flex-direction:column; gap:15px; box-shadow: 0 0 50px rgba(0,0,0,0.8);">
-            <h2 style="color:var(--gold); margin:0;">ALCHEMY STATION</h2>
-            <div style="font-size:1.0rem; color:#aaa;">Brew: <span style="color:#fff; font-weight:bold;">${target.name}</span></div>
-            
-            <div style="display:flex; justify-content:center; gap:30px; align-items:flex-start;">
-                <!-- Bottle Canvas -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
-                    <div style="position:relative; width:154px; height:269px;">
-                        <canvas id="potionCanvas" width="154" height="269"></canvas>
-                    </div>
-                </div>
-                
-                <!-- Resonance Meter (Closeness) -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:5px; height:269px; justify-content:center;">
-                    <div style="font-size:0.8rem; color:#d4af37; writing-mode: vertical-rl; text-orientation: mixed;">RESONANCE</div>
-                    <div style="width:20px; height:200px; border:2px solid #444; background:#111; position:relative; border-radius:4px; overflow:hidden;">
-                        <div id="potionMeterFill" style="position:absolute; bottom:0; left:0; width:100%; height:0%; background:linear-gradient(to top, #550000, #ffaa00, #00ff00); transition:height 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);"></div>
-                        <div style="position:absolute; top:15%; left:0; width:100%; height:2px; background:rgba(255,255,255,0.3);"></div> <!-- Target Line -->
-                    </div>
-                </div>
-            </div>
-
-            <!-- Controls -->
-            <div style="display:flex; justify-content:center; gap:15px; margin-top:10px; align-items:flex-end;">
-                ${vialHtml}
-                <button class="v2-btn" onclick="resetPotion()" style="background:#444; color:#fff; padding:10px; width:60px; height:40px; font-size:0.8rem; border:1px solid #666;">Dump</button>
-            </div>
-            
-            <div style="display:flex; gap:10px; margin-top:10px;">
-                <button class="v2-btn" onclick="checkPotion()" style="flex:1; background:var(--gold); color:#000;">BREW</button>
-                <button class="v2-btn" onclick="closePotionGame()" style="flex:1; background:#444;">Leave</button>
-            </div>
-            
-            <div id="potionFeedback" style="height:20px; font-size:0.9rem; color:#ffaa00;"></div>
-        </div>
-    `;
-    
-    modal.style.display = 'flex';
-    renderPotionCanvas();
-    updatePotionUI();
-};
-
-window.mixPotion = function(r, g, b) {
-    if (!potionState || !potionState.active) return;
-    const cur = potionState.current;
-    const addVol = 20;
-    // Weighted Average Mixing
-    cur.r = (cur.r * cur.vol + r * addVol) / (cur.vol + addVol);
-    cur.g = (cur.g * cur.vol + g * addVol) / (cur.vol + addVol);
-    cur.b = (cur.b * cur.vol + b * addVol) / (cur.vol + addVol);
-    cur.vol += addVol;
-    renderPotionCanvas();
-    updatePotionUI();
-    
-    // Play Sound
-    if (audio && audio.initialized) audio.play('potion_pour', { volume: 0.5, rate: 0.9 + Math.random() * 0.2 });
-};
-
-window.resetPotion = function() {
-    if (!potionState) return;
-    potionState.current = { r: 150, g: 150, b: 180, vol: 15 }; // Reset to base
-    renderPotionCanvas();
-    updatePotionUI();
-    document.getElementById('potionFeedback').innerText = "Mixture reset.";
-    document.getElementById('potionFeedback').style.color = "#aaa";
-};
-
-window.updatePotionUI = function() {
-    const meter = document.getElementById('potionMeterFill');
-    if (!meter || !potionState) return;
-    const c = potionState.current;
-    const t = potionState.target;
-    
-    // Calculate Euclidean distance in RGB space
-    const dist = Math.sqrt(Math.pow(c.r - t.r, 2) + Math.pow(c.g - t.g, 2) + Math.pow(c.b - t.b, 2));
-    
-    // Max possible distance is ~442 (distance between black and white)
-    // We want the meter to be full (100%) when dist is 0, and empty (0%) when dist > 200
-    // This makes the meter sensitive only when you are getting somewhat close
-    const maxRange = 200;
-    const pct = Math.max(0, Math.min(100, 100 * (1 - (dist / maxRange))));
-    
-    meter.style.height = `${pct}%`;
-    
-    // Color shift based on closeness
-    if (pct > 85) meter.style.background = '#00ff00'; // Green (Good)
-    else if (pct > 50) meter.style.background = '#ffaa00'; // Orange (Okay)
-    else meter.style.background = '#550000'; // Red (Bad)
-};
-
-window.checkPotion = function() {
-    if (!potionState) return;
-    const cur = potionState.current;
-    const tgt = potionState.target;
-    const dist = Math.sqrt(Math.pow(cur.r - tgt.r, 2) + Math.pow(cur.g - tgt.g, 2) + Math.pow(cur.b - tgt.b, 2));
-    const feedback = document.getElementById('potionFeedback');
-    
-    if (dist < 40) {
-        feedback.innerText = "Perfect Match!";
-        feedback.style.color = "#00ff00";
-        setTimeout(() => {
-            closePotionGame();
-            
-            // Reward Logic
-            const potionItem = { type: 'potion', val: 20, name: potionState.target.name, suit: '♥', desc: "A perfectly brewed masterwork potion." };
-            
-            if (addToBackpack(potionItem)) {
-                spawnFloatingText("Potion Brewed!", window.innerWidth/2, window.innerHeight/2, '#00ff00');
-                logMsg(`Brewed ${potionItem.name}. Added to backpack.`);
-            } else {
-                game.hp = game.maxHp; // Full heal if inventory full
-                spawnFloatingText("Fully Healed!", window.innerWidth/2, window.innerHeight/2, '#00ff00');
-                logMsg(`Brewed ${potionItem.name}. Inventory full, drank immediately.`);
-            }
-            
-            if (potionState.room) { potionState.room.state = 'cleared'; updateUI(); }
-        }, 1000);
-    } else {
-        feedback.innerText = "The mixture is unstable... (Too far)";
-        feedback.style.color = "#ff0000";
-    }
-};
-
-window.closePotionGame = function() {
-    const modal = document.getElementById('potionUI');
-    if (modal) modal.style.display = 'none';
-    potionState = null;
-};
-
-function renderPotionCanvas() {
-    if (!potionState) return;
-    const canvas = document.getElementById('potionCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const { r, g, b } = potionState.current;
-
-    // Ensure buffer matches size
-    if (potionImages.buffer.width !== canvas.width || potionImages.buffer.height !== canvas.height) {
-        potionImages.buffer.width = canvas.width;
-        potionImages.buffer.height = canvas.height;
-    }
-    const bCtx = potionImages.buffer.getContext('2d');
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    bCtx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // 1. Draw Bottle Base (Background)
-    if (potionImages.bottle.complete && potionImages.bottle.naturalWidth > 0) {
-        ctx.drawImage(potionImages.bottle, 0, 0, canvas.width, canvas.height);
-    }
-
-    // 2. Create Colored Liquid Shape in Buffer
-    if (potionImages.mask.complete && potionImages.mask.naturalWidth > 0) {
-        bCtx.drawImage(potionImages.mask, 0, 0, canvas.width, canvas.height);
-        bCtx.globalCompositeOperation = 'source-in';
-        bCtx.fillStyle = `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
-        bCtx.fillRect(0, 0, canvas.width, canvas.height);
-        bCtx.globalCompositeOperation = 'source-over';
-    } else {
-        // Fallback
-        bCtx.fillStyle = `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
-        bCtx.beginPath(); bCtx.arc(canvas.width/2, canvas.height*0.6, canvas.width*0.3, 0, Math.PI*2); bCtx.fill();
-    }
-
-    // 3. Tint Overlay (Draw Color ON TOP of Bottle)
-    ctx.globalCompositeOperation = 'hard-light'; // Tints the opaque bottle
-    ctx.globalCompositeOperation = 'overlay'; // Tints the opaque bottle while keeping highlights
-    ctx.drawImage(potionImages.buffer, 0, 0);
-    ctx.globalCompositeOperation = 'source-over';
-}
-
-function showAlchemyPrompt() {
-    const overlay = document.getElementById('combatModal');
-    overlay.style.display = 'flex';
-    document.getElementById('combatContainer').style.display = 'none';
-    document.getElementById('bonfireUI').style.display = 'none';
-
-    let trapUI = document.getElementById('trapUI');
-    if (!trapUI) {
-        trapUI = document.createElement('div');
-        trapUI.id = 'trapUI';
-        document.body.appendChild(trapUI);
-    }
-    trapUI.style.display = 'flex';
-
-    trapUI.innerHTML = `
-        <h2 style="font-family:'Cinzel'; font-size:3rem; color:#00ffaa; text-shadow:0 0 20px #004400; margin-bottom:20px;">ALCHEMY LAB</h2>
-        <div style="font-style:italic; margin-bottom:40px; color:#aaa; text-align:center; max-width:400px;">
-            An ancient brewing station sits here, bubbling with potential. <br>Do you wish to brew a potion?
-        </div>
-        <div style="display:flex; gap:20px;">
-            <button class="v2-btn" onclick="document.getElementById('trapUI').style.display='none'; startPotionGame(game.activeRoom);" style="width:140px;">Brew</button>
-            <button class="v2-btn" onclick="closeCombat()" style="background:#444; width:140px;">Leave</button>
-        </div>
-    `;
-}
-
 // --- ENHANCED COMBAT (3D) ---
 class Standee extends THREE.Group {
     constructor() {
@@ -6277,11 +5686,7 @@ function exitCombatView() {
 
     // Restore camera
     controls.object = camera; // Switch controls back to Ortho camera
-    controls.enableRotate = false; // Map is always static (no rotate)
-    controls.autoRotate = false; // Stop spinning
-    controls.maxPolarAngle = Math.PI; // Reset vertical limit
-    controls.minDistance = 0;
-    controls.maxDistance = Infinity;
+    controls.enableRotate = is3DView; // Restore rotation setting
     
     // Restore default controls
     controls.mouseButtons = {
@@ -6386,9 +5791,6 @@ window.setgame = function (mode, arg) {
             break;
         case 'trap':
             if (game.activeRoom) showTrapUI();
-            break;
-        case 'potion':
-            startPotionGame(game.activeRoom);
             break;
         default:
             console.log("Commands: finalboss, boss, merchant, bonfire, showhidden, godmode, floor [n], lockpick, trap");
@@ -6669,12 +6071,6 @@ async function loadRoomConfig() {
         console.warn("Error loading Room Config:", e);
     }
 }
-
-// Global Mouse Down Tracker for Drag Detection
-window.addEventListener('mousedown', (e) => {
-    clickStart.x = e.clientX;
-    clickStart.y = e.clientY;
-});
 
 // Initialize Layout
 loadSettings();
