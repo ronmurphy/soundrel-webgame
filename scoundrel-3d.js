@@ -2742,60 +2742,30 @@ function startSoulBrokerEncounter() {
     game.isBossFight = true;
     game.isBrokerFight = true;
     game.activeRoom.state = 'boss_active';
-    game.brokerPhase = 1;
     game.chosenCount = 0;
 
     logMsg("The Soul Broker reveals his true form!");
+
+    // Narrative Popup (Optional, using log for now)
     spawnFloatingText("THE FINAL DEBT", window.innerWidth / 2, window.innerHeight / 2 - 100, '#d4af37');
 
-    setupBrokerRound();
-}
-
-function setupBrokerRound() {
-    game.isBossFight = true; // Ensure flag is active for phases
-    game.chosenCount = 0;
-    
-    // Broker Stats: Persist HP if phase > 1, else init
-    // We need to find the broker in the previous array if it exists to carry over HP?
-    // Actually, finishRoom handles the logic, so we just need to generate the new array.
-    // But we need to know the Broker's current HP. 
-    // Let's store it in game state temporarily or find it before clearing.
-    
-    let brokerHP = 30;
-    if (game.brokerPhase > 1) {
-        // He healed 10 in finishRoom, so we just need to respect that logic or set it here.
-        // Let's assume finishRoom passed the value or we stored it.
-        // Simplest: We'll handle the heal in finishRoom and store it in a temp var if needed, 
-        // but since we rebuild the array, we need to pass it in.
-        // Let's use game.brokerHP if set.
-        brokerHP = game.brokerHP || 30;
-    }
-
-    // Randomize Guardian Roles for this round
-    const roles = ['vanguard', 'mystic', 'bulwark', 'sorcerer', 'architect', 'loyalist'];
-    shuffle(roles);
-
-    // Base Guardian Stats (Level 9 scaling)
-    const gVal = 19; 
-
+    // The Soul Broker Boss
+    // Diamond formation with 3 Guardians as minions (Level 2 stats ~19)
     game.combatCards = [
         {
-            type: 'monster', val: gVal, suit: '💀', name: "Abyssal Maw", bossSlot: 'boss-weapon',
-            customAsset: 'animations/guardian_abyssal_maw.png', customBgSize: '2500% 100%', isAnimated: true,
-            bossRole: roles[0]
+            type: 'monster', val: 19, suit: '💀', name: "Abyssal Maw", bossSlot: 'boss-weapon',
+            customAsset: 'animations/guardian_abyssal_maw.png', customBgSize: '2500% 100%', isAnimated: true
         },
         {
-            type: 'monster', val: gVal, suit: '💀', name: "Ironclad Sentinel", bossSlot: 'boss-armor',
-            customAsset: 'animations/guardian_ironclad_sentinel.png', customBgSize: '2500% 100%', isAnimated: true,
-            bossRole: roles[1]
+            type: 'monster', val: 19, suit: '💀', name: "Ironclad Sentinel", bossSlot: 'boss-armor',
+            customAsset: 'animations/guardian_ironclad_sentinel.png', customBgSize: '2500% 100%', isAnimated: true
         },
         {
-            type: 'monster', val: gVal, suit: '💀', name: "Gargoyle", bossSlot: 'boss-potion',
-            customAsset: 'animations/guardian_gargoyle.png', customBgSize: '2500% 100%', isAnimated: true,
-            bossRole: roles[2]
+            type: 'monster', val: 19, suit: '💀', name: "Gargoyle", bossSlot: 'boss-potion',
+            customAsset: 'animations/guardian_gargoyle.png', customBgSize: '2500% 100%', isAnimated: true
         },
         {
-            type: 'monster', val: brokerHP, suit: '👺', name: "The Soul Broker",
+            type: 'monster', val: 30, suit: '👺', name: "The Soul Broker",
             bossSlot: 'boss-guardian',
             customAsset: 'animations/final.png', // Explicitly set asset path
             customBgSize: '2500% 100%', // Ensure 25-frame animation scaling
@@ -2807,26 +2777,6 @@ function setupBrokerRound() {
     ];
 
     showCombat();
-
-    // Auto-Kill Logic for Phases 2 & 3
-    // Phase 2: 1 Guardian dies. Phase 3: 2 Guardians die.
-    // We do this AFTER showCombat so the cards exist in DOM/3D to be animated out.
-    if (game.brokerPhase > 1) {
-        setTimeout(() => {
-            const minions = game.combatCards.filter(c => !c.isBroker);
-            const killCount = (game.brokerPhase === 2) ? 1 : (game.brokerPhase === 3 ? 2 : 3);
-            
-            // If Phase 4, kill ALL minions (Duel)
-            
-            for(let i=0; i<killCount; i++) {
-                if (minions[i]) {
-                    // Find index in main array
-                    const idx = game.combatCards.indexOf(minions[i]);
-                    if (idx !== -1) pickCard(idx, null); // Trigger death logic
-                }
-            }
-        }, 800); // Delay slightly for dramatic effect
-    }
 }
 
 function showCombat() {
@@ -3928,7 +3878,6 @@ function pickCard(idx, event) {
 function finishRoom() {
     // Boss Victory Handling
     if (game.isBossFight) {
-        game.isBossFight = false;
         document.getElementById('enemyArea').classList.remove('boss-grid');
         game.soulCoins += 20;
 
@@ -3945,27 +3894,39 @@ function finishRoom() {
         document.getElementById('modalAvoidBtn').style.display = 'none';
 
         if (isBroker) {
-            // Check Phase
+            // Check Phase (Broker Defeated Logic)
             if (game.brokerPhase < 4) {
                 game.brokerPhase++;
-                // Heal Broker for next round
-                // We need to grab his current HP before he was removed? 
-                // Actually, he was just defeated (HP <= 0) if we are here?
-                // Wait, finishRoom is called when the *room* is cleared (3 cards picked).
-                // In Boss fights, we only call finishRoom if the Guardian/Broker is dead.
-                // So if we are here, the Broker IS dead.
-                // BUT for the gauntlet, we want him to retreat/reset if we cleared the minions?
-                // Ah, Scoundrel rules: You pick 3 cards. If Broker is the last one standing, you fight him next turn.
-                // If you kill him, you win.
+                logMsg("The Soul Broker retreats into the shadows...");
                 
-                // If we killed the Broker, the game is over.
-                setTimeout(() => { startEndingSequence(); }, 4000);
+                // Cleanup 3D entities immediately so they don't linger
+                game.combatCards = [];
+                while (combatGroup.children.length > 0) combatGroup.remove(combatGroup.children[0]);
+                combatEntities = [];
+                
+                // Heal for next round since he was defeated
+                game.brokerHP = 20; 
+
+                setTimeout(setupBrokerRound, 2000);
                 return;
             } else {
                 setTimeout(() => { startEndingSequence(); }, 4000);
+                updateBossBar(0, 60); // Deplete bar
+                
+                // Cleanup
+                game.combatCards = [];
+                while (combatGroup.children.length > 0) combatGroup.remove(combatGroup.children[0]);
+                combatEntities = [];
+                game.isBossFight = false;
                 return;
             }
         }
+
+        // Cleanup 3D entities for standard bosses (Guardian)
+        game.combatCards = [];
+        while (combatGroup.children.length > 0) combatGroup.remove(combatGroup.children[0]);
+        combatEntities = [];
+        game.isBossFight = false; // Reset flag for standard boss
 
         // If we just beat the Floor 9 Guardian, trigger Soul Broker
         if (game.floor === 9 && !isBroker) {
@@ -4034,32 +3995,6 @@ function finishRoom() {
         } else {
             logMsg("Floor Purged! Return to the Guardian's lair to descend.");
         }
-    } else if (game.isBrokerFight) {
-        // If we cleared the room (picked 3 cards) but Broker is still alive (he was the 4th card),
-        // OR if we killed him but there are phases left?
-        // Actually, in Scoundrel, if the boss is the 4th card, he stays for the next "room".
-        // But here we want a gauntlet.
-        
-        // Logic: If the room is "finished" (3 cards picked), we start the next round immediately.
-        // The Broker carries over his HP.
-        
-        if (game.brokerPhase < 4) {
-            const broker = game.combatCards.find(c => c.isBroker);
-            if (broker) {
-                game.brokerHP = broker.val + 10; // Heal 10
-                logMsg(`The Soul Broker retreats and rallies his guard! (+10 HP)`);
-            } else {
-                // If Broker isn't in combatCards, he might be the carryCard?
-                if (game.carryCard && game.carryCard.isBroker) {
-                    game.brokerHP = game.carryCard.val + 10;
-                    game.carryCard = null; // Don't carry him as an item
-                }
-            }
-            
-            game.brokerPhase++;
-            setTimeout(setupBrokerRound, 2000);
-            return;
-        }
     }
     updateRoomVisuals();
     updateUI();
@@ -4100,6 +4035,7 @@ function closeCombat() {
     audio.setMusicMuffled(false); // Unmuffle music
     const mp = document.getElementById('merchantPortrait');
     if (mp) mp.style.display = 'none';
+    updateBossBar(0, 60, false, true); // Hide boss bar
 
     if (use3dModel) {
         exitCombatView();
@@ -4183,6 +4119,24 @@ function updateBonfireUI() {
             btn.style.cursor = 'pointer';
         }
     });
+}
+
+function updateBossBar(val, max, show = false, fadeOut = false) {
+    const container = document.getElementById('bossHpContainer');
+    const fill = document.getElementById('bossHpFill');
+    if (!container || !fill) return;
+
+    if (show) {
+        container.style.display = 'block';
+        container.style.opacity = '1';
+        container.style.transition = 'opacity 0.5s';
+    } else if (fadeOut) {
+        container.style.opacity = '0';
+        setTimeout(() => { if(container.style.opacity === '0') container.style.display = 'none'; }, 500);
+    }
+    
+    const pct = Math.max(0, Math.min(100, (val / max) * 100));
+    fill.style.width = `${pct}%`;
 }
 
 function showTrapUI() {
